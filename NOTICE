@@ -1,0 +1,51 @@
+TradingAgentsLab
+Copyright 2026 Junaid Siddiqi
+
+This product is a derivative work based on TradingAgents:
+  TradingAgents
+  Copyright 2024-2026 Tauric Research
+  https://github.com/TauricResearch/TradingAgents
+  Licensed under the Apache License, Version 2.0 (see LICENSE-APACHE)
+
+================================================================================
+
+LICENSING SUMMARY
+================================================================================
+
+The original TradingAgents source code remains licensed under the Apache
+License, Version 2.0. A copy of that license is included in this repository
+as LICENSE-APACHE.
+
+All NEW code, modifications, and additions contributed to TradingAgentsLab
+(including but not limited to the desktop UI, integrations, and enhancements
+authored by Junaid Siddiqi or contributors) are licensed under the GNU
+Affero General Public License, Version 3.0 (AGPL-3.0). A copy of that license
+is included in this repository as LICENSE.
+
+When the project is distributed as a combined work, the AGPL-3.0 terms apply
+to the work as a whole. The Apache 2.0 portions remain individually
+identifiable and continue to be governed by their original Apache 2.0 grant
+in addition to the AGPL-3.0 terms of the combined work.
+
+The Apache License 2.0 is compatible with the GNU Affero General Public
+License, Version 3.0 (per Apache Software Foundation guidance and Free
+Software Foundation guidance), permitting this combination.
+
+================================================================================
+
+MODIFICATIONS
+================================================================================
+
+In accordance with Section 4(b) of the Apache License 2.0, files modified
+from the original TradingAgents source carry prominent notices indicating
+the changes. See the project commit history (`git log`) for a complete and
+authoritative record of changes made by TradingAgentsLab contributors.
+
+================================================================================
+
+TRADEMARKS
+================================================================================
+
+"TradingAgents" and any associated marks belong to Tauric Research.
+TradingAgentsLab is an independent derivative project and is not endorsed
+by, affiliated with, or sponsored by Tauric Research.

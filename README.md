@@ -1,3 +1,55 @@
+# TradingAgentsLab
+
+> **A derivative work of [TradingAgents](https://github.com/TauricResearch/TradingAgents) by Tauric Research.**
+> Maintained by Junaid Siddiqi. Goal: build a top-of-the-line desktop UI on top of the
+> TradingAgents multi-agent framework and integrate it into a broader trading platform.
+
+## License
+
+TradingAgentsLab uses a **dual-license** structure:
+
+| Code | License | File |
+|---|---|---|
+| Original code from upstream TradingAgents | Apache License 2.0 | [`LICENSE-APACHE`](LICENSE-APACHE) |
+| All new code, modifications, and the desktop UI in this repo | GNU Affero General Public License v3.0 | [`LICENSE`](LICENSE) |
+
+The combined work is distributed under **AGPL-3.0**. The Apache 2.0 portions
+remain individually identifiable. See [`NOTICE`](NOTICE) for full attribution
+and details.
+
+**What this means in practice:**
+- ✅ Free to use, study, and modify for personal, academic, and internal commercial use
+- ✅ Free to self-host
+- ⚠️ If you offer this software as a network service (SaaS), you must publish your
+  modifications under AGPL-3.0
+- ⚠️ If you distribute a modified version, you must publish your modifications under
+  AGPL-3.0
+- 💼 Commercial licenses without the AGPL-3.0 copyleft requirement may be available
+  by contacting the maintainer
+
+## Contributing
+
+Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and sign
+the [`CLA`](CLA.md) before opening a pull request.
+
+## Staying in Sync With Upstream
+
+Upstream TradingAgents is tracked as the `upstream` git remote. To pull in the latest
+changes from Tauric Research:
+
+```bash
+git fetch upstream
+git merge upstream/main          # or: git rebase upstream/main
+```
+
+## Acknowledgements
+
+This project would not exist without the excellent work of the **Tauric Research**
+team and the upstream TradingAgents contributors. Their original README follows
+below for reference.
+
+---
+
 <p align="center">
   <img src="assets/TauricResearch.png" style="width: 60%; height: auto;">
 </p>
