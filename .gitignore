@@ -225,3 +225,5 @@ desktop/dist-electron/
 desktop/release/
 desktop/.vite/
 *.tsbuildinfo
+engine/.venv/
+engine/__pycache__/

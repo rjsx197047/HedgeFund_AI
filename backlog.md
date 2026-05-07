@@ -18,20 +18,22 @@
 - 🟡 **CLAUDE.md** — Advisor confirmed: build our own (Clawless template not portable). In progress.
 - ⚪ **Commit + push Phase 0 artifacts** — probe, architecture doc, backlog, handover, CLAUDE.md.
 
-## Phase 1 — Desktop shell
+## Phase 1 — Desktop shell ✅ DONE
 
-- ⚪ Scaffold `desktop/` Electron app (TypeScript + React).
-- ⚪ Define TradingAgentsLab's own theme tokens — dark surface, complementary accent (not Clawless cyan), humanist sans body + monospace headings, subtle grid background.
-- ⚪ App-shell window opens with placeholder content. No engine yet.
-- ⚪ Acceptance: launch TradingAgentsLab and the window has clear, distinct, polished branding that feels ecosystem-coherent with Clawless without copying it.
+- 🟢 Scaffold `desktop/` Electron app (TypeScript + React + Vite).
+- 🟢 TradingAgentsLab theme tokens — dark surface (`#0d1117`), warm-amber accent (`#f0a830`), system humanist sans + monospace headings, subtle radial gradient.
+- 🟢 App-shell window opens with title bar, sidebar nav (Analyze · Watchlist · History · Settings), main panel, footer with disclaimer.
+- 🟢 Acceptance: founder approved on first look — *"I like the colors. It is nice light base, give that trading app feel. Great."*
 
-## Phase 2 — Python sidecar
+## Phase 2 — Python sidecar ✅ DONE (stub layer)
 
-- ⚪ Scaffold `engine/` FastAPI service wrapping `tradingagents.graph.TradingAgentsGraph`.
-- ⚪ Endpoints: `POST /analyze` (one-shot), `WS /stream` (live agent debate stream).
-- ⚪ Stub LLM provider (returns canned responses) so we can test wiring without burning tokens.
-- ⚪ Sidecar process startup: emit `{port, token}` JSON to stdout for Electron main to read.
-- ⚪ Acceptance: from Electron main, spawn sidecar, hit `/analyze` with a stub config, get a stub response.
+- 🟢 Scaffold `engine/` FastAPI service (Python 3.13 venv via uv-managed interpreter).
+- 🟢 Endpoints: `GET /health`, `POST /analyze` (one-shot stub), `WS /stream` (canned 16-event multi-agent debate over ~7s).
+- 🟢 Stub debate sequence (`engine/stub_debate.py`) — analysts → phase.transition → researchers → trader → risk → portfolio_manager → session.complete.
+- 🟢 Sidecar process startup: emits `{"port": <int>, "token": "..."}` JSON to stdout for Electron main to read.
+- 🟢 Bearer-token auth on all endpoints (`Authorization: Bearer <token>` for HTTP, `?token=` query param for WS).
+- 🟢 Acceptance verified: `/health` 200 with auth / 401 without; `/analyze` returns stub decision; `/stream` streams 16 events with realistic phasing.
+- ⚪ Phase 2.1 (later): replace stub debate with real `tradingagents` core integration. Out of MVP scope.
 
 ## Phase 3 — End-to-end demo
 

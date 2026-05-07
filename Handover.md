@@ -25,17 +25,15 @@
 - ✅ Gateway probe (`tools/clawless-probe.mjs`) — multi-client OpenClaw access **verified**: TradingAgentsLab connected as a second client alongside Clawless desktop, ran `connect` + `health`, full agent inventory returned
 - ✅ Architecture sketch ratified by founder (Pattern 3 — fully standalone, optional Clawless tap)
 
-### In progress / next up
+### Just shipped (2026-05-07 evening)
 
-- 🟡 **Phase 0 wrap-up:** commit + push the probe, architecture doc, backlog, handover, CLAUDE.md. All artifacts ready.
-- ✅ **Clawless Advisor replied (2026-05-07):** Founder reframed relationship as "connection, not integration." All inheritance plans dropped. License question dissolved. Most prior blockers cleared.
+- ✅ **Phase 0** — orchestration docs + gateway probe (commit `f0125b8`)
+- ✅ **Phase 1** — Electron + Vite + React desktop shell with our own warm-amber theme. Founder approved on first look (commit `86f0185`)
+- ✅ **Phase 2** — Python 3.13 + FastAPI sidecar with stub canned debate. `/health`, `/analyze`, `/stream` all working with bearer-token auth.
 
-### Resolved blockers (Advisor reply, 2026-05-07)
+### Next up
 
-- ✅ CLAUDE.md — building our own (Clawless template not portable)
-- ✅ Phase 1 theming — pick our own aesthetic
-- ✅ Phase 4 settings — build from scratch, no inheritance
-- ✅ Multi-client gateway gotchas — captured in `docs/architecture.md` §12
+- ⚪ **Phase 3** — wire the desktop renderer to the engine sidecar. Electron main spawns `engine/.venv/bin/python -m engine`, reads `{port, token}` from stdout, hands to renderer. Renderer hits `/analyze` for one-shot and `WS /stream` for the live debate. End state: founder clicks "Analyze NVDA" and watches the canned 16-event debate stream into the UI.
 
 ### Currently blocked
 
