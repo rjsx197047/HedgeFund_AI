@@ -42,7 +42,7 @@
 
 1. **Phase 4 UI spike** (commit `e716d86`) — Settings page reachable from the sidebar with hash-based routing, 5 tabs (LLM Providers, Data Providers, Broker, Clawless, About) showing the provider matrix with disabled `Configure` buttons and a phase-guard footer. Watchlist + History pages render `ComingSoon` placeholders. **No keytar / native dep / secret storage** — that's gated on founder check-in per advisor scope guard.
 
-3. **Phase 5 polish: Stop button + accurate Data status + transcript export** (commit hash to follow) — three small UX wins in one commit. Stop button replaces Analyze while streaming and calls `handle.close()` to abort the WS. The Data status card now reads `/health.data_provider` after handshake, flipping from "Pending…" to "yfinance · live" with a green dot. A "Copy transcript (Markdown)" button appears once `session.complete` lands; clicking copies a structured Markdown transcript (header, decision, data summary, all phases, all agent messages) to the clipboard with a transient "Copied ✓" affordance.
+3. **Phase 5 polish: Stop button + accurate Data status + transcript export** (commit `de030ee`) — three small UX wins in one commit. Stop button replaces Analyze while streaming and calls `handle.close()` to abort the WS. The Data status card now reads `/health.data_provider` after handshake, flipping from "Pending…" to "yfinance · live" with a green dot. A "Copy transcript (Markdown)" button appears once `session.complete` lands; clicking copies a structured Markdown transcript (header, decision, data summary, all phases, all agent messages) to the clipboard with a transient "Copied ✓" affordance.
 
 2. **Phase 5 part 1: yfinance data integration** (commit `5273904`) — engine sidecar now ships a `BaseDataProvider` Protocol + `YFinanceProvider` default. Real NVDA data verified: $211.50 last close, +19.38% over 24 sessions, 147M avg volume. New endpoints + WS event:
    - `GET /data/summary?ticker=X&trade_date=Y` returns real OHLCV summary or 404 on unknown ticker
@@ -52,7 +52,22 @@
    - Network-failure path: stream gracefully falls back to original canned messages
    - Renderer surfaces a compact summary strip (last close · period change · range · avg volume · source) at the top of the debate panel. Period change is colored green/red.
 
-**Next session opens with:** depends on autonomous block outcome — see latest entry. If Phase 3 is the only thing that landed, founder should smoke-test it via `npm run dev`, click Analyze NVDA, expect 17 events ending with HOLD@0.55. If Phase 4 scaffolding also landed, founder should additionally check the Settings route + tab structure (no functional keychain yet — that's a separate commit gated on founder approval per advisor scope guard).
+**Next session opens with:** founder smoke-tests the four-commit run end-to-end:
+
+1. `npm run dev` from `/Users/junaidsiddiqi/Projects/TradingAgents/desktop` — Engine status flips to "Running" within 2-3s, Data status flips to "yfinance · live"
+2. Click **Analyze** with default ticker `NVDA` — summary strip appears (last close ~$211, +19% period change), 17 debate events stream over ~7s, decision card lands with HOLD@55% confidence
+3. Click **Stop** mid-stream on a second run — abort is clean, no errors
+4. Click **Copy transcript (Markdown)** after a complete run — paste somewhere; expect a structured Markdown doc with decision, data summary, all 4 phases
+5. Navigate to **Settings** in the sidebar — see the tab structure, all `Configure` buttons disabled with the phase-guard footer
+
+**If any of those don't work, fix that before continuing.** Likely candidates: the IPC handshake promise (Phase 3), CORS preflight against the actual sidecar port (Phase 3), or yfinance reachability if Yahoo is rate-limiting (Phase 5). All are diagnosable from the engine sidecar's stderr in the Electron console.
+
+**Next chunks (founder's call):**
+
+- **Phase 4 secrets wiring** — `keytar` install + first BYO LLM key (OpenAI). Gated on founder go-ahead because adding a native dep deserves a yes.
+- **Phase 2.1 — replace stub debate with real `tradingagents` core.** Needs founder to pick the first LLM provider (OpenAI seems most likely) and supply a key.
+- **Phase 5 part 2** — Alpaca data provider (needs API key + keychain), `BaseBroker` abstraction, paper-trading order endpoint.
+- **Phase 6** — Clawless gateway tap. The probe (`tools/clawless-probe.mjs`) is the working reference protocol code.
 
 ---
 

@@ -22,20 +22,20 @@
 - ⏳ Continuing into Phase 4 spike (settings page scaffolding) per advisor green-light for unsupervised stretch scope
 - ⏳ Founder away ~4-5 hours; report on return
 
-### Done — Phase 0 → Phase 3
+### Done — Phase 0 → Phase 3 + Phase 4 spike + Phase 5 part 1 + polish
 
-**Yesterday (2026-05-07):** Phases 0, 1, 2 + license setup. See `WORKLOG.md` for the full chronology.
+**Yesterday (2026-05-07):** Phases 0, 1, 2 + license setup.
 
-**Today (2026-05-08):** Phase 3 — end-to-end debate streaming.
+**Today (2026-05-08), autonomous block (~4 commits, founder away):**
 
-- ✅ `desktop/electron/engine-runner.ts` — spawns sidecar with correct cwd, parses handshake from first stdout line, kills child on quit
-- ✅ Main + preload IPC: `engine:get-handshake` channel, `tradingAgentsLab.getEngineHandshake()` on contextBridge
-- ✅ `desktop/src/lib/engine-client.ts` — typed `analyze()` + `streamDebate()` with `?token=` query auth on WS
-- ✅ `desktop/src/components/DebateStream.tsx` — phase-grouped agent messages, color-coded borders, animated streaming badge, decision card with action-aware coloring
-- ✅ `desktop/src/pages/Analyze.tsx` — Analyze button wired, status card flips to Running/Error/Starting, error banner on stream failure
-- ✅ `engine/server.py` — `CORSMiddleware` for `http://localhost:5173` (required for `/analyze` cross-origin POST)
-- ✅ `desktop/src/vite-env.d.ts` — ambient types for `*.module.css` + window bridge (Phase 1 had been silently failing type-check; fixed in passing)
-- ✅ Smoke verified: type-check + vite build + engine endpoint contract (curl + WS) + Electron successfully spawns sidecar via `app.getAppPath()` path resolution. Final UI click-through pending founder review.
+- ✅ **Phase 3** — renderer ↔ engine wired end-to-end (`c5815fa`). Click "Analyze NVDA" → 17-event debate streams in over ~7s → decision card.
+- ✅ **Phase 4 spike** — Settings page + hash router (`e716d86`). All tabs visible, `Configure` buttons disabled, phase-guard explains. No keytar yet (gated on founder go).
+- ✅ **Phase 5 part 1 — yfinance data integration** (`5273904`). Real NVDA data flows: $211.50 last close, +19.38% over 24 sessions, 147M avg volume. Analyst messages quote real numbers. `GET /data/summary` + `data.summary` WS event. Falls back gracefully on data failure.
+- ✅ **Phase 5 polish** (`de030ee`). Stop button while streaming. Data status card flips to "yfinance · live". Copy transcript (Markdown) action after session.complete.
+
+See `WORKLOG.md` for the full chronology with verification details per commit.
+
+**Verification gap:** the four commits passed `npm run type-check`, `npm run build`, and full backend smoke (curl + node WebSocket). **No UI click-through was performed** — the autonomous block didn't spin up Electron Playwright. First action on the next session is a manual smoke (see "What founder should do first when they return" below).
 
 ### Recent commits on `main` (newest first)
 
