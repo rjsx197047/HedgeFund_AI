@@ -40,7 +40,7 @@
 ### Recent commits on `main` (newest first)
 
 ```
-<Phase 3 commit lands here>
+c5815fa  Phase 3: wire desktop renderer to engine sidecar end-to-end
 e527632  Pre-reboot wrap-up: refresh Handover + backlog
 81f7414  Handover checkpoint at end of Phase 2
 a44b935  Phase 2: Python sidecar with FastAPI + stub canned debate

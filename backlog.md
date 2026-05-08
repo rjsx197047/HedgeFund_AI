@@ -49,9 +49,9 @@
 
 ## Phase 4 — Settings page
 
-- ⚪ Build Settings page from scratch (no Clawless inheritance).
-- ⚪ LLM Providers tab — BYO keys for all supported providers + OAuth flow for OpenAI (per public OpenAI SDK docs). **No Anthropic OAuth** (TOS).
-- ⚪ Wire OS keychain (keytar) for secret storage.
+- 🟢 **Phase 4 spike (UI scaffolding)** — Settings page reachable via sidebar with hash-based routing, 5 tabs (LLM Providers, Data Providers, Broker, Clawless, About) with disabled "Configure" buttons and a phase-guard footer explaining wiring lands later. Watchlist + History pages render `ComingSoon` placeholders.
+- ⚪ LLM Providers tab — wire BYO API keys for all supported providers + OAuth flow for OpenAI (per public OpenAI SDK docs). **No Anthropic OAuth** (TOS).
+- ⚪ Wire OS keychain (keytar) for secret storage. **Gated on founder check-in** — keytar is a native dep that benefits from a yes-go before npm install.
 - ⚪ Move hardcoded keys → keychain-backed config.
 - ⚪ Acceptance: founder pastes his real OpenAI key, runs analysis, key persists across restarts.
 

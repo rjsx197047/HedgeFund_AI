@@ -36,9 +36,9 @@
 
 **Commits:**
 
-- `<Phase 3 hash>` — Phase 3: wire desktop renderer to engine sidecar end-to-end
+- `c5815fa` — Phase 3: wire desktop renderer to engine sidecar end-to-end
 
-**Stretch / what came after Phase 3 in this autonomous block:** see entries appended below as work continues.
+**Stretch shipped after Phase 3:** Phase 4 UI spike — Settings page reachable from the sidebar with hash-based routing, 5 tabs (LLM Providers, Data Providers, Broker, Clawless, About) showing the provider matrix with disabled `Configure` buttons and a phase-guard footer. Watchlist + History pages render `ComingSoon` placeholders. **No keytar / native dep / secret storage** — that's gated on founder check-in per advisor scope guard.
 
 **Next session opens with:** depends on autonomous block outcome — see latest entry. If Phase 3 is the only thing that landed, founder should smoke-test it via `npm run dev`, click Analyze NVDA, expect 17 events ending with HOLD@0.55. If Phase 4 scaffolding also landed, founder should additionally check the Settings route + tab structure (no functional keychain yet — that's a separate commit gated on founder approval per advisor scope guard).
 
