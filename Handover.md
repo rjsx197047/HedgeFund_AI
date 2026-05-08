@@ -28,16 +28,55 @@
 ### Just shipped (2026-05-07 evening)
 
 - ✅ **Phase 0** — orchestration docs + gateway probe (commit `f0125b8`)
-- ✅ **Phase 1** — Electron + Vite + React desktop shell with our own warm-amber theme. Founder approved on first look (commit `86f0185`)
-- ✅ **Phase 2** — Python 3.13 + FastAPI sidecar with stub canned debate. `/health`, `/analyze`, `/stream` all working with bearer-token auth.
+- ✅ **Phase 1** — Electron + Vite + React desktop shell with warm-amber theme on dark base. Founder approved on first look (commit `86f0185`)
+- ✅ **Phase 2** — Python 3.13 + FastAPI sidecar with stub canned debate. `/health`, `/analyze`, `/stream` all working with bearer-token auth (commit `a44b935`)
 
-### Next up
+### CHECKPOINT — paused at end of Phase 2 to save founder's weekly Opus quota
 
-- ⚪ **Phase 3** — wire the desktop renderer to the engine sidecar. Electron main spawns `engine/.venv/bin/python -m engine`, reads `{port, token}` from stdout, hands to renderer. Renderer hits `/analyze` for one-shot and `WS /stream` for the live debate. End state: founder clicks "Analyze NVDA" and watches the canned 16-event debate stream into the UI.
+Resume Phase 3 in a fresh session. Three phases shipped in one session is good momentum; Phase 3 is a discrete next chunk that doesn't need carry-over context beyond what's in this doc.
+
+### How to resume Phase 3 (next session, fresh Claude)
+
+**1. Verify state cold (~30s):**
+
+```bash
+git -C /Users/junaidsiddiqi/Projects/TradingAgents log --oneline -5
+# Should show a44b935 Phase 2 at the top.
+
+# Spin up the engine to confirm it still works:
+cd /Users/junaidsiddiqi/Projects/TradingAgents
+./engine/.venv/bin/python -m engine
+# Reads {port, token} from stdout. Ctrl-C to stop.
+```
+
+**2. Phase 3 work, in priority order:**
+
+| File to add | What it does |
+|---|---|
+| `desktop/electron/engine-runner.ts` | Electron main process: spawn `engine/.venv/bin/python -m engine` as a child process. Read first line of stdout, parse `{port, token}`. Emit `engine:ready` IPC event with handshake. Terminate child on app quit. |
+| Update `desktop/electron/main.ts` | Call engine-runner on app ready. Wire IPC handler `engine:get-handshake` so renderer can fetch port+token via `tradingAgentsLab.getEngineHandshake()`. |
+| Update `desktop/electron/preload.ts` | Expose `getEngineHandshake()` on the `tradingAgentsLab` bridge. |
+| `desktop/src/lib/engine-client.ts` | Typed wrapper: `analyze(req)` → POST `/analyze` with bearer; `streamDebate(req, onEvent)` → opens WS `/stream?token=...`, sends start frame, calls `onEvent` for each message. |
+| `desktop/src/components/DebateStream.tsx` | New component: shows agent messages as they arrive, grouped by phase, with the agent name + monospace content. Visual style: cards with phase color-coding (amber for analysts, neutral for risk, etc.). |
+| Update `desktop/src/pages/Analyze.tsx` | Wire the "Analyze" button to call `streamDebate()`. Render `DebateStream` below the form. Update status cards (Engine: "Running" when handshake succeeds). Disable button while a stream is in flight. |
+
+**3. End-to-end acceptance:** open the desktop app, click "Analyze" with default ticker NVDA, watch the 16 stub events stream into a debate panel over ~7s. Final card shows "HOLD" decision with confidence 0.55.
+
+**4. Phase 3 should NOT yet:**
+- Replace the engine stub with real `tradingagents` (that's Phase 2.1)
+- Add LLM provider settings (that's Phase 4)
+- Add yfinance/Alpaca data (that's Phase 5)
+- Add Clawless tap (that's Phase 6)
+
+Stay in scope. The win is "click button → watch debate stream."
+
+### Background processes possibly still running
+
+When this checkpoint was written, the Phase 1 Electron dev environment was running in the background — Vite (port 5173) + Electron main + Electron Helper renderers. Founder may close them with Cmd+Q in the window when done looking. If a fresh session inherits the system, run `pkill -f 'TradingAgents/desktop'` to clean up before re-running `npm --prefix desktop run dev`.
 
 ### Currently blocked
 
-- (none)
+- (none) — Phase 3 is fully unblocked.
 
 ## Architectural decisions (locked in)
 
