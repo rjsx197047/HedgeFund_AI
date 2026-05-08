@@ -92,6 +92,13 @@
 
 ---
 
+## Tooling + docs
+
+- 🟢 **`tools/dev-smoke.sh`** — backend smoke runner (8 assertions covering auth + CORS + every HTTP endpoint + WS contract). Run when the UI isn't streaming to rule the backend out, or as a fresh-session sanity check.
+- 🟢 **`docs/api.md`** — engine API contract documentation. Every endpoint shape, the WS event types + order, agent name canon per phase, process model, intentional out-of-scope list. Indexed in `CLAUDE.md` doc graph.
+
+---
+
 ## Cross-cutting / deferred
 
 - 🟣 OpenClaw upstream PR to register `client.id: "tradingagentslab"` constant (non-blocking — `"cli"` works).

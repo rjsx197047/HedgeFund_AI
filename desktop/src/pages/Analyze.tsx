@@ -170,6 +170,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
               type="date"
               className={styles.input}
               value={date}
+              max={new Date().toISOString().split('T')[0]}
               onChange={(e) => setDate(e.target.value)}
               disabled={isStreaming}
             />

@@ -2,7 +2,7 @@
 
 > **Read this first.** This file is the orchestration contract for any Claude (or human) working in this repo. Other docs are reference; this is the rulebook.
 >
-> **Doc graph:** [`Handover.md`](Handover.md) (where we are now) · [`backlog.md`](backlog.md) (status by phase) · [`WORKLOG.md`](WORKLOG.md) (chronological session log) · [`docs/architecture.md`](docs/architecture.md) (how it's built)
+> **Doc graph:** [`Handover.md`](Handover.md) (where we are now) · [`backlog.md`](backlog.md) (status by phase) · [`WORKLOG.md`](WORKLOG.md) (chronological session log) · [`docs/architecture.md`](docs/architecture.md) (how it's built) · [`docs/api.md`](docs/api.md) (engine API contract)
 
 ## 1. Mission
 

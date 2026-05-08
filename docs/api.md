@@ -1,0 +1,222 @@
+# TradingAgentsLab Engine API
+
+> **Audience:** Claude or human picking up the engine sidecar contract cold. Used by `desktop/src/lib/engine-client.ts` from the renderer; no other clients exist yet.
+
+The engine is a FastAPI sidecar bound to `127.0.0.1:<random-port>` with a per-process bearer token. The Electron main process spawns it on `app.whenReady` and parses `{port, token}` from the first stdout line. Every endpoint requires bearer auth. The renderer obtains the bearer via the `tradingAgentsLab.getEngineHandshake()` contextBridge.
+
+If anything in this doc disagrees with `engine/server.py`, treat the source as authoritative and update this doc.
+
+## Authentication
+
+| Transport | Mechanism |
+|---|---|
+| HTTP | `Authorization: Bearer <token>` header on every request. 401 otherwise. |
+| WebSocket | `?token=<token>` query parameter (browsers can't set headers on `WebSocket`). Server closes with code `1008 invalid token` on mismatch before `accept()`. |
+
+CORS is configured for renderer origin `http://localhost:5173` (and `http://127.0.0.1:5173`). WebSocket is not subject to CORS but is harmlessly covered.
+
+## HTTP endpoints
+
+### `GET /health`
+
+```json
+{
+  "ok": true,
+  "version": "0.0.1",
+  "uptime_seconds": 12.4,
+  "engine_state": "stub",
+  "data_provider": "yfinance"
+}
+```
+
+`engine_state` is `"stub"` while the canned debate is in use; flips to `"live"` when Phase 2.1 wires the real `tradingagents` graph. `data_provider` reports the active `BaseDataProvider.name`.
+
+### `GET /data/summary?ticker=<X>&trade_date=<YYYY-MM-DD>`
+
+Returns a compact view of recent OHLCV data anchored on `trade_date`. Response shape (`QuoteSummary` in `engine/data_providers.py`):
+
+```json
+{
+  "ticker": "NVDA",
+  "trade_date": "2026-05-08",
+  "as_of": "2026-05-07",
+  "last_close": 211.5,
+  "period_open": 177.16,
+  "period_high": 216.83,
+  "period_low": 173.66,
+  "period_change_pct": 19.38,
+  "avg_volume": 147571146.0,
+  "sessions": 24,
+  "source": "yfinance"
+}
+```
+
+| Status | Meaning |
+|---|---|
+| 200 | Summary available |
+| 404 | `DataUnavailable` — provider returned no rows (unknown ticker, all-future date range, etc.) |
+| 502 | Other provider error (network, rate limit, parse failure) |
+
+### `GET /data/news?ticker=<X>&limit=<N>` (default `limit=5`, range `[1, 20]`)
+
+```json
+{
+  "ticker": "NVDA",
+  "source": "yfinance",
+  "headlines": [
+    {
+      "title": "...",
+      "publisher": "Yahoo Finance Video",
+      "pub_date": "2026-05-07T21:04:15Z",
+      "url": "https://finance.yahoo.com/...",
+      "summary": "..."
+    }
+  ]
+}
+```
+
+Empty `headlines` list is a valid 200 response — never 404. 502 on provider errors.
+
+### `POST /analyze`
+
+Phase 2/3 stub — returns a deterministic HOLD decision regardless of input.
+
+```jsonc
+// Request
+{ "ticker": "NVDA", "trade_date": "2026-05-08" }
+
+// Response
+{
+  "ok": true,
+  "ticker": "NVDA",
+  "trade_date": "2026-05-08",
+  "decision": {
+    "action": "HOLD",
+    "confidence": 0.5,
+    "reasoning": "Stub response — engine not yet connected to tradingagents core."
+  },
+  "agents": []
+}
+```
+
+Phase 2.1 will replace the body with a real `tradingagents.graph.TradingAgentsGraph` invocation. Provider-config plumbing is **not yet defined** here — locking the wiring shape requires founder decision on the first LLM provider.
+
+## WebSocket endpoint
+
+### `WS /stream?token=<token>`
+
+Bidirectional channel for streaming the multi-agent debate.
+
+**Client opens, sends a start frame, server streams events, server closes 1000.** No keepalive ping/pong is in scope for v1.
+
+#### Client → server: start frame
+
+Sent by the client immediately after `open`:
+
+```json
+{ "ticker": "NVDA", "trade_date": "2026-05-08" }
+```
+
+The server reads exactly one start frame, then becomes write-only.
+
+#### Server → client: event stream
+
+Each line is a JSON object with a `type` discriminator. Order is deterministic.
+
+##### 1. `session.start`
+
+```json
+{ "type": "session.start", "ticker": "NVDA", "trade_date": "2026-05-08" }
+```
+
+##### 2. `data.summary` (best-effort, omitted if data fetch fails)
+
+Same shape as the `GET /data/summary` body, with a `type: "data.summary"` discriminator added.
+
+##### 3. `news.headlines` (best-effort, omitted if no headlines)
+
+Same shape as `GET /data/news` body, with `type: "news.headlines"` discriminator added.
+
+##### 4. `agent.message` × N
+
+```json
+{
+  "type": "agent.message",
+  "agent": "technical_analyst",
+  "phase": "analysts",
+  "content": "[STUB · yfinance] ..."
+}
+```
+
+Phase canonical values: `"analysts" | "researchers" | "trader" | "risk"`. Agents inside each phase, in order:
+
+| Phase | Agents |
+|---|---|
+| `analysts` | `technical_analyst`, `fundamental_analyst`, `news_analyst`, `sentiment_analyst` |
+| `researchers` | `bull_researcher`, `bear_researcher`, `research_manager` |
+| `trader` | `trader` |
+| `risk` | `risk_aggressive`, `risk_conservative`, `risk_neutral`, `portfolio_manager` |
+
+##### 5. `phase.transition`
+
+```json
+{ "type": "phase.transition", "from": "analysts", "to": "researchers" }
+```
+
+Emitted between phases.
+
+##### 6. `session.complete`
+
+```json
+{
+  "type": "session.complete",
+  "ticker": "NVDA",
+  "trade_date": "2026-05-08",
+  "decision": {
+    "action": "HOLD",
+    "confidence": 0.55,
+    "reasoning": "..."
+  }
+}
+```
+
+##### Server close
+
+Server calls `ws.close(code=1000)` after `session.complete` is sent. The renderer also treats `1005` (no-status) as clean for edge timing where the server's close frame isn't observed before the socket teardown.
+
+#### Cancellation
+
+Client can call `WebSocket.close()` at any time; the server's `WebSocketDisconnect` handler returns cleanly without further frames. The renderer's `streamDebate()` wrapper exposes a `{close, done}` handle for this.
+
+## Process model
+
+### Spawn (Electron main → engine)
+
+```
+$REPO/desktop/electron/engine-runner.ts
+  spawn("$REPO/engine/.venv/bin/python", ["-m", "engine"], { cwd: "$REPO" })
+  └── child.stdout — first line is JSON {port, token}; subsequent lines are uvicorn logs
+  └── child.stderr — uvicorn logs (teed to main process console with [engine] prefix)
+```
+
+`cwd: $REPO` is required so `python -m engine` resolves the `engine` package via `sys.path[0]`.
+
+### Handshake (renderer → main → engine)
+
+The Electron main process awaits `child.stdout.once('data')`, parses it once, and caches the resulting `Promise<EngineHandshake>`. The renderer fetches the cached handshake via the IPC channel `engine:get-handshake`, so the renderer never sees uvicorn's logs.
+
+### Teardown
+
+`stopEngine()` is called from `before-quit` and `window-all-closed`. It sends `SIGTERM` to the child. uvicorn handles the signal and shuts down the asyncio loop cleanly.
+
+## Smoke test
+
+`tools/dev-smoke.sh [TICKER] [TRADE_DATE]` runs all the above contract checks end-to-end without involving Electron or the renderer. Use it to rule the backend out when the UI isn't streaming, or as a fresh-session sanity check after a reboot.
+
+## Out of scope (intentional gaps)
+
+- Provider config plumbing (LLM API keys → engine) — held for Phase 2.1; depends on founder's first-provider pick.
+- Multi-session orchestration — engine is per-session. A session manager + persistence is Phase 7.
+- Authentication beyond bearer — sidecar is `127.0.0.1`-bound; no remote callers.
+- Rate limiting / quotas — irrelevant until real LLM providers are wired.
+- Versioned protocol — single canonical version today. When it changes, the start frame will gain a `protocol_version` field and the server will reject mismatches with close code `1008`.

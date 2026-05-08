@@ -40,7 +40,8 @@ See `WORKLOG.md` for the full chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
-<menu/shortcuts commit lands here>
+<tooling/docs commit lands here>
+0de893a  Stretch: keyboard shortcuts + Electron app menu
 a984179  Stretch: yfinance news headlines in WS stream + UI news card
 f3b9543  Phase 4 main: secret storage + Settings UI wiring
 331b937  Finalize Handover + WORKLOG for end of autonomous block

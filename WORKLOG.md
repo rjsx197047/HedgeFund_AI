@@ -6,6 +6,35 @@
 
 ---
 
+## 2026-05-08 (continued) — tooling + docs + small UX cap
+
+**Goal:** Wrap the autonomous block with durable assets — a one-shot smoke script future sessions can run instead of curl-by-hand, and a contract doc so a fresh Claude doesn't have to re-derive the engine API by reading source.
+
+**Shipped:**
+
+- New: `tools/dev-smoke.sh` (executable). Spawns the engine sidecar, parses the handshake, and runs 8 assertions against the contract:
+  1. `/health` returns 401 without bearer
+  2. `/health` returns 200 + `data_provider` with bearer
+  3. `OPTIONS /analyze` CORS preflight from `http://localhost:5173` returns 200
+  4. `POST /analyze` returns the `HOLD` stub
+  5. `GET /data/summary` returns real OHLCV (`last_close > 0`, `sessions ≥ 1`)
+  6. `GET /data/summary` returns 404 on bogus ticker
+  7. `GET /data/news` returns a list
+  8. `WS /stream` sends ≥16 events covering all 4 phases, ends with `session.complete` and clean close 1000
+  - Tears down the engine on exit (trap). Exit code 0 on all-pass, non-zero otherwise. Verified all 8 pass against current commit.
+- New: `docs/api.md` — full engine API contract: auth, every HTTP endpoint shape, WS event types and order, agent name canon per phase, process model (spawn / handshake / teardown), smoke entry point, and the explicit out-of-scope list. ~6 KB; expected to be the first thing a fresh Claude session reads after CLAUDE.md.
+- Updated: `CLAUDE.md` doc graph adds `docs/api.md`.
+- Updated: `desktop/src/pages/Analyze.tsx` — date input gains `max=<today>` so users can't request future bars (yfinance returns empty for them; this is a small UX cap, not a hard guard).
+
+**Verification:**
+
+- `bash tools/dev-smoke.sh NVDA 2026-05-08` → 8 passed, 0 failed
+- npm run type-check clean
+
+**Commits:** TBD (one bundled commit).
+
+---
+
 ## 2026-05-08 (continued) — keyboard shortcuts + Electron app menu
 
 **Goal:** Make the desktop app feel like a real desktop app — proper menu bar with accelerators, page-level shortcuts for the streaming flow.
