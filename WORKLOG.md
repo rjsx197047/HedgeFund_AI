@@ -42,7 +42,9 @@
 
 1. **Phase 4 UI spike** (commit `e716d86`) — Settings page reachable from the sidebar with hash-based routing, 5 tabs (LLM Providers, Data Providers, Broker, Clawless, About) showing the provider matrix with disabled `Configure` buttons and a phase-guard footer. Watchlist + History pages render `ComingSoon` placeholders. **No keytar / native dep / secret storage** — that's gated on founder check-in per advisor scope guard.
 
-2. **Phase 5 part 1: yfinance data integration** (commit hash to follow) — engine sidecar now ships a `BaseDataProvider` Protocol + `YFinanceProvider` default. Real NVDA data verified: $211.50 last close, +19.38% over 24 sessions, 147M avg volume. New endpoints + WS event:
+3. **Phase 5 polish: Stop button + accurate Data status + transcript export** (commit hash to follow) — three small UX wins in one commit. Stop button replaces Analyze while streaming and calls `handle.close()` to abort the WS. The Data status card now reads `/health.data_provider` after handshake, flipping from "Pending…" to "yfinance · live" with a green dot. A "Copy transcript (Markdown)" button appears once `session.complete` lands; clicking copies a structured Markdown transcript (header, decision, data summary, all phases, all agent messages) to the clipboard with a transient "Copied ✓" affordance.
+
+2. **Phase 5 part 1: yfinance data integration** (commit `5273904`) — engine sidecar now ships a `BaseDataProvider` Protocol + `YFinanceProvider` default. Real NVDA data verified: $211.50 last close, +19.38% over 24 sessions, 147M avg volume. New endpoints + WS event:
    - `GET /data/summary?ticker=X&trade_date=Y` returns real OHLCV summary or 404 on unknown ticker
    - WS `/stream` emits a `data.summary` event before the canned debate
    - analyst/researcher/trader messages inject real numbers — e.g., technical_analyst now reads "*last close 211.50, 19.38% up over the 24-session window (range 173.66–216.83). Avg daily volume ≈ 147,571,146.*"

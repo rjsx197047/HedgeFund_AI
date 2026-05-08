@@ -105,6 +105,49 @@
   cursor: not-allowed;
 }
 
+.buttonStop {
+  background: var(--tal-bg-overlay);
+  color: var(--tal-text-primary);
+  border: 1px solid var(--tal-border-default);
+}
+
+.buttonStop:hover {
+  background: var(--tal-bg-elevated);
+  border-color: var(--tal-negative);
+  color: var(--tal-negative);
+  transform: translateY(-1px);
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tal-space-3);
+  flex-wrap: wrap;
+}
+
+.transcriptButton {
+  background: transparent;
+  color: var(--tal-text-secondary);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-2) var(--tal-space-4);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background var(--tal-duration-fast) var(--tal-ease-out),
+              color var(--tal-duration-fast) var(--tal-ease-out),
+              border-color var(--tal-duration-fast) var(--tal-ease-out);
+}
+
+.transcriptButton:hover {
+  background: var(--tal-accent-muted);
+  color: var(--tal-accent-strong);
+  border-color: var(--tal-accent-border);
+}
+
 .helper {
   margin: 0;
   font-size: var(--tal-text-xs);

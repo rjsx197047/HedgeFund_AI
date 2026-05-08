@@ -69,6 +69,25 @@ export async function getHandshake(): Promise<EngineHandshake> {
   return handshake();
 }
 
+export interface HealthInfo {
+  ok: boolean;
+  version: string;
+  uptime_seconds: number;
+  engine_state: string;
+  data_provider?: string;
+}
+
+export async function getHealth(): Promise<HealthInfo> {
+  const { port, token } = await handshake();
+  const res = await fetch(`http://127.0.0.1:${port}/health`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw new Error(`/health failed: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as HealthInfo;
+}
+
 export async function analyze(req: AnalyzeRequest): Promise<AnalyzeResponse> {
   const { port, token } = await handshake();
   const res = await fetch(`http://127.0.0.1:${port}/analyze`, {
