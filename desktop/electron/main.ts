@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { startEngine, stopEngine, type EngineHandshake } from './engine-runner';
+import { registerAppMenu } from './menu';
 import {
   deleteSecret,
   getSecret,
@@ -75,6 +76,8 @@ app.whenReady().then(() => {
   startEngine().catch((err) => {
     console.error('[engine] failed to start:', err);
   });
+
+  registerAppMenu(() => win);
 
   createWindow();
 

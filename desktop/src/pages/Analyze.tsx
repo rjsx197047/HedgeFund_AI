@@ -12,7 +12,12 @@ import { buildTranscriptMarkdown } from '../lib/transcript';
 
 type EngineStatus = 'pending' | 'running' | 'error';
 
-function Analyze() {
+interface AnalyzeProps {
+  /** Increments when the App menu fires "New analysis" — clears prior results. */
+  resetSignal?: number;
+}
+
+function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   const [ticker, setTicker] = useState('NVDA');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [engineStatus, setEngineStatus] = useState<EngineStatus>('pending');
@@ -23,6 +28,8 @@ function Analyze() {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const handleRef = useRef<StreamHandle | null>(null);
+  const isStreamingRef = useRef(false);
+  const engineReadyRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,12 +38,14 @@ function Analyze() {
       .then((health) => {
         if (cancelled) return;
         setEngineStatus('running');
+        engineReadyRef.current = true;
         setEngineError(null);
         setDataProvider(health.data_provider ?? null);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
           setEngineStatus('error');
+          engineReadyRef.current = false;
           setEngineError(err instanceof Error ? err.message : String(err));
         }
       });
@@ -45,11 +54,21 @@ function Analyze() {
     };
   }, []);
 
-  const onAnalyze = async () => {
-    if (engineStatus !== 'running' || isStreaming) return;
+  // Reset state when the menu fires "New analysis".
+  useEffect(() => {
+    if (resetSignal === 0) return;
+    handleRef.current?.close();
     setEvents([]);
     setStreamError(null);
     setCopied(false);
+  }, [resetSignal]);
+
+  const onAnalyze = async () => {
+    if (!engineReadyRef.current || isStreamingRef.current) return;
+    setEvents([]);
+    setStreamError(null);
+    setCopied(false);
+    isStreamingRef.current = true;
     setIsStreaming(true);
     try {
       const handle = await streamDebate(
@@ -65,6 +84,7 @@ function Analyze() {
       setStreamError(err instanceof Error ? err.message : 'stream failed');
     } finally {
       handleRef.current = null;
+      isStreamingRef.current = false;
       setIsStreaming(false);
     }
   };
@@ -72,6 +92,36 @@ function Analyze() {
   const onStop = () => {
     handleRef.current?.close();
   };
+
+  // Listen for the App menu "Stop streaming" command.
+  useEffect(() => {
+    const bridge = window.tradingAgentsLab;
+    if (!bridge?.onMenuCommand) return;
+    return bridge.onMenuCommand('menu:stop-stream', () => {
+      handleRef.current?.close();
+    });
+  }, []);
+
+  // Page-level keyboard shortcuts:
+  //   Cmd/Ctrl + Enter → run analysis
+  //   Cmd/Ctrl + .     → stop streaming
+  // (Cmd+, for Settings + Cmd+1..3 for nav are handled by the App menu.)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (engineReadyRef.current && !isStreamingRef.current) onAnalyze();
+      } else if (e.key === '.') {
+        e.preventDefault();
+        handleRef.current?.close();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker, date]);
 
   const onCopyTranscript = async () => {
     if (!events.length) return;

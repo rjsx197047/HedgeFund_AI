@@ -22,6 +22,8 @@ export interface SecretsAvailability {
   filePath: string;
 }
 
+type MenuChannel = 'menu:navigate' | 'menu:new-analysis' | 'menu:stop-stream';
+
 contextBridge.exposeInMainWorld('tradingAgentsLab', {
   version: '0.0.1',
   platform: process.platform,
@@ -37,5 +39,14 @@ contextBridge.exposeInMainWorld('tradingAgentsLab', {
     list: (): Promise<SecretListing[]> => ipcRenderer.invoke('secrets:list'),
     delete: (key: string): Promise<boolean> =>
       ipcRenderer.invoke('secrets:delete', key),
+  },
+  onMenuCommand: (
+    channel: MenuChannel,
+    handler: (...args: unknown[]) => void,
+  ): (() => void) => {
+    const wrapped = (_evt: Electron.IpcRendererEvent, ...args: unknown[]) =>
+      handler(...args);
+    ipcRenderer.on(channel, wrapped);
+    return () => ipcRenderer.removeListener(channel, wrapped);
   },
 });

@@ -15,11 +15,32 @@ function parseHash(hash: string): Route {
 
 function App() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
+  const [newAnalysisTick, setNewAnalysisTick] = useState(0);
 
   useEffect(() => {
     const onHashChange = () => setRoute(parseHash(window.location.hash));
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  // App menu accelerators come in via IPC.
+  useEffect(() => {
+    const bridge = window.tradingAgentsLab;
+    if (!bridge?.onMenuCommand) return;
+    const unsubNav = bridge.onMenuCommand('menu:navigate', (...args: unknown[]) => {
+      const target = args[0];
+      if (typeof target === 'string' && ROUTES.includes(target as Route)) {
+        window.location.hash = `#${target}`;
+      }
+    });
+    const unsubNew = bridge.onMenuCommand('menu:new-analysis', () => {
+      window.location.hash = '#analyze';
+      setNewAnalysisTick((n) => n + 1);
+    });
+    return () => {
+      unsubNav();
+      unsubNew();
+    };
   }, []);
 
   const navItem = (target: Route, label: string) => {
@@ -56,7 +77,7 @@ function App() {
       </nav>
 
       <main className={`${styles.main} app-no-drag`}>
-        {route === 'analyze' && <Analyze />}
+        {route === 'analyze' && <Analyze resetSignal={newAnalysisTick} />}
         {route === 'watchlist' && (
           <ComingSoon
             title="Watchlist"
@@ -73,7 +94,7 @@ function App() {
       </main>
 
       <footer className={styles.footer}>
-        <span>v0.0.1 · Phase 3 · Educational lab + paper trading</span>
+        <span>v0.0.1 · Phase 4 · Educational lab + paper trading</span>
         <span className={styles.footerRight}>This is not investment advice.</span>
       </footer>
     </div>

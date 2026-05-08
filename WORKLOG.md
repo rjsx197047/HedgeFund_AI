@@ -6,6 +6,38 @@
 
 ---
 
+## 2026-05-08 (continued) — keyboard shortcuts + Electron app menu
+
+**Goal:** Make the desktop app feel like a real desktop app — proper menu bar with accelerators, page-level shortcuts for the streaming flow.
+
+**Shipped:**
+
+- New: `desktop/electron/menu.ts` — full app menu template with mac-aware structure (App / File / Edit / Go / View / Window / Help on macOS; same minus App on others). Accelerators wired:
+  - **Cmd/Ctrl + N** — File → New analysis (clears prior results, focuses Analyze)
+  - **Cmd/Ctrl + .** — File → Stop streaming
+  - **Cmd/Ctrl + 1/2/3** — Go → Analyze / Watchlist / History
+  - **Cmd/Ctrl + ,** — Go → Settings (also under macOS App menu as the conventional Settings…)
+  - Standard cut/copy/paste, reload, devtools, zoom, fullscreen, minimize/zoom under their conventional menus
+  - Help → opens repo URL or new-issue URL via `shell.openExternal`
+- Updated: `main.ts` registers the menu via `registerAppMenu(() => win)` on `whenReady`. Menu actions send IPC messages (`menu:navigate`, `menu:new-analysis`, `menu:stop-stream`) to the focused window.
+- Updated: `preload.ts` adds `tradingAgentsLab.onMenuCommand(channel, handler) => unsubscribe` returning a teardown so the renderer can drop listeners on unmount.
+- Updated: `vite-env.d.ts` types the menu bridge.
+- Updated: `App.tsx` wires the menu bridge — `menu:navigate` updates the route, `menu:new-analysis` increments a `resetSignal` prop forwarded to `Analyze`.
+- Updated: `Analyze.tsx`:
+  - Accepts `resetSignal` prop; bumping it clears `events`, `streamError`, `copied` and aborts an in-flight stream.
+  - Listens for `menu:stop-stream` and calls `handle.close()`.
+  - Page-level `keydown` handler binds **Cmd+Enter to run** and **Cmd+. to stop**. Engine-ready + streaming state is read from refs to avoid stale-closure issues across the keydown lifetime.
+  - Footer label bumped to `Phase 4`.
+
+**Verification:**
+
+- npm run type-check + production build clean (main.js 4.99 KB → 7.96 KB to fit menu module + accelerator template)
+- IPC bridge surface remains backward-compatible (`tradingAgentsLab.onMenuCommand` is additive)
+
+**Commits:** TBD (one bundled commit with menu + main + preload + types + App + Analyze + docs).
+
+---
+
 ## 2026-05-08 (continued, second autonomous block) — news headlines via yfinance
 
 **Goal:** Per advisor, the highest-leverage stretch after Phase 4 was real news headlines via `yfinance.Ticker.news` — additive, no new deps, no architectural commitment.

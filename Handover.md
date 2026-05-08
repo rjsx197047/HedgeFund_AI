@@ -40,7 +40,8 @@ See `WORKLOG.md` for the full chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
-<news headlines commit lands here>
+<menu/shortcuts commit lands here>
+a984179  Stretch: yfinance news headlines in WS stream + UI news card
 f3b9543  Phase 4 main: secret storage + Settings UI wiring
 331b937  Finalize Handover + WORKLOG for end of autonomous block
 de030ee  Phase 5 polish: Stop button, accurate Data status, transcript export

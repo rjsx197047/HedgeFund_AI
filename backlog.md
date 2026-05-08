@@ -88,6 +88,7 @@
 ## Stretch — feature spikes (additive, no architectural commitments)
 
 - 🟢 **News headlines via yfinance** — `Headline` dataclass + `news_headlines()` on the data provider Protocol, `GET /data/news` endpoint, `news.headlines` WS event before the debate, news_analyst stub now bullets real Yahoo Finance headlines, renderer surfaces a linked News card above the debate, transcript export includes the news section.
+- 🟢 **Keyboard shortcuts + Electron app menu** — full menu bar (File / Edit / Go / View / Window / Help, plus App on macOS). Accelerators: Cmd+N new analysis, Cmd+. stop, Cmd+, settings, Cmd+1/2/3 nav. Page-level Cmd+Enter to run analysis. Help links to GitHub repo + issues page.
 
 ---
 

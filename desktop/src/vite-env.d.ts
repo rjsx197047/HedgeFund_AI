@@ -35,11 +35,17 @@ interface SecretsBridge {
   delete: (key: string) => Promise<boolean>;
 }
 
+type MenuChannel = 'menu:navigate' | 'menu:new-analysis' | 'menu:stop-stream';
+
 interface TradingAgentsLabBridge {
   version: string;
   platform: NodeJS.Platform;
   getEngineHandshake: () => Promise<EngineHandshakeBridge>;
   secrets: SecretsBridge;
+  onMenuCommand: (
+    channel: MenuChannel,
+    handler: (...args: unknown[]) => void,
+  ) => () => void;
 }
 
 declare global {
