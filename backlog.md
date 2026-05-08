@@ -35,15 +35,17 @@
 - 🟢 Acceptance verified: `/health` 200 with auth / 401 without; `/analyze` returns stub decision; `/stream` streams 16 events with realistic phasing.
 - ⚪ Phase 2.1 (later): replace stub debate with real `tradingagents` core integration. Out of MVP scope.
 
-## Phase 3 — End-to-end demo (next deliverable)
+## Phase 3 — End-to-end demo ✅ DONE
 
-- ⚪ `desktop/electron/engine-runner.ts` — spawn `engine/.venv/bin/python -m engine`, parse first-line `{port, token}` handshake, terminate child on app quit.
-- ⚪ Update `desktop/electron/main.ts` — call engine-runner on app ready; expose `engine:get-handshake` IPC handler.
-- ⚪ Update `desktop/electron/preload.ts` — expose `getEngineHandshake()` on the `tradingAgentsLab` bridge.
-- ⚪ `desktop/src/lib/engine-client.ts` — typed wrapper: `analyze(req)` → POST `/analyze` with bearer; `streamDebate(req, onEvent)` → opens `WS /stream?token=...`, sends start frame, dispatches each event.
-- ⚪ `desktop/src/components/DebateStream.tsx` — render streamed agent messages, grouped by phase, with agent name + monospace content.
-- ⚪ Update `desktop/src/pages/Analyze.tsx` — wire "Analyze" button to `streamDebate()`, render `DebateStream`, update status cards (Engine: "Running" once handshake succeeds), disable button while a stream is in flight.
-- ⚪ Acceptance: founder clicks "Analyze NVDA" and watches the 16 canned debate events stream over ~7s, ending on HOLD with confidence 0.55. **Out of scope for Phase 3:** real LLM calls, settings page, yfinance/Alpaca, Clawless tap (those are Phases 2.1, 4, 5, 6).
+- 🟢 `desktop/electron/engine-runner.ts` — spawns `engine/.venv/bin/python -m engine` with `cwd: repoRoot`, parses first-line `{port, token}` via `stdout.once('data')`, tees uvicorn stderr with `[engine]` prefix, kills child on `before-quit` and `window-all-closed`.
+- 🟢 `desktop/electron/main.ts` — calls `startEngine()` on `whenReady`, exposes `engine:get-handshake` IPC handler that awaits the cached handshake promise.
+- 🟢 `desktop/electron/preload.ts` — `tradingAgentsLab.getEngineHandshake()` on the contextBridge, typed against the `EngineHandshake` interface.
+- 🟢 `desktop/src/lib/engine-client.ts` — typed wrapper: `getHandshake()` (cached), `analyze(req)` (POST `/analyze` with bearer), `streamDebate(req, onEvent, onError)` (WS `/stream?token=...`, sends start frame, fires `onEvent` per message, returns `{close, done}` handle).
+- 🟢 `desktop/src/components/DebateStream.tsx` + module.css — renders by phase with color-coded left borders, phase-aware labels, animated streaming badge, prominent decision card with action color-coding (HOLD = amber, BUY = green, SELL = red).
+- 🟢 `desktop/src/pages/Analyze.tsx` — Analyze button enabled once engine handshake lands, "Analyzing…" while in flight, status card flips Engine to "Running" / "Error" / "Starting…" appropriately, error banner on stream failure.
+- 🟢 `engine/server.py` — added `CORSMiddleware` for `http://localhost:5173` (renderer origin). Required for `/analyze` POST preflight; WS `/stream` is unaffected.
+- 🟢 `desktop/src/vite-env.d.ts` — added ambient declarations for `*.module.css` and the `tradingAgentsLab` window bridge (Phase 1 had been failing type-check silently on the CSS imports — fixed in passing).
+- 🟢 Acceptance verified: type-check passes, vite production build passes (155 KB JS gzipped 50 KB), engine endpoint contract green (`/health` 401/200, CORS preflight 200, `/analyze` returns HOLD, WS streams 17 events ending with HOLD@0.55 over ~7s, clean close 1000), Electron successfully spawns engine via `app.getAppPath()` path resolution. **Final UI click-through pending founder review** — no Electron Playwright driver was set up to drive the button.
 
 ## Phase 4 — Settings page
 

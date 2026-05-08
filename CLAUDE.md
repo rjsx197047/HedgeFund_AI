@@ -2,7 +2,7 @@
 
 > **Read this first.** This file is the orchestration contract for any Claude (or human) working in this repo. Other docs are reference; this is the rulebook.
 >
-> **Doc graph:** [`Handover.md`](Handover.md) (where we are now) · [`backlog.md`](backlog.md) (what's next) · [`docs/architecture.md`](docs/architecture.md) (how it's built)
+> **Doc graph:** [`Handover.md`](Handover.md) (where we are now) · [`backlog.md`](backlog.md) (status by phase) · [`WORKLOG.md`](WORKLOG.md) (chronological session log) · [`docs/architecture.md`](docs/architecture.md) (how it's built)
 
 ## 1. Mission
 
@@ -48,7 +48,7 @@ It uses multi-agent LLM analysis (analyst → researcher → trader → risk-man
 
 - **At start:** read this file + Handover.md + check inbox via `mcp__claudelink__read_inbox` (register as `trading-agents-lab` if not already registered).
 - **As you work:** update `backlog.md` when items move (pending → in progress → done) and add new items as you discover them.
-- **At end:** update `Handover.md` with what changed today, what's pending, what the next session should pick up. Future-you (or a fresh Claude) will thank you.
+- **At end:** update `Handover.md` (current state, blockers, where to pick up) AND prepend a fresh entry to `WORKLOG.md` (date header, what shipped today, commit hashes, next-session-opens-with). Future-you (or a fresh Claude) will thank you.
 
 ### Commits
 

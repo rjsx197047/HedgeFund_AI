@@ -227,3 +227,9 @@ desktop/.vite/
 *.tsbuildinfo
 engine/.venv/
 engine/__pycache__/
+
+# The Python `lib/` rule above (line ~17) was inherited from upstream
+# TradingAgents and shadows desktop application source under desktop/src/lib/.
+# Re-include it explicitly.
+!desktop/src/lib/
+!desktop/src/lib/**

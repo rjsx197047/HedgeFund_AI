@@ -24,6 +24,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from . import __version__
@@ -39,6 +40,18 @@ def build_app(*, token: str) -> FastAPI:
         docs_url=None,        # Disable Swagger — sidecar is private
         redoc_url=None,
         openapi_url=None,
+    )
+
+    # Renderer runs on http://localhost:5173 in dev (Vite). Sidecar binds to
+    # 127.0.0.1 only, so this isn't a security boundary — it's just the browser
+    # CORS preflight requirement for cross-origin fetches. WebSocket /stream is
+    # unaffected by CORS but harmless to allow.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     def require_bearer(authorization: Annotated[str | None, Header()] = None) -> None:

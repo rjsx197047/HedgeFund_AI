@@ -1,6 +1,6 @@
 # TradingAgentsLab — Handover
 
-> **Purpose:** Session-to-session context bridge. If you (Claude or human) are picking this up cold, read this first. Detailed design in [`docs/architecture.md`](docs/architecture.md). Phased work items in [`backlog.md`](backlog.md). Orchestration rules in [`CLAUDE.md`](CLAUDE.md).
+> **Purpose:** Session-to-session context bridge. If you (Claude or human) are picking this up cold, read this first. Status by phase in [`backlog.md`](backlog.md). Chronological session log in [`WORKLOG.md`](WORKLOG.md). Detailed design in [`docs/architecture.md`](docs/architecture.md). Orchestration rules in [`CLAUDE.md`](CLAUDE.md).
 
 ## What this project is
 
@@ -12,104 +12,63 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-07, end of session — pre-reboot)
+## Where we are right now (as of 2026-05-08 — Phase 3 shipping)
 
-### Session shutdown checklist
+### Session in progress
 
-- ✅ All TradingAgentsLab background processes killed (Phase 1 Electron + two stray engine sidecars terminated before reboot)
-- ✅ Git working tree clean, on `main`, up to date with `origin/main`
-- ✅ No uncommitted edits, no untracked files
-- ✅ Founder closing terminal + rebooting machine after this checkpoint
+- ✅ Founder rebooted machine cleanly (yesterday's wrap-up worked — `e527632` on origin/main)
+- ✅ Registered as `trading-agents-lab` developer on ClaudeLink
+- ✅ Phase 3 shipped — renderer ↔ engine wired end-to-end (see Phase 3 entry in `WORKLOG.md` and `backlog.md`)
+- ⏳ Continuing into Phase 4 spike (settings page scaffolding) per advisor green-light for unsupervised stretch scope
+- ⏳ Founder away ~4-5 hours; report on return
 
-### Done — Phase 0 → Phase 2 (all shipped 2026-05-07)
+### Done — Phase 0 → Phase 3
 
-- ✅ Forked upstream into `jaysidd/TradingAgentsLab`
-- ✅ Dual-licensed (AGPL-3.0 with Apache 2.0 attribution preserved as `LICENSE-APACHE` + `NOTICE`)
-- ✅ Apache-style ICLA (`CLA.md`) granting maintainer dual-licensing rights
-- ✅ Git remotes: `origin` → TradingAgentsLab, `upstream` → TauricResearch
-- ✅ Pushed to GitHub — repo public, AGPL-3.0 detected
-- ✅ Gateway probe (`tools/clawless-probe.mjs`) — multi-client OpenClaw access **verified**: TradingAgentsLab connected as a second client alongside Clawless desktop, ran `connect` + `health`, full agent inventory returned
-- ✅ Architecture sketch ratified by founder (Pattern 3 — fully standalone, optional Clawless tap)
-- ✅ **Phase 0** — orchestration docs + gateway probe (commit `f0125b8`)
-- ✅ **Phase 1** — Electron + Vite + React desktop shell with warm-amber theme on dark base. Founder approved on first look (commit `86f0185`)
-- ✅ **Phase 2** — Python 3.13 + FastAPI sidecar with stub canned debate. `/health`, `/analyze`, `/stream` all working with bearer-token auth (commit `a44b935`)
-- ✅ **Handover checkpoint** at end of Phase 2 (commit `81f7414`)
+**Yesterday (2026-05-07):** Phases 0, 1, 2 + license setup. See `WORKLOG.md` for the full chronology.
 
-### Last 5 commits on `main` (all on `origin/main` — github.com/jaysidd/TradingAgentsLab)
+**Today (2026-05-08):** Phase 3 — end-to-end debate streaming.
+
+- ✅ `desktop/electron/engine-runner.ts` — spawns sidecar with correct cwd, parses handshake from first stdout line, kills child on quit
+- ✅ Main + preload IPC: `engine:get-handshake` channel, `tradingAgentsLab.getEngineHandshake()` on contextBridge
+- ✅ `desktop/src/lib/engine-client.ts` — typed `analyze()` + `streamDebate()` with `?token=` query auth on WS
+- ✅ `desktop/src/components/DebateStream.tsx` — phase-grouped agent messages, color-coded borders, animated streaming badge, decision card with action-aware coloring
+- ✅ `desktop/src/pages/Analyze.tsx` — Analyze button wired, status card flips to Running/Error/Starting, error banner on stream failure
+- ✅ `engine/server.py` — `CORSMiddleware` for `http://localhost:5173` (required for `/analyze` cross-origin POST)
+- ✅ `desktop/src/vite-env.d.ts` — ambient types for `*.module.css` + window bridge (Phase 1 had been silently failing type-check; fixed in passing)
+- ✅ Smoke verified: type-check + vite build + engine endpoint contract (curl + WS) + Electron successfully spawns sidecar via `app.getAppPath()` path resolution. Final UI click-through pending founder review.
+
+### Recent commits on `main` (newest first)
 
 ```
+<Phase 3 commit lands here>
+e527632  Pre-reboot wrap-up: refresh Handover + backlog
 81f7414  Handover checkpoint at end of Phase 2
 a44b935  Phase 2: Python sidecar with FastAPI + stub canned debate
 86f0185  Phase 1: scaffold Electron + Vite + React desktop shell
 f0125b8  Phase 0: scaffold orchestration docs and gateway probe
-f68a7d7  Re-license fork as TradingAgentsLab under AGPL-3.0 + CLA
 ```
 
-### CHECKPOINT — paused at end of Phase 2 to save founder's weekly Opus quota
+### What founder should do first when they return
 
-Resume Phase 3 in a fresh session. Three phases shipped in one session is good momentum; Phase 3 is a discrete next chunk that doesn't need carry-over context beyond what's in this doc.
-
-### First moves on the next (post-reboot) session — Claude or founder
-
-1. **Read this file + [`CLAUDE.md`](CLAUDE.md) + [`backlog.md`](backlog.md).** Skim [`docs/architecture.md`](docs/architecture.md) §4 (Process / IPC topology — covers the Electron-spawns-sidecar handshake) for Phase 3 context.
-2. **Check inbox:** `mcp__claudelink__read_inbox` (register as `trading-agents-lab` if not already registered). Clawless Advisor may have replied on deferred items (none currently expected — see "Pending external" below).
-3. **Check memory:** `~/.claude/projects/-Users-junaidsiddiqi-Projects-TradingAgents/memory/` — `MEMORY.md` is the index.
-4. **Verify state cold (~30s):**
-   ```bash
-   git -C /Users/junaidsiddiqi/Projects/TradingAgents log --oneline -5
-   # Should show 81f7414 Handover checkpoint at the top, working tree clean.
-   git -C /Users/junaidsiddiqi/Projects/TradingAgents status
-   ```
-5. **Smoke-test the engine sidecar still runs:**
-   ```bash
-   cd /Users/junaidsiddiqi/Projects/TradingAgents
-   ./engine/.venv/bin/python -m engine
-   # Prints {"port": <int>, "token": "..."} on first stdout line.
-   # Ctrl-C to stop.
-   ```
-6. **Smoke-test the desktop shell still launches** (optional — Phase 1 was visually approved, code untouched since):
+1. **Pull latest:** `git -C /Users/junaidsiddiqi/Projects/TradingAgents pull` (commits will be on origin/main).
+2. **Read `WORKLOG.md`** for the chronological session report and `backlog.md` for the punch-list-style "what's done / what's left."
+3. **Smoke-test Phase 3 end-to-end** with the actual UI:
    ```bash
    npm --prefix /Users/junaidsiddiqi/Projects/TradingAgents/desktop run dev
    ```
-7. **Then begin Phase 3** following the table below.
-
-### Phase 3 work plan (next session deliverable)
-
-**Phase 3 file plan, in priority order:**
-
-| File to add | What it does |
-|---|---|
-| `desktop/electron/engine-runner.ts` | Electron main process: spawn `engine/.venv/bin/python -m engine` as a child process. Read first line of stdout, parse `{port, token}`. Emit `engine:ready` IPC event with handshake. Terminate child on app quit. |
-| Update `desktop/electron/main.ts` | Call engine-runner on app ready. Wire IPC handler `engine:get-handshake` so renderer can fetch port+token via `tradingAgentsLab.getEngineHandshake()`. |
-| Update `desktop/electron/preload.ts` | Expose `getEngineHandshake()` on the `tradingAgentsLab` bridge. |
-| `desktop/src/lib/engine-client.ts` | Typed wrapper: `analyze(req)` → POST `/analyze` with bearer; `streamDebate(req, onEvent)` → opens WS `/stream?token=...`, sends start frame, calls `onEvent` for each message. |
-| `desktop/src/components/DebateStream.tsx` | New component: shows agent messages as they arrive, grouped by phase, with the agent name + monospace content. Visual style: cards with phase color-coding (amber for analysts, neutral for risk, etc.). |
-| Update `desktop/src/pages/Analyze.tsx` | Wire the "Analyze" button to call `streamDebate()`. Render `DebateStream` below the form. Update status cards (Engine: "Running" when handshake succeeds). Disable button while a stream is in flight. |
-
-**End-to-end acceptance:** open the desktop app, click "Analyze" with default ticker NVDA, watch the 16 stub events stream into a debate panel over ~7s. Final card shows "HOLD" decision with confidence 0.55.
-
-**Phase 3 should NOT yet:**
-- Replace the engine stub with real `tradingagents` (that's Phase 2.1)
-- Add LLM provider settings (that's Phase 4)
-- Add yfinance/Alpaca data (that's Phase 5)
-- Add Clawless tap (that's Phase 6)
-
-Stay in scope. The win is "click button → watch debate stream."
-
-### Background processes (state at session close)
-
-All TradingAgentsLab background processes were terminated before this handover was written. The reboot will clear anything we missed. After reboot, **nothing** TradingAgentsLab-related will be running — start fresh with the smoke tests above.
+   Wait for the window to open. Engine status card should flip from "Starting…" to "Running" (green dot) within 2-3s. Click **Analyze** with default ticker `NVDA`. Expect: 17 events stream in over ~7s, ending with a decision card showing **HOLD** at **55%** confidence. Cmd+Q to close when done.
+4. **If Phase 3 looks good**, the next discrete chunks are: Phase 4 (settings + keychain — needs founder's API keys to integrate fully), Phase 2.1 (replace stub with real `tradingagents` core — needs decision on first LLM provider), or Phase 5 (yfinance/Alpaca data + paper-trading broker).
 
 ### Currently blocked
 
-- (none) — Phase 3 is fully unblocked.
+- (none) — Phase 3 done; Phase 4 spike runway depends on whether the agent reached it before the founder's return (see WORKLOG.md).
 
 ### Pending external / deferred
 
-- 🟣 OpenClaw upstream PR adding `client.id: "tradingagentslab"` constant — non-blocking; `"cli"` works today (see verified facts below)
+- 🟣 OpenClaw upstream PR adding `client.id: "tradingagentslab"` constant — non-blocking; `"cli"` works today
 - 🟣 Massive.com / Polygon-class data provider — deferred until a feature requires it
 - 🟣 Distribution + auto-update — Phase 7
-- 🟣 No outstanding ClaudeLink threads to Clawless Advisor at session close (all questions resolved 2026-05-07)
+- 🟣 No outstanding ClaudeLink threads to Clawless Advisor
 
 ## Architectural decisions (locked in)
 

@@ -1,6 +1,7 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { startEngine, stopEngine, type EngineHandshake } from './engine-runner';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,7 +41,17 @@ function createWindow() {
   }
 }
 
+ipcMain.handle('engine:get-handshake', async (): Promise<EngineHandshake> => {
+  return startEngine();
+});
+
 app.whenReady().then(() => {
+  // Start the sidecar eagerly so the handshake is ready by the time the
+  // renderer asks for it. The IPC handler awaits the same promise.
+  startEngine().catch((err) => {
+    console.error('[engine] failed to start:', err);
+  });
+
   createWindow();
 
   app.on('activate', () => {
@@ -49,8 +60,13 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  stopEngine();
   if (process.platform !== 'darwin') {
     app.quit();
     win = null;
   }
+});
+
+app.on('before-quit', () => {
+  stopEngine();
 });
