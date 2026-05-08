@@ -31,7 +31,7 @@
 - `bash tools/dev-smoke.sh NVDA 2026-05-08` → 8 passed, 0 failed
 - npm run type-check clean
 
-**Commits:** TBD (one bundled commit).
+**Commits:** `be6d12d` (one bundled commit).
 
 ---
 
@@ -63,7 +63,7 @@
 - npm run type-check + production build clean (main.js 4.99 KB → 7.96 KB to fit menu module + accelerator template)
 - IPC bridge surface remains backward-compatible (`tradingAgentsLab.onMenuCommand` is additive)
 
-**Commits:** TBD (one bundled commit with menu + main + preload + types + App + Analyze + docs).
+**Commits:** `0de893a` (one bundled commit with menu + main + preload + types + App + Analyze + docs).
 
 ---
 
@@ -89,7 +89,7 @@
 - WS stream emits 4 headlines pre-debate, news_analyst message bullets them
 - npm run type-check + production build clean
 
-**Commits:** TBD (one bundled commit with engine + renderer + docs).
+**Commits:** `a984179` (one bundled commit with engine + renderer + docs).
 
 ---
 

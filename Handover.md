@@ -22,25 +22,34 @@
 - ⏳ Continuing into Phase 4 spike (settings page scaffolding) per advisor green-light for unsupervised stretch scope
 - ⏳ Founder away ~4-5 hours; report on return
 
-### Done — Phase 0 → Phase 3 + Phase 4 spike + Phase 5 part 1 + polish
+### Done — Phase 0 → Phase 3 + Phase 4 + spikes + tooling
 
 **Yesterday (2026-05-07):** Phases 0, 1, 2 + license setup.
 
-**Today (2026-05-08), autonomous block (~4 commits, founder away):**
+**Today (2026-05-08), autonomous blocks (~9 feature commits, founder away):**
+
+Block 1 (~4 commits):
 
 - ✅ **Phase 3** — renderer ↔ engine wired end-to-end (`c5815fa`). Click "Analyze NVDA" → 17-event debate streams in over ~7s → decision card.
-- ✅ **Phase 4 spike** — Settings page + hash router (`e716d86`). All tabs visible, `Configure` buttons disabled, phase-guard explains. No keytar yet (gated on founder go).
-- ✅ **Phase 5 part 1 — yfinance data integration** (`5273904`). Real NVDA data flows: $211.50 last close, +19.38% over 24 sessions, 147M avg volume. Analyst messages quote real numbers. `GET /data/summary` + `data.summary` WS event. Falls back gracefully on data failure.
-- ✅ **Phase 5 polish** (`de030ee`). Stop button while streaming. Data status card flips to "yfinance · live". Copy transcript (Markdown) action after session.complete.
+- ✅ **Phase 4 spike** — Settings page + hash router (`e716d86`). All tabs visible, `Configure` buttons disabled, phase-guard explains.
+- ✅ **Phase 5 part 1 — yfinance data integration** (`5273904`). Real NVDA data flows: $211.50 last close, +19.38% over 24 sessions, 147M avg volume.
+- ✅ **Phase 5 polish** (`de030ee`). Stop button while streaming. Data status card flips to "yfinance · live". Copy transcript (Markdown) action.
 
-See `WORKLOG.md` for the full chronology with verification details per commit.
+Block 2 (~4 commits, this run):
 
-**Verification gap:** the four commits passed `npm run type-check`, `npm run build`, and full backend smoke (curl + node WebSocket). **No UI click-through was performed** — the autonomous block didn't spin up Electron Playwright. First action on the next session is a manual smoke (see "What founder should do first when they return" below).
+- ✅ **Phase 4 main — secret storage + Settings UI wiring** (`f3b9543`). safeStorage-backed (no native deps), versioned JSON schema, hard-fails on no encryption available, never re-displays stored values. About tab shows the `<userData>/secrets.json` path so founder knows where the encrypted blob lives.
+- ✅ **News headlines via yfinance** (`a984179`). `GET /data/news` endpoint, `news.headlines` WS event before debate, news_analyst stub now bullets real Yahoo Finance headlines, renderer surfaces a linked News card, transcript export includes news section.
+- ✅ **Keyboard shortcuts + Electron app menu** (`0de893a`). Real menu bar with mac-aware structure. Cmd+N (new analysis), Cmd+. (stop), Cmd+, (settings), Cmd+1/2/3 (nav). Page-level Cmd+Enter (run) on Analyze.
+- ✅ **Tooling + docs** (`be6d12d`). `tools/dev-smoke.sh` runs 8 backend assertions for fresh-session verification (verified 8/8 pass). `docs/api.md` is the new engine API contract doc — indexed in `CLAUDE.md` doc graph. Date input maxes at today.
+
+See `WORKLOG.md` for the chronology with verification details per commit.
+
+**Verification gap:** every commit passed `npm run type-check`, `npm run build`, and `tools/dev-smoke.sh` against the live backend. **No UI click-through was performed** — autonomous blocks didn't drive Electron via Playwright. First action on return is a manual smoke (see "What founder should do first when they return" below). If the UI fails, run `bash tools/dev-smoke.sh` first to rule the backend out — that script verifies the entire engine contract end-to-end.
 
 ### Recent commits on `main` (newest first)
 
 ```
-<tooling/docs commit lands here>
+be6d12d  Tooling + docs: backend smoke script, engine API contract, date cap
 0de893a  Stretch: keyboard shortcuts + Electron app menu
 a984179  Stretch: yfinance news headlines in WS stream + UI news card
 f3b9543  Phase 4 main: secret storage + Settings UI wiring
@@ -55,6 +64,17 @@ a44b935  Phase 2: Python sidecar with FastAPI + stub canned debate
 86f0185  Phase 1: scaffold Electron + Vite + React desktop shell
 f0125b8  Phase 0: scaffold orchestration docs and gateway probe
 ```
+
+### Open questions queued for founder (answer when back, then I unblock)
+
+These are decisions I deferred during the autonomous block rather than guess on. None are blocking the existing five-commit run; they're blocking *what comes next*.
+
+1. **First LLM provider for Phase 2.1.** Wiring shape (per-request inject vs. spawn-time env) shouldn't be locked until you pick. I've been assuming OpenAI from the way the Settings tabs are framed — confirm or redirect.
+2. **"Test connection" button policy.** I held off because it makes a real provider request on your key, autonomously. OK to add now (with a warning + you trigger explicitly), or hold until after Phase 2.1 lands?
+3. **Watchlist + History storage.** `architecture.md` says SQLite. Confirm we're staying that course before I scaffold either page (no localStorage shortcut).
+4. **Stockstats / RSI / MACD indicators.** Net-new Python dep on `stockstats`. Adds real indicator math to the technical_analyst stub. OK to install, or hold?
+5. **OpenAI OAuth flow.** Phase 4 main only wires API-key paths. Scaffold the OAuth flow now (PKCE + redirect handler in main process), or wait until OpenAI is the locked first provider?
+6. **Secrets export / import.** For machine migration: should Settings → About expose a "Export encrypted secrets to file" / "Import on new machine" pair? Defer, or scope now?
 
 ### What founder should do first when they return
 
