@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Iterator, Optional
 
-from .data_providers import QuoteSummary
+from .data_providers import Headline, QuoteSummary
 
 
 def canned_debate(
@@ -25,6 +25,7 @@ def canned_debate(
     ticker: str,
     trade_date: str,
     summary: Optional[QuoteSummary] = None,
+    headlines: Optional[list[Headline]] = None,
 ) -> Iterator[dict]:
     yield {
         "type": "session.start",
@@ -53,10 +54,7 @@ def canned_debate(
         "type": "agent.message",
         "agent": "news_analyst",
         "phase": "analysts",
-        "content": (
-            f"[STUB] News scan around {trade_date}: no company-specific catalysts. "
-            f"Sector-level headlines neutral. Macro backdrop steady."
-        ),
+        "content": _news_message(ticker, trade_date, headlines),
         "_delay": 0.6,
     }
 
@@ -175,6 +173,26 @@ def canned_debate(
         },
         "_delay": 0,
     }
+
+
+def _news_message(
+    ticker: str, trade_date: str, headlines: Optional[list[Headline]]
+) -> str:
+    if not headlines:
+        return (
+            f"[STUB] News scan around {trade_date}: no company-specific catalysts "
+            f"surfaced. Sector-level headlines neutral, macro backdrop steady."
+        )
+    lines = [
+        f"[STUB · yfinance news] {len(headlines)} recent headlines reviewed for "
+        f"{ticker}; the headline-only summary is enough for the stub. Real "
+        f"sentiment analysis lands when the agent layer goes live.",
+        "",
+    ]
+    for h in headlines[:4]:
+        publisher = h.publisher or "unknown"
+        lines.append(f"• {h.title} ({publisher})")
+    return "\n".join(lines)
 
 
 def _technical_message(ticker: str, summary: Optional[QuoteSummary]) -> str:

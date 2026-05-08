@@ -1,4 +1,9 @@
-import type { DebateEvent, QuoteSummary, AnalyzeDecision } from './engine-client';
+import type {
+  DebateEvent,
+  QuoteSummary,
+  AnalyzeDecision,
+  NewsHeadlinesEvent,
+} from './engine-client';
 
 const PHASE_LABEL: Record<string, string> = {
   analysts: 'Analysts',
@@ -24,6 +29,11 @@ function findSummary(events: DebateEvent[]): QuoteSummary | null {
 function findDecision(events: DebateEvent[]): AnalyzeDecision | null {
   const ev = events.find((e) => e.type === 'session.complete');
   return ev && ev.type === 'session.complete' ? ev.decision : null;
+}
+
+function findNews(events: DebateEvent[]): NewsHeadlinesEvent | null {
+  const ev = events.find((e) => e.type === 'news.headlines');
+  return ev && ev.type === 'news.headlines' ? ev : null;
 }
 
 interface PhaseGroup {
@@ -83,6 +93,17 @@ export function buildTranscriptMarkdown(events: DebateEvent[]): string {
     lines.push(`- Avg daily volume: ${Math.round(summary.avg_volume).toLocaleString()}`);
     lines.push(`- Sessions: ${summary.sessions}`);
     lines.push(`- Source: ${summary.source} · as of ${summary.as_of}`);
+    lines.push('');
+  }
+
+  const news = findNews(events);
+  if (news && news.headlines.length > 0) {
+    lines.push('## News headlines', '');
+    for (const h of news.headlines) {
+      const meta = [h.publisher, h.pub_date].filter(Boolean).join(' · ');
+      const heading = h.url ? `- [${h.title}](${h.url})` : `- ${h.title}`;
+      lines.push(meta ? `${heading} _(${meta})_` : heading);
+    }
     lines.push('');
   }
 

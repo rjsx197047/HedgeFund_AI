@@ -36,9 +36,25 @@ export interface QuoteSummary {
   source: string;
 }
 
+export interface Headline {
+  title: string;
+  publisher: string;
+  pub_date: string;
+  url: string;
+  summary: string;
+}
+
+export interface NewsHeadlinesEvent {
+  type: 'news.headlines';
+  ticker: string;
+  source: string;
+  headlines: Headline[];
+}
+
 export type DebateEvent =
   | { type: 'session.start'; ticker: string; trade_date: string }
   | ({ type: 'data.summary' } & QuoteSummary)
+  | NewsHeadlinesEvent
   | { type: 'agent.message'; agent: string; phase: string; content: string }
   | { type: 'phase.transition'; from: string; to: string }
   | {

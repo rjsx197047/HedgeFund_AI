@@ -37,6 +37,15 @@ class QuoteSummary:
     source: str                # "yfinance" | "alpaca" | ...
 
 
+@dataclass
+class Headline:
+    title: str
+    publisher: str
+    pub_date: str    # ISO-8601 UTC
+    url: str
+    summary: str
+
+
 class BaseDataProvider(Protocol):
     """Read-only data provider interface.
 
@@ -51,6 +60,10 @@ class BaseDataProvider(Protocol):
     async def quote_summary(
         self, *, ticker: str, trade_date: str, lookback_days: int = 30
     ) -> QuoteSummary: ...
+
+    async def news_headlines(
+        self, *, ticker: str, limit: int = 5
+    ) -> list[Headline]: ...
 
 
 class DataUnavailable(RuntimeError):
@@ -77,6 +90,13 @@ class YFinanceProvider:
         return await asyncio.to_thread(
             _yfinance_quote_summary, ticker, trade_date, lookback_days
         )
+
+    async def news_headlines(
+        self, *, ticker: str, limit: int = 5
+    ) -> list[Headline]:
+        import asyncio
+
+        return await asyncio.to_thread(_yfinance_news_headlines, ticker, limit)
 
 
 def _yfinance_quote_summary(
@@ -125,6 +145,44 @@ def _yfinance_quote_summary(
         sessions=int(len(hist)),
         source="yfinance",
     )
+
+
+def _yfinance_news_headlines(ticker: str, limit: int) -> list[Headline]:
+    import yfinance as yf
+
+    yt = yf.Ticker(ticker.upper())
+    raw = yt.news or []
+    headlines: list[Headline] = []
+    for item in raw[: max(0, limit)]:
+        # The `t.news` shape is {id, content: {...}} with title, summary,
+        # pubDate, provider, canonicalUrl, etc. Be defensive — Yahoo has
+        # changed this shape before.
+        content = item.get("content") if isinstance(item, dict) else None
+        if not isinstance(content, dict):
+            continue
+        title = (content.get("title") or "").strip()
+        if not title:
+            continue
+        summary = (content.get("summary") or content.get("description") or "").strip()
+        pub_date = (content.get("pubDate") or content.get("displayTime") or "").strip()
+        provider = content.get("provider") or {}
+        publisher = (
+            provider.get("displayName")
+            if isinstance(provider, dict)
+            else ""
+        ) or ""
+        url_holder = content.get("canonicalUrl") or content.get("clickThroughUrl") or {}
+        url = url_holder.get("url") if isinstance(url_holder, dict) else ""
+        headlines.append(
+            Headline(
+                title=title,
+                publisher=publisher,
+                pub_date=pub_date,
+                url=url or "",
+                summary=summary,
+            )
+        )
+    return headlines
 
 
 def _parse_date(s: str) -> date_t:

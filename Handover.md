@@ -40,7 +40,8 @@ See `WORKLOG.md` for the full chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
-<Phase 4 main commit lands here>
+<news headlines commit lands here>
+f3b9543  Phase 4 main: secret storage + Settings UI wiring
 331b937  Finalize Handover + WORKLOG for end of autonomous block
 de030ee  Phase 5 polish: Stop button, accurate Data status, transcript export
 5273904  Phase 5 part 1: yfinance data integration + UI summary strip

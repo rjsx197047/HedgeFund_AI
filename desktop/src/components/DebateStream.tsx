@@ -1,4 +1,10 @@
-import type { DebateEvent, AnalyzeDecision, QuoteSummary } from '../lib/engine-client';
+import type {
+  DebateEvent,
+  AnalyzeDecision,
+  QuoteSummary,
+  Headline,
+  NewsHeadlinesEvent,
+} from '../lib/engine-client';
 import styles from './DebateStream.module.css';
 
 interface DebateStreamProps {
@@ -13,6 +19,22 @@ function findSummary(events: DebateEvent[]): QuoteSummary | null {
     return summary as QuoteSummary;
   }
   return null;
+}
+
+function findHeadlines(events: DebateEvent[]): NewsHeadlinesEvent | null {
+  const ev = events.find((e) => e.type === 'news.headlines');
+  return ev && ev.type === 'news.headlines' ? ev : null;
+}
+
+function formatRelativeTime(iso: string): string {
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return '';
+  const diffSec = Math.round((Date.now() - ts) / 1000);
+  if (diffSec < 60) return 'just now';
+  if (diffSec < 3600) return `${Math.round(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.round(diffSec / 3600)}h ago`;
+  if (diffSec < 86400 * 7) return `${Math.round(diffSec / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
 function formatVolume(n: number): string {
@@ -76,6 +98,7 @@ const PHASE_DESCRIPTION: Record<string, string> = {
 function DebateStream({ events, isStreaming }: DebateStreamProps) {
   const start = findStart(events);
   const summary = findSummary(events);
+  const news = findHeadlines(events);
   const groups = groupByPhase(events);
   const decision = findDecision(events);
 
@@ -134,6 +157,40 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
           <div className={styles.summarySource}>
             {summary.sessions} sessions · {summary.source} · as of {summary.as_of}
           </div>
+        </div>
+      )}
+
+      {news && news.headlines.length > 0 && (
+        <div className={styles.news}>
+          <div className={styles.newsHeader}>
+            <span className={styles.newsLabel}>News</span>
+            <span className={styles.newsSource}>
+              {news.headlines.length} headline{news.headlines.length === 1 ? '' : 's'} · {news.source}
+            </span>
+          </div>
+          <ul className={styles.newsList}>
+            {news.headlines.map((h: Headline, idx: number) => (
+              <li key={`${h.url || h.title}-${idx}`} className={styles.newsItem}>
+                {h.url ? (
+                  <a
+                    className={styles.newsTitle}
+                    href={h.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {h.title}
+                  </a>
+                ) : (
+                  <span className={styles.newsTitle}>{h.title}</span>
+                )}
+                <span className={styles.newsMeta}>
+                  {[h.publisher, h.pub_date && formatRelativeTime(h.pub_date)]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

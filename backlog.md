@@ -85,6 +85,12 @@
 
 ---
 
+## Stretch — feature spikes (additive, no architectural commitments)
+
+- 🟢 **News headlines via yfinance** — `Headline` dataclass + `news_headlines()` on the data provider Protocol, `GET /data/news` endpoint, `news.headlines` WS event before the debate, news_analyst stub now bullets real Yahoo Finance headlines, renderer surfaces a linked News card above the debate, transcript export includes the news section.
+
+---
+
 ## Cross-cutting / deferred
 
 - 🟣 OpenClaw upstream PR to register `client.id: "tradingagentslab"` constant (non-blocking — `"cli"` works).

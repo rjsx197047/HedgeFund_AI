@@ -6,6 +6,32 @@
 
 ---
 
+## 2026-05-08 (continued, second autonomous block) — news headlines via yfinance
+
+**Goal:** Per advisor, the highest-leverage stretch after Phase 4 was real news headlines via `yfinance.Ticker.news` — additive, no new deps, no architectural commitment.
+
+**Shipped:**
+
+- `engine/data_providers.py` adds `Headline` dataclass + `news_headlines(ticker, limit)` on the `BaseDataProvider` Protocol + `YFinanceProvider` impl. Handles defensive shape-checks on Yahoo's payload (it's changed before).
+- `engine/server.py` exposes `GET /data/news?ticker=X&limit=N` (502 on provider errors, never 404 — empty list is valid).
+- WS `/stream` emits a `news.headlines` event after `data.summary` and before the debate. Best-effort: failures yield an empty list, debate still runs with the legacy "no catalysts" canned message.
+- `engine/stub_debate.py` rewires the news_analyst message to bullet the real headlines + publishers when present, falls back to the canned message when none.
+- Renderer:
+  - `engine-client.ts` adds `Headline` + `NewsHeadlinesEvent` types and extends the `DebateEvent` union.
+  - `DebateStream.tsx` renders a "News" section between the data summary strip and the phase cards. Each headline links to the canonical Yahoo Finance URL (`target="_blank"`); publisher + relative pub time render below in mono.
+  - `DebateStream.module.css` adds `.news`, `.newsList`, `.newsItem` styles consistent with the existing card aesthetic.
+  - `transcript.ts` includes a "News headlines" section in the Markdown export with linked titles and publisher/timestamp metadata.
+
+**Verification:**
+
+- `/data/news?ticker=NVDA` returns real headlines from real publishers (Motley Fool, Yahoo Finance Video, MarketBeat) with valid URLs
+- WS stream emits 4 headlines pre-debate, news_analyst message bullets them
+- npm run type-check + production build clean
+
+**Commits:** TBD (one bundled commit with engine + renderer + docs).
+
+---
+
 ## 2026-05-08 (continued) — Phase 4 main: secret storage + Settings UI
 
 **Goal:** Wire Phase 4 secrets end-to-end so founder can paste API keys (OpenAI, Anthropic, etc.) and they persist encrypted at rest. Per advisor scope guard, the "engine consumes the keys" wiring stays held for Phase 2.1.

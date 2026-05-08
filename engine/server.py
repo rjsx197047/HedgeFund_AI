@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .data_providers import (
     DataUnavailable,
+    Headline,
     QuoteSummary,
     default_provider,
 )
@@ -101,6 +102,23 @@ def build_app(*, token: str) -> FastAPI:
             )
         return _summary_to_dict(summary)
 
+    @app.get("/data/news", dependencies=bearer)
+    async def data_news(ticker: str, limit: int = 5) -> dict[str, Any]:
+        try:
+            headlines = await default_provider.news_headlines(
+                ticker=ticker, limit=max(1, min(limit, 20))
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"news provider error: {exc}",
+            )
+        return {
+            "ticker": ticker.upper(),
+            "source": default_provider.name,
+            "headlines": [_headline_to_dict(h) for h in headlines],
+        }
+
     @app.post("/analyze", dependencies=bearer)
     async def analyze(req: AnalyzeRequest) -> dict[str, Any]:
         # Phase 2 stub — Phase 3+ wires this to the real tradingagents core.
@@ -140,8 +158,20 @@ def build_app(*, token: str) -> FastAPI:
                     {"type": "data.summary", **_summary_to_dict(summary)}
                 )
 
+            headlines = await _fetch_news_safe(ticker=ticker, limit=4)
+            if headlines:
+                await ws.send_json({
+                    "type": "news.headlines",
+                    "ticker": ticker,
+                    "source": default_provider.name,
+                    "headlines": [_headline_to_dict(h) for h in headlines],
+                })
+
             for event in canned_debate(
-                ticker=ticker, trade_date=trade_date, summary=summary
+                ticker=ticker,
+                trade_date=trade_date,
+                summary=summary,
+                headlines=headlines,
             ):
                 await ws.send_json(event)
                 await asyncio.sleep(event.pop("_delay", 0.4))
@@ -161,6 +191,25 @@ async def _fetch_summary_safe(*, ticker: str, trade_date: str) -> QuoteSummary |
         )
     except Exception:  # noqa: BLE001 — never let data issues break the stream
         return None
+
+
+async def _fetch_news_safe(*, ticker: str, limit: int) -> list[Headline]:
+    if not ticker:
+        return []
+    try:
+        return await default_provider.news_headlines(ticker=ticker, limit=limit)
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _headline_to_dict(h: Headline) -> dict[str, Any]:
+    return {
+        "title": h.title,
+        "publisher": h.publisher,
+        "pub_date": h.pub_date,
+        "url": h.url,
+        "summary": h.summary,
+    }
 
 
 def _summary_to_dict(summary: QuoteSummary) -> dict[str, Any]:
