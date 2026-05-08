@@ -1,7 +1,6 @@
 # TradingAgentsLab — Handover
 
-> **Purpose:** Session-to-session context bridge. If you (Claude or human) are picking this up cold, read this first. Detailed design in [`docs/architecture.md`](docs/architecture.md). Phased work items in [`backlog.md`](backlog.md). Orchestration rules in [`CLAUDE.md`](CLAUDE.md) (template pending from Clawless Advisor).
-> **Note:** Initial format will reformat once Clawless `CLAUDE.md` orchestration template arrives.
+> **Purpose:** Session-to-session context bridge. If you (Claude or human) are picking this up cold, read this first. Detailed design in [`docs/architecture.md`](docs/architecture.md). Phased work items in [`backlog.md`](backlog.md). Orchestration rules in [`CLAUDE.md`](CLAUDE.md).
 
 ## What this project is
 
@@ -13,9 +12,16 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-07)
+## Where we are right now (as of 2026-05-07, end of session — pre-reboot)
 
-### Done
+### Session shutdown checklist
+
+- ✅ All TradingAgentsLab background processes killed (Phase 1 Electron + two stray engine sidecars terminated before reboot)
+- ✅ Git working tree clean, on `main`, up to date with `origin/main`
+- ✅ No uncommitted edits, no untracked files
+- ✅ Founder closing terminal + rebooting machine after this checkpoint
+
+### Done — Phase 0 → Phase 2 (all shipped 2026-05-07)
 
 - ✅ Forked upstream into `jaysidd/TradingAgentsLab`
 - ✅ Dual-licensed (AGPL-3.0 with Apache 2.0 attribution preserved as `LICENSE-APACHE` + `NOTICE`)
@@ -24,32 +30,52 @@
 - ✅ Pushed to GitHub — repo public, AGPL-3.0 detected
 - ✅ Gateway probe (`tools/clawless-probe.mjs`) — multi-client OpenClaw access **verified**: TradingAgentsLab connected as a second client alongside Clawless desktop, ran `connect` + `health`, full agent inventory returned
 - ✅ Architecture sketch ratified by founder (Pattern 3 — fully standalone, optional Clawless tap)
-
-### Just shipped (2026-05-07 evening)
-
 - ✅ **Phase 0** — orchestration docs + gateway probe (commit `f0125b8`)
 - ✅ **Phase 1** — Electron + Vite + React desktop shell with warm-amber theme on dark base. Founder approved on first look (commit `86f0185`)
 - ✅ **Phase 2** — Python 3.13 + FastAPI sidecar with stub canned debate. `/health`, `/analyze`, `/stream` all working with bearer-token auth (commit `a44b935`)
+- ✅ **Handover checkpoint** at end of Phase 2 (commit `81f7414`)
+
+### Last 5 commits on `main` (all on `origin/main` — github.com/jaysidd/TradingAgentsLab)
+
+```
+81f7414  Handover checkpoint at end of Phase 2
+a44b935  Phase 2: Python sidecar with FastAPI + stub canned debate
+86f0185  Phase 1: scaffold Electron + Vite + React desktop shell
+f0125b8  Phase 0: scaffold orchestration docs and gateway probe
+f68a7d7  Re-license fork as TradingAgentsLab under AGPL-3.0 + CLA
+```
 
 ### CHECKPOINT — paused at end of Phase 2 to save founder's weekly Opus quota
 
 Resume Phase 3 in a fresh session. Three phases shipped in one session is good momentum; Phase 3 is a discrete next chunk that doesn't need carry-over context beyond what's in this doc.
 
-### How to resume Phase 3 (next session, fresh Claude)
+### First moves on the next (post-reboot) session — Claude or founder
 
-**1. Verify state cold (~30s):**
+1. **Read this file + [`CLAUDE.md`](CLAUDE.md) + [`backlog.md`](backlog.md).** Skim [`docs/architecture.md`](docs/architecture.md) §4 (Process / IPC topology — covers the Electron-spawns-sidecar handshake) for Phase 3 context.
+2. **Check inbox:** `mcp__claudelink__read_inbox` (register as `trading-agents-lab` if not already registered). Clawless Advisor may have replied on deferred items (none currently expected — see "Pending external" below).
+3. **Check memory:** `~/.claude/projects/-Users-junaidsiddiqi-Projects-TradingAgents/memory/` — `MEMORY.md` is the index.
+4. **Verify state cold (~30s):**
+   ```bash
+   git -C /Users/junaidsiddiqi/Projects/TradingAgents log --oneline -5
+   # Should show 81f7414 Handover checkpoint at the top, working tree clean.
+   git -C /Users/junaidsiddiqi/Projects/TradingAgents status
+   ```
+5. **Smoke-test the engine sidecar still runs:**
+   ```bash
+   cd /Users/junaidsiddiqi/Projects/TradingAgents
+   ./engine/.venv/bin/python -m engine
+   # Prints {"port": <int>, "token": "..."} on first stdout line.
+   # Ctrl-C to stop.
+   ```
+6. **Smoke-test the desktop shell still launches** (optional — Phase 1 was visually approved, code untouched since):
+   ```bash
+   npm --prefix /Users/junaidsiddiqi/Projects/TradingAgents/desktop run dev
+   ```
+7. **Then begin Phase 3** following the table below.
 
-```bash
-git -C /Users/junaidsiddiqi/Projects/TradingAgents log --oneline -5
-# Should show a44b935 Phase 2 at the top.
+### Phase 3 work plan (next session deliverable)
 
-# Spin up the engine to confirm it still works:
-cd /Users/junaidsiddiqi/Projects/TradingAgents
-./engine/.venv/bin/python -m engine
-# Reads {port, token} from stdout. Ctrl-C to stop.
-```
-
-**2. Phase 3 work, in priority order:**
+**Phase 3 file plan, in priority order:**
 
 | File to add | What it does |
 |---|---|
@@ -60,9 +86,9 @@ cd /Users/junaidsiddiqi/Projects/TradingAgents
 | `desktop/src/components/DebateStream.tsx` | New component: shows agent messages as they arrive, grouped by phase, with the agent name + monospace content. Visual style: cards with phase color-coding (amber for analysts, neutral for risk, etc.). |
 | Update `desktop/src/pages/Analyze.tsx` | Wire the "Analyze" button to call `streamDebate()`. Render `DebateStream` below the form. Update status cards (Engine: "Running" when handshake succeeds). Disable button while a stream is in flight. |
 
-**3. End-to-end acceptance:** open the desktop app, click "Analyze" with default ticker NVDA, watch the 16 stub events stream into a debate panel over ~7s. Final card shows "HOLD" decision with confidence 0.55.
+**End-to-end acceptance:** open the desktop app, click "Analyze" with default ticker NVDA, watch the 16 stub events stream into a debate panel over ~7s. Final card shows "HOLD" decision with confidence 0.55.
 
-**4. Phase 3 should NOT yet:**
+**Phase 3 should NOT yet:**
 - Replace the engine stub with real `tradingagents` (that's Phase 2.1)
 - Add LLM provider settings (that's Phase 4)
 - Add yfinance/Alpaca data (that's Phase 5)
@@ -70,13 +96,20 @@ cd /Users/junaidsiddiqi/Projects/TradingAgents
 
 Stay in scope. The win is "click button → watch debate stream."
 
-### Background processes possibly still running
+### Background processes (state at session close)
 
-When this checkpoint was written, the Phase 1 Electron dev environment was running in the background — Vite (port 5173) + Electron main + Electron Helper renderers. Founder may close them with Cmd+Q in the window when done looking. If a fresh session inherits the system, run `pkill -f 'TradingAgents/desktop'` to clean up before re-running `npm --prefix desktop run dev`.
+All TradingAgentsLab background processes were terminated before this handover was written. The reboot will clear anything we missed. After reboot, **nothing** TradingAgentsLab-related will be running — start fresh with the smoke tests above.
 
 ### Currently blocked
 
 - (none) — Phase 3 is fully unblocked.
+
+### Pending external / deferred
+
+- 🟣 OpenClaw upstream PR adding `client.id: "tradingagentslab"` constant — non-blocking; `"cli"` works today (see verified facts below)
+- 🟣 Massive.com / Polygon-class data provider — deferred until a feature requires it
+- 🟣 Distribution + auto-update — Phase 7
+- 🟣 No outstanding ClaudeLink threads to Clawless Advisor at session close (all questions resolved 2026-05-07)
 
 ## Architectural decisions (locked in)
 
@@ -108,7 +141,7 @@ See `tools/clawless-probe.mjs` for working reference protocol code.
 | `docs/architecture.md` | Full design doc |
 | `backlog.md` | Phased work items |
 | `Handover.md` | This file |
-| `CLAUDE.md` | Orchestration rules (pending) |
+| `CLAUDE.md` | Orchestration rules — read first every session |
 | `LICENSE` / `LICENSE-APACHE` / `NOTICE` / `CLA.md` / `CONTRIBUTING.md` | Licensing stack |
 | `.env` | Local secrets (gitignored). Contains `CLAWLESS_GATEWAY_*` and LLM provider keys. |
 
@@ -121,10 +154,10 @@ See `tools/clawless-probe.mjs` for working reference protocol code.
 
 ## Where to pick up next session
 
-If you're a fresh Claude session reading this cold, the most likely next moves:
+The full first-moves checklist is above under **"First moves on the next (post-reboot) session"**. Ground truth:
 
-1. **Confirm with founder before pushing:** if Phase 0 artifacts haven't been committed/pushed yet, ask before doing so. The architecture is settled but the founder may have new direction.
-2. **Phase 1 — desktop scaffolding** is fully unblocked. Scaffold Electron + React + TypeScript app, define independent theme tokens, get an empty branded window opening. No external dependencies on Advisor anymore.
-3. **Phase 2 — Python sidecar** is also unblocked. Wrap `tradingagents` core in FastAPI; expose `POST /analyze` and `WS /stream`.
-4. **Read memory before acting:** `~/.claude/projects/-Users-junaidsiddiqi-Projects-TradingAgents/memory/` contains durable context — user role, cost discipline, marketing posture, gateway protocol facts. The MEMORY.md index lists everything.
-5. **For Clawless/OpenClaw questions:** message `Clawless Advisor` via ClaudeLink (`mcp__claudelink__send` to role `Clawless Advisor`). Register first as `trading-agents-lab` if not already registered. Frame requests with "no Clawless team work needed" to respect their pre-launch sprint.
+- **Phases 0/1/2 are done.** Don't redo them.
+- **Phase 3 is the next deliverable.** Wire the renderer to the engine sidecar so clicking "Analyze NVDA" streams the canned 16-event debate into the UI. Detailed file plan above.
+- **Confirm with founder before pushing.** Architecture is settled, but the founder may have new direction after reboot.
+- **Read memory before acting:** `~/.claude/projects/-Users-junaidsiddiqi-Projects-TradingAgents/memory/` contains durable context. The `MEMORY.md` index lists everything.
+- **Clawless/OpenClaw questions:** message `Clawless Advisor` via ClaudeLink (`mcp__claudelink__send` to role `Clawless Advisor`). Register first as `trading-agents-lab` if not already registered. Frame requests with "no Clawless team work needed" to respect their pre-launch sprint.

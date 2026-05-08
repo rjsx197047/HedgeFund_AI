@@ -1,6 +1,6 @@
 # TradingAgentsLab — Backlog
 
-> **Note:** Initial structure pending Clawless `CLAUDE.md` template (will reformat once Clawless Advisor returns it). For now, organized by phase (see [`docs/architecture.md`](docs/architecture.md) §8).
+> **Organization:** by phase (see [`docs/architecture.md`](docs/architecture.md) §8). Phases 0–2 are done; Phase 3 is the next deliverable.
 
 ## Status legend
 
@@ -8,15 +8,15 @@
 
 ---
 
-## Phase 0 — Foundation
+## Phase 0 — Foundation ✅ DONE
 
 - 🟢 **Fork upstream + dual-license setup** — AGPL-3.0 + Apache 2.0 attribution, NOTICE, CLA, CONTRIBUTING. Pushed to `jaysidd/TradingAgentsLab`.
 - 🟢 **Git remotes** — `origin` → TradingAgentsLab, `upstream` → TauricResearch/TradingAgents.
 - 🟢 **Gateway probe** — `tools/clawless-probe.mjs`, multi-client OpenClaw access verified.
-- 🟡 **Architecture doc** — `docs/architecture.md` v0.1 written; iterates as Phase 1+ surfaces refinements.
-- 🟡 **Backlog + Handover** — initial scaffolding (this file + `Handover.md`).
-- 🟡 **CLAUDE.md** — Advisor confirmed: build our own (Clawless template not portable). In progress.
-- ⚪ **Commit + push Phase 0 artifacts** — probe, architecture doc, backlog, handover, CLAUDE.md.
+- 🟢 **Architecture doc** — `docs/architecture.md` v0.1 shipped. Iterates as later phases surface refinements.
+- 🟢 **Backlog + Handover** — `backlog.md` + `Handover.md` in place and being maintained per-session.
+- 🟢 **CLAUDE.md** — orchestration contract written from scratch (Clawless template was not portable per Advisor).
+- 🟢 **Commit + push Phase 0 artifacts** — shipped in commit `f0125b8`.
 
 ## Phase 1 — Desktop shell ✅ DONE
 
@@ -35,12 +35,15 @@
 - 🟢 Acceptance verified: `/health` 200 with auth / 401 without; `/analyze` returns stub decision; `/stream` streams 16 events with realistic phasing.
 - ⚪ Phase 2.1 (later): replace stub debate with real `tradingagents` core integration. Out of MVP scope.
 
-## Phase 3 — End-to-end demo
+## Phase 3 — End-to-end demo (next deliverable)
 
-- ⚪ Wire renderer → sidecar over WebSocket.
-- ⚪ Hardcoded ticker (e.g., NVDA) + date in renderer; press button → stream agent debate live.
-- ⚪ Replace stub LLM with real OpenAI call (env-var key) for the first real run.
-- ⚪ Acceptance: founder clicks "Analyze NVDA" and watches the analyst → researcher → trader → risk manager debate stream into the UI.
+- ⚪ `desktop/electron/engine-runner.ts` — spawn `engine/.venv/bin/python -m engine`, parse first-line `{port, token}` handshake, terminate child on app quit.
+- ⚪ Update `desktop/electron/main.ts` — call engine-runner on app ready; expose `engine:get-handshake` IPC handler.
+- ⚪ Update `desktop/electron/preload.ts` — expose `getEngineHandshake()` on the `tradingAgentsLab` bridge.
+- ⚪ `desktop/src/lib/engine-client.ts` — typed wrapper: `analyze(req)` → POST `/analyze` with bearer; `streamDebate(req, onEvent)` → opens `WS /stream?token=...`, sends start frame, dispatches each event.
+- ⚪ `desktop/src/components/DebateStream.tsx` — render streamed agent messages, grouped by phase, with agent name + monospace content.
+- ⚪ Update `desktop/src/pages/Analyze.tsx` — wire "Analyze" button to `streamDebate()`, render `DebateStream`, update status cards (Engine: "Running" once handshake succeeds), disable button while a stream is in flight.
+- ⚪ Acceptance: founder clicks "Analyze NVDA" and watches the 16 canned debate events stream over ~7s, ending on HOLD with confidence 0.55. **Out of scope for Phase 3:** real LLM calls, settings page, yfinance/Alpaca, Clawless tap (those are Phases 2.1, 4, 5, 6).
 
 ## Phase 4 — Settings page
 
