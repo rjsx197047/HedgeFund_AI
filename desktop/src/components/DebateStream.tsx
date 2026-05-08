@@ -1,9 +1,24 @@
-import type { DebateEvent, AnalyzeDecision } from '../lib/engine-client';
+import type { DebateEvent, AnalyzeDecision, QuoteSummary } from '../lib/engine-client';
 import styles from './DebateStream.module.css';
 
 interface DebateStreamProps {
   events: DebateEvent[];
   isStreaming: boolean;
+}
+
+function findSummary(events: DebateEvent[]): QuoteSummary | null {
+  const ev = events.find((e) => e.type === 'data.summary');
+  if (ev && ev.type === 'data.summary') {
+    const { type: _t, ...summary } = ev;
+    return summary as QuoteSummary;
+  }
+  return null;
+}
+
+function formatVolume(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return `${Math.round(n)}`;
 }
 
 interface PhaseGroup {
@@ -60,6 +75,7 @@ const PHASE_DESCRIPTION: Record<string, string> = {
 
 function DebateStream({ events, isStreaming }: DebateStreamProps) {
   const start = findStart(events);
+  const summary = findSummary(events);
   const groups = groupByPhase(events);
   const decision = findDecision(events);
 
@@ -84,6 +100,41 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
             </div>
           )}
         </header>
+      )}
+
+      {summary && (
+        <div className={styles.summaryStrip}>
+          <div className={styles.summaryItem}>
+            <span className={styles.summaryLabel}>Last close</span>
+            <span className={styles.summaryValue}>{summary.last_close.toFixed(2)}</span>
+          </div>
+          <div className={styles.summaryItem}>
+            <span className={styles.summaryLabel}>Period change</span>
+            <span
+              className={
+                summary.period_change_pct >= 0
+                  ? styles.summaryValuePositive
+                  : styles.summaryValueNegative
+              }
+            >
+              {summary.period_change_pct >= 0 ? '+' : ''}
+              {summary.period_change_pct.toFixed(2)}%
+            </span>
+          </div>
+          <div className={styles.summaryItem}>
+            <span className={styles.summaryLabel}>Range</span>
+            <span className={styles.summaryValue}>
+              {summary.period_low.toFixed(2)}–{summary.period_high.toFixed(2)}
+            </span>
+          </div>
+          <div className={styles.summaryItem}>
+            <span className={styles.summaryLabel}>Avg volume</span>
+            <span className={styles.summaryValue}>{formatVolume(summary.avg_volume)}</span>
+          </div>
+          <div className={styles.summarySource}>
+            {summary.sessions} sessions · {summary.source} · as of {summary.as_of}
+          </div>
+        </div>
       )}
 
       {groups.map((group, groupIdx) => (

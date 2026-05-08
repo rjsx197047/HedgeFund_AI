@@ -22,8 +22,23 @@ export interface AnalyzeResponse {
   agents: unknown[];
 }
 
+export interface QuoteSummary {
+  ticker: string;
+  trade_date: string;
+  as_of: string;
+  last_close: number;
+  period_open: number;
+  period_high: number;
+  period_low: number;
+  period_change_pct: number;
+  avg_volume: number;
+  sessions: number;
+  source: string;
+}
+
 export type DebateEvent =
   | { type: 'session.start'; ticker: string; trade_date: string }
+  | ({ type: 'data.summary' } & QuoteSummary)
   | { type: 'agent.message'; agent: string; phase: string; content: string }
   | { type: 'phase.transition'; from: string; to: string }
   | {

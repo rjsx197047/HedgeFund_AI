@@ -38,7 +38,17 @@
 
 - `c5815fa` — Phase 3: wire desktop renderer to engine sidecar end-to-end
 
-**Stretch shipped after Phase 3:** Phase 4 UI spike — Settings page reachable from the sidebar with hash-based routing, 5 tabs (LLM Providers, Data Providers, Broker, Clawless, About) showing the provider matrix with disabled `Configure` buttons and a phase-guard footer. Watchlist + History pages render `ComingSoon` placeholders. **No keytar / native dep / secret storage** — that's gated on founder check-in per advisor scope guard.
+**Stretch shipped after Phase 3:**
+
+1. **Phase 4 UI spike** (commit `e716d86`) — Settings page reachable from the sidebar with hash-based routing, 5 tabs (LLM Providers, Data Providers, Broker, Clawless, About) showing the provider matrix with disabled `Configure` buttons and a phase-guard footer. Watchlist + History pages render `ComingSoon` placeholders. **No keytar / native dep / secret storage** — that's gated on founder check-in per advisor scope guard.
+
+2. **Phase 5 part 1: yfinance data integration** (commit hash to follow) — engine sidecar now ships a `BaseDataProvider` Protocol + `YFinanceProvider` default. Real NVDA data verified: $211.50 last close, +19.38% over 24 sessions, 147M avg volume. New endpoints + WS event:
+   - `GET /data/summary?ticker=X&trade_date=Y` returns real OHLCV summary or 404 on unknown ticker
+   - WS `/stream` emits a `data.summary` event before the canned debate
+   - analyst/researcher/trader messages inject real numbers — e.g., technical_analyst now reads "*last close 211.50, 19.38% up over the 24-session window (range 173.66–216.83). Avg daily volume ≈ 147,571,146.*"
+   - Decision reasoning anchors on the real ticker + price + window
+   - Network-failure path: stream gracefully falls back to original canned messages
+   - Renderer surfaces a compact summary strip (last close · period change · range · avg volume · source) at the top of the debate panel. Period change is colored green/red.
 
 **Next session opens with:** depends on autonomous block outcome — see latest entry. If Phase 3 is the only thing that landed, founder should smoke-test it via `npm run dev`, click Analyze NVDA, expect 17 events ending with HOLD@0.55. If Phase 4 scaffolding also landed, founder should additionally check the Settings route + tab structure (no functional keychain yet — that's a separate commit gated on founder approval per advisor scope guard).
 

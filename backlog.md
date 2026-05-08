@@ -57,8 +57,9 @@
 
 ## Phase 5 — Data + broker
 
-- ⚪ `BaseDataProvider` abstraction; `YFinanceProvider` (default) + `AlpacaProvider`.
-- ⚪ Data Providers settings tab.
+- 🟢 **Phase 5 part 1 (yfinance default data)** — `engine/data_providers.py` ships `BaseDataProvider` Protocol + `QuoteSummary` dataclass + `YFinanceProvider` impl. New `GET /data/summary` endpoint with 404 on unknown tickers. WS `/stream` emits a `data.summary` event before the canned debate, and analyst/researcher/trader messages inject real numbers (last close, period change, volume, range). Renderer surfaces a compact summary strip (last close · period change · range · avg volume · source) above the debate. yfinance added to `engine/requirements.txt`.
+- ⚪ `AlpacaProvider` data — needs Alpaca API key + keychain plumbing (gated on Phase 4 keychain commit).
+- ⚪ Data Providers settings tab — wire beyond placeholder.
 - ⚪ `BaseBroker` abstraction; `AlpacaBroker` paper-trading.
 - ⚪ Broker settings tab — live-trading gated behind "I understand this is my decision" affordance.
 - ⚪ Acceptance: founder runs analysis with Alpaca data, places paper-trade order from the recommendation.

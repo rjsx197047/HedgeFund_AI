@@ -28,6 +28,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from . import __version__
+from .data_providers import (
+    DataUnavailable,
+    QuoteSummary,
+    default_provider,
+)
 from .stub_debate import canned_debate
 
 
@@ -75,7 +80,26 @@ def build_app(*, token: str) -> FastAPI:
             "version": __version__,
             "uptime_seconds": round(time.monotonic() - started_at, 2),
             "engine_state": "stub",
+            "data_provider": default_provider.name,
         }
+
+    @app.get("/data/summary", dependencies=bearer)
+    async def data_summary(ticker: str, trade_date: str) -> dict[str, Any]:
+        try:
+            summary = await default_provider.quote_summary(
+                ticker=ticker, trade_date=trade_date
+            )
+        except DataUnavailable as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(exc),
+            )
+        except Exception as exc:  # noqa: BLE001 — convert any provider error into 502
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"data provider error: {exc}",
+            )
+        return _summary_to_dict(summary)
 
     @app.post("/analyze", dependencies=bearer)
     async def analyze(req: AnalyzeRequest) -> dict[str, Any]:
@@ -109,7 +133,16 @@ def build_app(*, token: str) -> FastAPI:
             ticker = (start.get("ticker") or "").upper()
             trade_date = start.get("trade_date") or ""
 
-            for event in canned_debate(ticker=ticker, trade_date=trade_date):
+            # Best-effort data fetch; debate degrades gracefully if it fails.
+            summary = await _fetch_summary_safe(ticker=ticker, trade_date=trade_date)
+            if summary is not None:
+                await ws.send_json(
+                    {"type": "data.summary", **_summary_to_dict(summary)}
+                )
+
+            for event in canned_debate(
+                ticker=ticker, trade_date=trade_date, summary=summary
+            ):
                 await ws.send_json(event)
                 await asyncio.sleep(event.pop("_delay", 0.4))
             await ws.close(code=1000)
@@ -117,6 +150,33 @@ def build_app(*, token: str) -> FastAPI:
             return
 
     return app
+
+
+async def _fetch_summary_safe(*, ticker: str, trade_date: str) -> QuoteSummary | None:
+    if not ticker or not trade_date:
+        return None
+    try:
+        return await default_provider.quote_summary(
+            ticker=ticker, trade_date=trade_date
+        )
+    except Exception:  # noqa: BLE001 — never let data issues break the stream
+        return None
+
+
+def _summary_to_dict(summary: QuoteSummary) -> dict[str, Any]:
+    return {
+        "ticker": summary.ticker,
+        "trade_date": summary.trade_date,
+        "as_of": summary.as_of,
+        "last_close": summary.last_close,
+        "period_open": summary.period_open,
+        "period_high": summary.period_high,
+        "period_low": summary.period_low,
+        "period_change_pct": summary.period_change_pct,
+        "avg_volume": summary.avg_volume,
+        "sessions": summary.sessions,
+        "source": summary.source,
+    }
 
 
 class AnalyzeRequest(BaseModel):
