@@ -40,6 +40,11 @@ See `WORKLOG.md` for the full chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
+<Phase 4 main commit lands here>
+331b937  Finalize Handover + WORKLOG for end of autonomous block
+de030ee  Phase 5 polish: Stop button, accurate Data status, transcript export
+5273904  Phase 5 part 1: yfinance data integration + UI summary strip
+e716d86  Phase 4 spike: settings page + nav routing (no keychain yet)
 c5815fa  Phase 3: wire desktop renderer to engine sidecar end-to-end
 e527632  Pre-reboot wrap-up: refresh Handover + backlog
 81f7414  Handover checkpoint at end of Phase 2

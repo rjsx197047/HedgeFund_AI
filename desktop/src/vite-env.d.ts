@@ -10,10 +10,36 @@ interface EngineHandshakeBridge {
   token: string;
 }
 
+interface SecretListingBridge {
+  key: string;
+  hint: string;
+  updatedAt: string;
+}
+
+interface SecretEntryBridge {
+  hint: string;
+  updatedAt: string;
+  cipher: string;
+}
+
+interface SecretsAvailabilityBridge {
+  available: boolean;
+  filePath: string;
+}
+
+interface SecretsBridge {
+  availability: () => Promise<SecretsAvailabilityBridge>;
+  set: (key: string, value: string) => Promise<SecretEntryBridge>;
+  get: (key: string) => Promise<string | null>;
+  list: () => Promise<SecretListingBridge[]>;
+  delete: (key: string) => Promise<boolean>;
+}
+
 interface TradingAgentsLabBridge {
   version: string;
   platform: NodeJS.Platform;
   getEngineHandshake: () => Promise<EngineHandshakeBridge>;
+  secrets: SecretsBridge;
 }
 
 declare global {

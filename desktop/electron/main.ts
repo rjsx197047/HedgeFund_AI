@@ -2,6 +2,14 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { startEngine, stopEngine, type EngineHandshake } from './engine-runner';
+import {
+  deleteSecret,
+  getSecret,
+  isEncryptionAvailable,
+  listSecrets,
+  secretsFileLocation,
+  setSecret,
+} from './secrets';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,6 +52,22 @@ function createWindow() {
 ipcMain.handle('engine:get-handshake', async (): Promise<EngineHandshake> => {
   return startEngine();
 });
+
+ipcMain.handle('secrets:availability', () => ({
+  available: isEncryptionAvailable(),
+  filePath: secretsFileLocation(),
+}));
+
+ipcMain.handle(
+  'secrets:set',
+  (_evt, key: string, value: string) => setSecret(key, value),
+);
+
+ipcMain.handle('secrets:get', (_evt, key: string) => getSecret(key));
+
+ipcMain.handle('secrets:list', () => listSecrets());
+
+ipcMain.handle('secrets:delete', (_evt, key: string) => deleteSecret(key));
 
 app.whenReady().then(() => {
   // Start the sidecar eagerly so the handshake is ready by the time the

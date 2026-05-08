@@ -6,6 +6,39 @@
 
 ---
 
+## 2026-05-08 (continued) — Phase 4 main: secret storage + Settings UI
+
+**Goal:** Wire Phase 4 secrets end-to-end so founder can paste API keys (OpenAI, Anthropic, etc.) and they persist encrypted at rest. Per advisor scope guard, the "engine consumes the keys" wiring stays held for Phase 2.1.
+
+**Architecture decision:** chose Electron `safeStorage` over `keytar` — no native dependency, same OS-level encryption guarantee on Mac/Windows (Linux without keyring hard-fails as designed). Storage is a versioned JSON file at `<userData>/secrets.json` containing only base64-encoded encrypted blobs. Plaintext never touches disk.
+
+**Pre-empts in this commit (per advisor):**
+
+- Hard-fail on `safeStorage.isEncryptionAvailable() === false` — UI surfaces a banner; no silent plaintext fallback
+- Versioned schema (`{version: 1, entries: {...}}`) — cheap now, painful to retrofit
+- Never re-display stored values — UI shows last-4 hint only (`…sk-1234`)
+- No "Test connection" button that calls the provider — would burn founder's quota autonomously while they sleep
+- No localStorage Watchlist/History — that decision belongs in SQLite per `architecture.md`
+
+**Shipped:**
+
+- New: `desktop/electron/secrets.ts` — safeStorage wrapper with atomic file writes (write-tmp + rename) and 0600 file mode. Exports `setSecret`, `getSecret`, `deleteSecret`, `listSecrets`, `isEncryptionAvailable`, `secretsFileLocation`.
+- Updated: `desktop/electron/main.ts` — registers IPC handlers `secrets:{availability,set,get,list,delete}`.
+- Updated: `desktop/electron/preload.ts` — exposes `tradingAgentsLab.secrets` on the contextBridge.
+- Updated: `desktop/src/vite-env.d.ts` — ambient types for the new bridge surface.
+- New: `desktop/src/lib/secrets.ts` — typed renderer wrapper.
+- Rewritten: `desktop/src/pages/Settings.tsx` — every tab now calls into the bridge. Each row has Configure / Replace / Delete; stored entries show last-4 hint + relative timestamp. About tab shows the encryption status, secrets file path, and entry count so founder knows where to back up.
+- Updated: `desktop/src/pages/Settings.module.css` — editor inline form, action variants, danger button, code block, availability banner.
+
+**Verification:**
+
+- npm run type-check: clean
+- npm run build: clean (main.js bumped from 2.56 KB → 4.99 KB to fit the new IPC + secrets module)
+- Dev launch smoke: Electron starts, Vite ready, engine spawned, no IPC registration errors
+- Manual functional smoke pending founder review (same caveat as Phase 3 — needs UI click-through that autonomy can't drive)
+
+---
+
 ## 2026-05-08 — Phase 3: end-to-end debate streaming + autonomous block
 
 **Goal:** Wire the Electron renderer to the Python sidecar so clicking "Analyze NVDA" streams the canned debate into the UI. Stretch: scaffold Phase 4 settings page (no keychain yet) per advisor green-light.

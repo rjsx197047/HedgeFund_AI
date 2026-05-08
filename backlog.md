@@ -50,9 +50,11 @@
 ## Phase 4 — Settings page
 
 - 🟢 **Phase 4 spike (UI scaffolding)** — Settings page reachable via sidebar with hash-based routing, 5 tabs (LLM Providers, Data Providers, Broker, Clawless, About) with disabled "Configure" buttons and a phase-guard footer explaining wiring lands later. Watchlist + History pages render `ComingSoon` placeholders.
-- ⚪ LLM Providers tab — wire BYO API keys for all supported providers + OAuth flow for OpenAI (per public OpenAI SDK docs). **No Anthropic OAuth** (TOS).
-- ⚪ Wire OS keychain (keytar) for secret storage. **Gated on founder check-in** — keytar is a native dep that benefits from a yes-go before npm install.
-- ⚪ Move hardcoded keys → keychain-backed config.
+- 🟢 **Phase 4 main: secret storage layer** — Electron `safeStorage`-backed (no native deps; OS keychain on macOS, DPAPI on Windows, libsecret on Linux). Versioned JSON schema at `<userData>/secrets.json`. Hard-fails when `safeStorage.isEncryptionAvailable()` returns false. IPC: `secrets:availability/set/get/list/delete`. Renderer wrapper at `desktop/src/lib/secrets.ts`.
+- 🟢 **Phase 4 main: Settings UI wiring** — LLM Providers (OpenAI, Anthropic, DeepSeek, OpenRouter), Data Providers (Alpaca; yfinance shown as Active default), Broker (Alpaca paper/live), Clawless (gateway URL + token) all wired through the secrets bridge. Inline "Configure / Replace / Delete" with masked-tail (`…last4`) + relative timestamp on stored entries. About tab shows the secrets file path explicitly so backups/migration are obvious.
+- ⚪ Real LLM key validation ("Test connection" button) — intentionally **not** in this commit; would burn quota on the founder's key. Belongs in a follow-up gated on founder go-ahead.
+- ⚪ OAuth flow for OpenAI (per public OpenAI SDK docs). **No Anthropic OAuth** (TOS).
+- ⚪ Engine consumption: thread provider config from renderer into `/analyze` + WS `/stream` start frame. **Held for Phase 2.1** — wiring shape depends on which provider founder picks first.
 - ⚪ Acceptance: founder pastes his real OpenAI key, runs analysis, key persists across restarts.
 
 ## Phase 5 — Data + broker
