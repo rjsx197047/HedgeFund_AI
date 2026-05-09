@@ -5,31 +5,32 @@
   gap: var(--tal-space-6);
 }
 
+/* Stacked vertically: title block on top, then provider selector below
+ * the subtitle. Earlier flex-row + wrap behavior was inconsistent —
+ * short model descriptions (Anthropic "Sonnet 4.6 — Balanced") fit
+ * beside the title and squeezed the subtitle into a narrow column;
+ * long ones (OpenAI "gpt-5.4 — Strong model for everyday coding")
+ * wrapped below cleanly. Founder wanted the always-below layout that
+ * the OpenAI case showed naturally — forcing `flex-direction: column`
+ * makes it deterministic regardless of model description length. */
 .pageHeader {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--tal-space-6);
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--tal-space-3);
 }
 
 .pageHeaderTitleBlock {
   display: flex;
   flex-direction: column;
   gap: var(--tal-space-2);
-  flex: 1;
-  min-width: 0;
 }
 
-/* Provider selector pinned to the top-right of the page header, across
- * from the "Analyze" title. Treated as a one-time setup affordance — not
- * a recurring form field — so it stays out of the main analyze card. */
 .pageHeaderProvider {
   display: flex;
   align-items: center;
   gap: var(--tal-space-2);
-  flex-shrink: 0;
-  margin-top: var(--tal-space-1);
+  flex-wrap: wrap;
 }
 
 .pageTitle {
