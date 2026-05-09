@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Analyze from './pages/Analyze';
 import Settings from './pages/Settings';
 import History from './pages/History';
 import Watchlist from './pages/Watchlist';
 import StatusStrip from './components/StatusStrip';
+import { UpstreamCheckModal } from './components/UpstreamCheckModal';
+import { checkUpstream, type UpstreamCheckResult } from './lib/upstream';
 import styles from './App.module.css';
 
 type Route = 'analyze' | 'watchlist' | 'history' | 'settings';
@@ -18,6 +20,32 @@ function parseHash(hash: string): Route {
 function App() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
   const [newAnalysisTick, setNewAnalysisTick] = useState(0);
+  /** Upstream-check modal state. null = closed; "checking" = in flight;
+   * UpstreamCheckResult once the IPC round-trip returns. */
+  const [upstreamModal, setUpstreamModal] = useState<
+    'checking' | UpstreamCheckResult | null
+  >(null);
+
+  const runUpstreamCheck = useCallback(async () => {
+    setUpstreamModal('checking');
+    try {
+      const result = await checkUpstream();
+      setUpstreamModal(result);
+    } catch (err) {
+      setUpstreamModal({
+        status: 'error',
+        latestTag: '',
+        upstreamHead: '',
+        ourHead: '',
+        behindCount: 0,
+        aheadCount: 0,
+        behindCommits: [],
+        checkedAt: new Date().toISOString(),
+        error: err instanceof Error ? err.message : String(err),
+        compareUrl: 'https://github.com/TauricResearch/TradingAgents',
+      });
+    }
+  }, []);
 
   useEffect(() => {
     const onHashChange = () => setRoute(parseHash(window.location.hash));
@@ -39,11 +67,25 @@ function App() {
       window.location.hash = '#analyze';
       setNewAnalysisTick((n) => n + 1);
     });
+    const unsubUpstream = bridge.onMenuCommand('menu:check-upstream', () => {
+      void runUpstreamCheck();
+    });
     return () => {
       unsubNav();
       unsubNew();
+      unsubUpstream();
     };
-  }, []);
+  }, [runUpstreamCheck]);
+
+  // Expose the trigger globally so Settings → About can call it without
+  // prop-drilling. Slightly hacky vs proper context but cheap and contained.
+  useEffect(() => {
+    (window as unknown as { __talCheckUpstream?: () => void }).__talCheckUpstream =
+      () => void runUpstreamCheck();
+    return () => {
+      delete (window as unknown as { __talCheckUpstream?: () => void }).__talCheckUpstream;
+    };
+  }, [runUpstreamCheck]);
 
   const navItem = (target: Route, label: string) => {
     const active = route === target;
@@ -88,6 +130,13 @@ function App() {
         {route === 'history' && <History />}
         {route === 'settings' && <Settings />}
       </main>
+
+      {upstreamModal !== null && (
+        <UpstreamCheckModal
+          state={upstreamModal}
+          onDismiss={() => setUpstreamModal(null)}
+        />
+      )}
 
       <footer className={styles.footer}>
         <span>Trading Agents Lab v0.0.1 · AGPL-3.0</span>

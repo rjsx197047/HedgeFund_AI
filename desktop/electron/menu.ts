@@ -115,6 +115,16 @@ export function buildMenu(getWin: () => BrowserWindow | null): Menu {
     label: 'Help',
     submenu: [
       {
+        label: 'Check for Updates…',
+        click: () => {
+          const w = getWin();
+          if (w && !w.isDestroyed()) {
+            w.webContents.send('menu:check-upstream');
+          }
+        },
+      },
+      { type: 'separator' },
+      {
         label: 'Trading Agents Lab on GitHub',
         click: () => shell.openExternal(REPO_URL),
       },

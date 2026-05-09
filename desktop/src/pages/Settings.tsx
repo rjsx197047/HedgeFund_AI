@@ -677,6 +677,18 @@ function AboutTab({ availability, secretsCount }: AboutTabProps) {
             >
               TauricResearch/TradingAgents
             </a>
+            <button
+              type="button"
+              className={styles.refreshLink}
+              onClick={() => {
+                const trigger = (window as unknown as { __talCheckUpstream?: () => void })
+                  .__talCheckUpstream;
+                if (trigger) trigger();
+              }}
+              style={{ marginLeft: 12 }}
+            >
+              Check for updates
+            </button>
           </dd>
         </div>
         <div className={styles.aboutRow}>

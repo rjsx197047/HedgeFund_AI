@@ -22,7 +22,24 @@ export interface SecretsAvailability {
   filePath: string;
 }
 
-type MenuChannel = 'menu:navigate' | 'menu:new-analysis' | 'menu:stop-stream';
+type MenuChannel =
+  | 'menu:navigate'
+  | 'menu:new-analysis'
+  | 'menu:stop-stream'
+  | 'menu:check-upstream';
+
+export interface UpstreamCheckResultBridge {
+  status: 'ok' | 'behind' | 'error';
+  latestTag: string;
+  upstreamHead: string;
+  ourHead: string;
+  behindCount: number;
+  aheadCount: number;
+  behindCommits: string[];
+  checkedAt: string;
+  error?: string;
+  compareUrl: string;
+}
 
 export interface OAuthStartResult {
   success: boolean;
@@ -98,4 +115,6 @@ contextBridge.exposeInMainWorld('tradingAgentsLab', {
     ipcRenderer.on(channel, wrapped);
     return () => ipcRenderer.removeListener(channel, wrapped);
   },
+  checkUpstream: (): Promise<UpstreamCheckResultBridge> =>
+    ipcRenderer.invoke('app:check-upstream'),
 });

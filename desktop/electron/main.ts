@@ -12,6 +12,7 @@ import {
   secretsFileLocation,
   setSecret,
 } from './secrets';
+import { checkUpstream, type UpstreamCheckResult } from './upstream-check';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -121,6 +122,10 @@ ipcMain.on('oauth:openai:prompt-response', (_evt, value: string) => {
 });
 // Used by `engine-client.ts` to fetch fresh credentials right before
 // building the WS start frame. Returns the credentials object (or null).
+ipcMain.handle('app:check-upstream', async (): Promise<UpstreamCheckResult> => {
+  return checkUpstream();
+});
+
 ipcMain.handle('oauth:openai:credentials', async () => {
   return ensureOAuthService().refreshIfNeeded();
 });

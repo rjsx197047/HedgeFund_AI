@@ -71,7 +71,24 @@ interface OAuthBridge {
   onPrompt: (handler: (event: OAuthPromptEventBridge) => void) => () => void;
 }
 
-type MenuChannel = 'menu:navigate' | 'menu:new-analysis' | 'menu:stop-stream';
+type MenuChannel =
+  | 'menu:navigate'
+  | 'menu:new-analysis'
+  | 'menu:stop-stream'
+  | 'menu:check-upstream';
+
+interface UpstreamCheckResultBridge {
+  status: 'ok' | 'behind' | 'error';
+  latestTag: string;
+  upstreamHead: string;
+  ourHead: string;
+  behindCount: number;
+  aheadCount: number;
+  behindCommits: string[];
+  checkedAt: string;
+  error?: string;
+  compareUrl: string;
+}
 
 interface TradingAgentsLabBridge {
   version: string;
@@ -83,6 +100,7 @@ interface TradingAgentsLabBridge {
     channel: MenuChannel,
     handler: (...args: unknown[]) => void,
   ) => () => void;
+  checkUpstream: () => Promise<UpstreamCheckResultBridge>;
 }
 
 declare global {
