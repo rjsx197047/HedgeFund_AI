@@ -451,8 +451,8 @@ function SecretRowItem({ row, listing, disabled, onChange }: SecretRowItemProps)
         )}
       </div>
       <div className={styles.rowAside}>
-        <span className={`${styles.pill} ${styles[`pill_${row.pillVariant}`]}`}>
-          {row.pillLabel}
+        <span className={`${styles.pill} ${styles[`pill_${pillState(row, listing).variant}`]}`}>
+          {pillState(row, listing).label}
         </span>
         {!editing && (
           <>
@@ -756,6 +756,33 @@ function AboutTab({ availability, secretsCount }: AboutTabProps) {
       </dl>
     </div>
   );
+}
+
+/**
+ * Pill state per row, applying the green-Connected convention from
+ * commit `bdc1716` ("Green = wired and working right now") universally
+ * to every SecretRowItem — not just OAuth + yfinance.
+ *
+ * Rules:
+ * - listing != null AND pillVariant = 'planned' → "Stored · Inert" in the
+ *   neutral optional style. Communicates "we have the key" without the
+ *   green-confirming-active feel that would mislead on Restricted rows
+ *   (e.g. Alpaca Live, where the engine refuses to place real-money
+ *   orders even with keys configured).
+ * - listing != null otherwise → "Connected ✓" in green pill_success.
+ * - listing == null → static label/variant from the row definition.
+ */
+function pillState(
+  row: SecretRow,
+  listing: SecretListing | null,
+): { label: string; variant: 'default' | 'planned' | 'optional' | 'success' } {
+  if (!listing) {
+    return { label: row.pillLabel, variant: row.pillVariant };
+  }
+  if (row.pillVariant === 'planned') {
+    return { label: 'Stored · Inert', variant: 'optional' };
+  }
+  return { label: 'Connected ✓', variant: 'success' };
 }
 
 function formatRelative(iso: string): string {
