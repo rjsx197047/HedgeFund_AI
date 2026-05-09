@@ -108,7 +108,31 @@ function App() {
             <span className={styles.brandMark}>◆</span>
             <span className={styles.brandText}>Trading Agents Lab</span>
           </span>
-          <span className={styles.connectionPill}>Standalone</span>
+          <div className={styles.titleBarRight}>
+            <span className={styles.connectionPill}>Standalone</span>
+            <button
+              type="button"
+              className={`${styles.titleBarButton} app-no-drag`}
+              onClick={() => {
+                window.tradingAgentsLab?.restart?.();
+              }}
+              title="Restart — kills the engine sidecar and relaunches the app"
+              aria-label="Restart app"
+            >
+              ↻
+            </button>
+            <button
+              type="button"
+              className={`${styles.titleBarButton} ${styles.titleBarButtonDanger} app-no-drag`}
+              onClick={() => {
+                window.tradingAgentsLab?.shutdown?.();
+              }}
+              title="Shut down — kills the engine sidecar and quits the app"
+              aria-label="Shut down app"
+            >
+              ⏻
+            </button>
+          </div>
         </div>
       </header>
 

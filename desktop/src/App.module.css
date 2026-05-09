@@ -63,6 +63,49 @@
   color: var(--tal-text-secondary);
 }
 
+/* Right cluster of the title bar — pill + restart + shutdown buttons.
+   Buttons are app-no-drag so clicks register; rest of the title bar
+   stays draggable for moving the window. */
+.titleBarRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.titleBarButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid var(--tal-border-default);
+  color: var(--tal-text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  font-family: inherit;
+}
+
+.titleBarButton:hover {
+  background: var(--tal-bg-overlay);
+  color: var(--tal-text-primary);
+  border-color: var(--tal-border-strong, var(--tal-border-default));
+}
+
+.titleBarButton:active {
+  transform: scale(0.95);
+}
+
+.titleBarButtonDanger:hover {
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--tal-negative, #f85149);
+  border-color: rgba(248, 81, 73, 0.4);
+}
+
 .sidebar {
   grid-area: side;
   background: var(--tal-bg-elevated);

@@ -117,4 +117,6 @@ contextBridge.exposeInMainWorld('tradingAgentsLab', {
   },
   checkUpstream: (): Promise<UpstreamCheckResultBridge> =>
     ipcRenderer.invoke('app:check-upstream'),
+  shutdown: (): Promise<void> => ipcRenderer.invoke('app:shutdown'),
+  restart: (): Promise<void> => ipcRenderer.invoke('app:restart'),
 });

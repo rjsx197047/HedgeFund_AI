@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { startEngine, stopEngine, type EngineHandshake } from './engine-runner';
@@ -124,6 +125,84 @@ ipcMain.on('oauth:openai:prompt-response', (_evt, value: string) => {
 // building the WS start frame. Returns the credentials object (or null).
 ipcMain.handle('app:check-upstream', async (): Promise<UpstreamCheckResult> => {
   return checkUpstream();
+});
+
+// ---- Graceful shutdown / restart ---------------------------------------
+//
+// Founder ask 2026-05-09: surface a way to cleanly stop + relaunch the app
+// without going to the terminal. The macOS red traffic-light just hides
+// the window; closing all windows fires `window-all-closed` which calls
+// stopEngine() — but only on non-darwin platforms does it `app.quit()`.
+// Result: on macOS the app sits in the dock with no window AND the engine
+// is killed, leaving the user in a weird state.
+//
+// These IPC handlers make Shutdown + Restart explicit. Both:
+//   1. SIGTERM the tracked engine via stopEngine()
+//   2. (dev only) sweep any orphan engines from previous crashed sessions
+//   3. Either app.quit() or app.relaunch() + app.quit()
+//
+// The dev-only pkill sweep uses execFile (no shell — no command injection
+// surface) and exits 0 even when nothing matched. In production builds
+// the engine is a bundled binary at a different path, so this match
+// pattern won't trigger anything outside dev.
+
+const IS_DEV = Boolean(process.env['VITE_DEV_SERVER_URL']);
+
+async function sweepOrphanEngines(): Promise<void> {
+  if (!IS_DEV) return;
+  if (process.platform === 'win32') return; // pkill not available
+  await new Promise<void>((resolve) => {
+    execFile(
+      'pkill',
+      ['-f', 'engine/.venv/bin/python -m engine'],
+      { timeout: 3000 },
+      () => resolve(), // ignore errors — pkill exits 1 when no match
+    );
+  });
+}
+
+async function confirmAction(action: 'shutdown' | 'restart'): Promise<boolean> {
+  const w = win;
+  const messages = {
+    shutdown: {
+      title: 'Shut down Trading Agents Lab?',
+      detail: 'The engine sidecar will stop and the app will quit. Any in-flight debate is aborted.',
+      confirmLabel: 'Shut down',
+    },
+    restart: {
+      title: 'Restart Trading Agents Lab?',
+      detail: 'The engine sidecar will stop and the app will relaunch. Any in-flight debate is aborted.',
+      confirmLabel: 'Restart',
+    },
+  };
+  const cfg = messages[action];
+  const result = await dialog.showMessageBox(w ?? undefined!, {
+    type: 'question',
+    buttons: ['Cancel', cfg.confirmLabel],
+    defaultId: 0,
+    cancelId: 0,
+    title: cfg.title,
+    message: cfg.title,
+    detail: cfg.detail,
+  });
+  return result.response === 1;
+}
+
+ipcMain.handle('app:shutdown', async (): Promise<void> => {
+  const ok = await confirmAction('shutdown');
+  if (!ok) return;
+  stopEngine();
+  await sweepOrphanEngines();
+  app.quit();
+});
+
+ipcMain.handle('app:restart', async (): Promise<void> => {
+  const ok = await confirmAction('restart');
+  if (!ok) return;
+  stopEngine();
+  await sweepOrphanEngines();
+  app.relaunch();
+  app.quit();
 });
 
 ipcMain.handle('oauth:openai:credentials', async () => {

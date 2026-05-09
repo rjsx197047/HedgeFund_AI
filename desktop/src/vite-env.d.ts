@@ -101,6 +101,8 @@ interface TradingAgentsLabBridge {
     handler: (...args: unknown[]) => void,
   ) => () => void;
   checkUpstream: () => Promise<UpstreamCheckResultBridge>;
+  shutdown: () => Promise<void>;
+  restart: () => Promise<void>;
 }
 
 declare global {
