@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './Analyze.module.css';
 import DebateStream from '../components/DebateStream';
+import { CostGuardModal, type OverDimension } from '../components/CostGuardModal';
 import {
   getHandshake,
   getHealth,
@@ -16,6 +17,12 @@ import {
   PROVIDER_PRIORITY,
   PROVIDER_SECRET_KEY,
 } from '../lib/engine-client';
+import {
+  CostGuardBlocked,
+  reserveCostGuard,
+  type CostGuardConfig,
+  type SpendState,
+} from '../lib/cost-guard';
 import { buildTranscriptMarkdown } from '../lib/transcript';
 import { getSecret, listSecrets } from '../lib/secrets';
 import { consumePendingTicker } from '../lib/handoff';
@@ -79,6 +86,20 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
    * path the next debate will hit when the active provider is OpenAI.
    */
   const [openaiAuthKind, setOpenaiAuthKind] = useState<'oauth' | 'api_key' | null>(null);
+
+  /**
+   * CostGuard override modal state. When `blocked` is non-null, the modal
+   * is open and the user must Cancel or Override before the debate runs.
+   * The Promise resolver lets the async onAnalyze flow await the user's
+   * choice without resorting to event-based callback gymnastics.
+   */
+  const [costGuardBlocked, setCostGuardBlocked] = useState<{
+    over_dimension: OverDimension;
+    spend: SpendState;
+    config: CostGuardConfig;
+    est_cost_usd: number;
+  } | null>(null);
+  const costGuardResolverRef = useRef<((proceed: boolean) => void) | null>(null);
 
   /**
    * The provider that will actually run the next debate, after considering
@@ -393,11 +414,68 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         // surfaces the broken-encryption case.
       }
 
+      // CostGuard reservation gate. Only applies to live debates — stub
+      // mode (no providerConfig) skips the gate entirely on both sides.
+      // We try the reservation, and if it fails with CostGuardBlocked we
+      // open the modal and await the user's choice. Cancel returns early;
+      // Override re-tries with override=true.
+      let reservationId: string | undefined;
+      if (providerConfig) {
+        const auth_kind = providerConfig.auth.type;
+        // ProviderConfig.model and max_tokens are typed optional; both are
+        // populated above when we built the config, so default safely.
+        const cgModel = providerConfig.model ?? '';
+        const cgMaxTokens = providerConfig.max_tokens ?? 400;
+        try {
+          const reservation = await reserveCostGuard({
+            model: cgModel,
+            auth_kind,
+            max_tokens: cgMaxTokens,
+          });
+          reservationId = reservation.reservation_id;
+        } catch (err) {
+          if (err instanceof CostGuardBlocked) {
+            // Open the modal and wait for the user's decision.
+            const proceed = await new Promise<boolean>((resolve) => {
+              costGuardResolverRef.current = resolve;
+              setCostGuardBlocked({
+                over_dimension: err.over_dimension,
+                spend: err.spend,
+                config: err.config,
+                est_cost_usd: err.est_cost_usd,
+              });
+            });
+            if (!proceed) {
+              // User cancelled — abort cleanly with a friendly message.
+              setStreamError(
+                `Cost guard: ${err.over_dimension} cap reached. Adjust caps in Settings or override at run time.`,
+              );
+              return;
+            }
+            // User overrode — reserve again with override=true.
+            const reservation = await reserveCostGuard({
+              model: cgModel,
+              auth_kind,
+              max_tokens: cgMaxTokens,
+              override: true,
+            });
+            reservationId = reservation.reservation_id;
+          } else {
+            // Unexpected error from /cost-guard/reserve. Surface and abort.
+            setStreamError(
+              err instanceof Error ? err.message : 'cost guard reserve failed',
+            );
+            return;
+          }
+        }
+      }
+
       const handle = await streamDebate(
         {
           ticker,
           trade_date: date,
           provider_config: providerConfig,
+          reservation_id: reservationId,
         },
         (event) => setEvents((prev) => [...prev, event]),
         (err) => {
@@ -464,8 +542,30 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   const buttonDisabled = engineStatus !== 'running' || isStreaming;
   const transcriptReady = events.some((e) => e.type === 'session.complete');
 
+  const onCostGuardConfirm = useCallback(() => {
+    setCostGuardBlocked(null);
+    costGuardResolverRef.current?.(true);
+    costGuardResolverRef.current = null;
+  }, []);
+
+  const onCostGuardCancel = useCallback(() => {
+    setCostGuardBlocked(null);
+    costGuardResolverRef.current?.(false);
+    costGuardResolverRef.current = null;
+  }, []);
+
   return (
     <div className={styles.page}>
+      {costGuardBlocked && (
+        <CostGuardModal
+          overDimension={costGuardBlocked.over_dimension}
+          spend={costGuardBlocked.spend}
+          config={costGuardBlocked.config}
+          estCostUsd={costGuardBlocked.est_cost_usd}
+          onConfirm={onCostGuardConfirm}
+          onCancel={onCostGuardCancel}
+        />
+      )}
       <header className={styles.pageHeader}>
         <div className={styles.pageHeaderTitleBlock}>
           <h1 className={styles.pageTitle}>Analyze</h1>

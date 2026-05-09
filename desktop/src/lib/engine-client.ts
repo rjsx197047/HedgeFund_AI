@@ -186,6 +186,11 @@ export interface AnalyzeRequest {
   ticker: string;
   trade_date: string;
   provider_config?: ProviderConfig;
+  /** CostGuard reservation id from `reserveCostGuard()`. When present,
+   * the engine skips its server-side auto-reserve. When absent on a live
+   * debate, the engine auto-reserves with override=false and may block
+   * with a `cost.blocked` event. */
+  reservation_id?: string;
 }
 
 export interface AnalyzeDecision {
@@ -247,13 +252,35 @@ export interface NewsHeadlinesEvent {
   headlines: Headline[];
 }
 
+/** Engine emits this when a live debate's auto-reserve fails because caps
+ * would be exceeded. Renderer surfaces it as a sessionError fallback in
+ * case the pre-WS gate didn't catch it (e.g. older engine, race with
+ * another window's run). Defensive — under normal flow the renderer
+ * gate handles this before the WS opens. */
+export interface CostBlockedEvent {
+  type: 'cost.blocked';
+  over_dimension: 'daily' | 'weekly' | 'monthly' | 'rate';
+  spend: { daily_usd: number; weekly_usd: number; monthly_usd: number; sessions_today: number };
+  config: {
+    enabled: boolean;
+    cap_daily_usd: number;
+    cap_weekly_usd: number;
+    cap_monthly_usd: number;
+    cap_sessions_per_day: number;
+    updated_at: string;
+  };
+  est_cost_usd: number;
+  message: string;
+}
+
 export type DebateEvent =
   | { type: 'session.start'; ticker: string; trade_date: string }
   | ({ type: 'data.summary' } & QuoteSummary)
   | NewsHeadlinesEvent
   | { type: 'agent.message'; agent: string; phase: string; content: string }
   | { type: 'phase.transition'; from: string; to: string }
-  | SessionCompleteEvent;
+  | SessionCompleteEvent
+  | CostBlockedEvent;
 
 export interface StreamHandle {
   close(): void;
@@ -262,7 +289,7 @@ export interface StreamHandle {
 
 let cachedHandshake: EngineHandshake | null = null;
 
-async function handshake(): Promise<EngineHandshake> {
+export async function handshake(): Promise<EngineHandshake> {
   if (cachedHandshake) return cachedHandshake;
   if (!window.tradingAgentsLab?.getEngineHandshake) {
     throw new Error('engine bridge not available — preload not loaded');
@@ -464,6 +491,7 @@ export async function streamDebate(
         ticker: req.ticker,
         trade_date: req.trade_date,
         provider_config: req.provider_config,
+        reservation_id: req.reservation_id,
       }),
     );
   });
