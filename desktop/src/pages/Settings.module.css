@@ -166,6 +166,16 @@
   background: var(--tal-bg-base);
 }
 
+/* Active connection / "this is wired and working" — green, matches the
+ * green status dots on the Analyze page. Use for any pill that confirms
+ * a live connection (OAuth connected, default data provider serving, etc).
+ */
+.pill_success {
+  color: var(--tal-positive);
+  background: rgba(63, 185, 80, 0.12);
+  border-color: rgba(63, 185, 80, 0.4);
+}
+
 .pill_planned {
   color: var(--tal-negative);
   background: rgba(248, 81, 73, 0.08);

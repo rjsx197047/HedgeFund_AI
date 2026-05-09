@@ -459,7 +459,7 @@ function YfinanceRow() {
         </div>
       </div>
       <div className={styles.rowAside}>
-        <span className={`${styles.pill} ${styles.pill_default}`}>Active · default</span>
+        <span className={`${styles.pill} ${styles.pill_success}`}>Active · default</span>
       </div>
     </div>
   );
@@ -604,7 +604,11 @@ function OpenAIOAuthRow({ disabled }: OpenAIOAuthRowProps) {
         {error && <div className={styles.editorError}>{error}</div>}
       </div>
       <div className={styles.rowAside}>
-        <span className={`${styles.pill} ${connected ? styles.pill_default : styles.pill_optional}`}>
+        <span
+          className={`${styles.pill} ${
+            connected ? styles.pill_success : styles.pill_optional
+          }`}
+        >
           {connected ? 'Connected' : 'Recommended'}
         </span>
         {connected ? (

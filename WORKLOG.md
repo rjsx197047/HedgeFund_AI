@@ -6,6 +6,24 @@
 
 ---
 
+## 2026-05-09 (continued) — UX polish: green pill for active connections
+
+**Context:** Founder smoke-testing the live OAuth flow noticed the "Connected" pill on the Settings → LLM Providers row stayed amber (brand accent) instead of flipping to green. Same amber as the disconnected "Recommended" state — no visual confirmation. Status dots elsewhere in the app already use green for the "wired and working" state; the Settings pill needed to match.
+
+**Shipped:**
+- `desktop/src/pages/Settings.module.css` adds `.pill_success` (green using `--tal-positive`).
+- OAuth row pill flips `pill_default` → `pill_success` on Connected.
+- yfinance "Active · default" pill also flipped (same semantic — actively serving).
+
+**Convention now:**
+- Green = "this is wired and working right now" (OAuth connected, default data provider serving)
+- Amber `pill_default` = brand-accent labels (Recommended, Compatible, API key only) — descriptive, not connection state
+- Neutral / red kept as-is
+
+Vite HMR picked up the CSS change with no restart needed — verified by founder.
+
+---
+
 ## 2026-05-09 (continued) — OpenAI OAuth (Codex / subscription path)
 
 **Goal:** Founder explicitly stated they prefer routing through their ChatGPT subscription rather than per-token billing. Wire OAuth alongside the API-key path that shipped in `8a9526b`. Per Clawless Advisor's pattern reply (received 01:33 — they did the code dive after founder bumped priority), the heavy lifting belongs to a third-party MIT-licensed package (`@earendil-works/pi-ai`) that handles PKCE + browser callback + token exchange internally.
