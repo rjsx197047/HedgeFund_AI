@@ -132,23 +132,43 @@ const DATA_PROVIDERS: SecretRow[] = [
   },
 ];
 
+// Alpaca auth requires TWO values — Key ID (sent as APCA-API-KEY-ID) and
+// Secret Key (sent as APCA-API-SECRET-KEY). Both are minted together on the
+// Alpaca dashboard; the Secret is shown only once at generation time.
+// Endpoints are constants in the engine (paper-api.alpaca.markets for paper,
+// api.alpaca.markets for live), so no URL field is needed here.
 const BROKERS: SecretRow[] = [
   {
-    secretKey: 'broker:alpaca-paper',
-    name: 'Alpaca Paper Trading',
-    note: 'Default. Paper-only — no real-money risk.',
-    pillLabel: 'Default',
+    secretKey: 'broker:alpaca-paper-key-id',
+    name: 'Alpaca Paper Trading — Key ID',
+    note: 'Paper trading public key (APCA-API-KEY-ID). Looks like PKxxxxxxxxxxxxxxxx. Paste alongside the Secret below.',
+    pillLabel: 'Key ID',
     pillVariant: 'default',
-    placeholder: 'paper API key',
+    placeholder: 'PKxxxxxxxxxxxxxxxx',
   },
   {
-    secretKey: 'broker:alpaca-live',
-    name: 'Alpaca Live',
-    note:
-      'Real-money trading. Restricted in this distribution; configuration intentionally inert.',
+    secretKey: 'broker:alpaca-paper-secret',
+    name: 'Alpaca Paper Trading — Secret',
+    note: 'Paper trading secret (APCA-API-SECRET-KEY). Shown once at key generation on the Alpaca dashboard — regenerate the pair if you missed it.',
+    pillLabel: 'Secret',
+    pillVariant: 'default',
+    placeholder: 'paper secret key',
+  },
+  {
+    secretKey: 'broker:alpaca-live-key-id',
+    name: 'Alpaca Live — Key ID',
+    note: 'Real-money key. Restricted in this distribution; configuration stored but intentionally inert.',
     pillLabel: 'Restricted',
     pillVariant: 'planned',
-    placeholder: 'live API key (disabled)',
+    placeholder: 'live key ID (disabled)',
+  },
+  {
+    secretKey: 'broker:alpaca-live-secret',
+    name: 'Alpaca Live — Secret',
+    note: 'Real-money secret. Restricted in this distribution; configuration stored but intentionally inert.',
+    pillLabel: 'Restricted',
+    pillVariant: 'planned',
+    placeholder: 'live secret (disabled)',
   },
 ];
 
