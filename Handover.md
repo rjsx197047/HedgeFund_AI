@@ -58,7 +58,7 @@ See `WORKLOG.md` for the chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
-<multi-provider commit lands here>
+8a9526b  Multi-provider live debate: Anthropic + OpenRouter + Google Gemini
 7fcbefa  End-of-block: reconcile architecture.md §7 + refresh founder Q&A inbox
 4b88894  Watchlist page: SQLite-backed tickers + deep-link to Analyze
 d736e6e  History page: list + detail of persisted debates
@@ -95,7 +95,12 @@ Decisions I deferred during this run. The three from the previous block that I *
 
 - Q1 (first LLM provider) — chose **OpenAI / gpt-4o-mini** as the default. Cheapest reasonable model + most established SDK. Easy to swap.
 - Q3 (storage) — **SQLite at `<repo>/data/sessions.db`** per architecture. Sessions + watchlist both live there; gitignored.
-- Q5 from previous block (Alpaca data) — held; needs your key.
+- Multi-provider — all four wired (`8a9526b`): OpenAI, Anthropic, OpenRouter, Google Gemini. DeepSeek removed from Settings (no key, no engine wiring planned).
+- Q5 from previous block (Alpaca data) — still held; needs your key.
+
+**Externally blocked:**
+
+- **OpenAI OAuth** — Clawless Advisor acknowledged ping (2026-05-09 01:21) but deferred substance to your morning audit. They'll need you to pick whether the OpenClaw-engine OAuth path or a Clawless-wrapper OAuth path is the one to mirror. Won't pull clawless-developer off Clawless v5 launch work for it. Until you pick, the path is queued.
 
 ### What founder should do first when they return
 

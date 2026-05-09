@@ -40,7 +40,9 @@
 - Direct storage round-trip of `provider` field verified outside the smoke
 - Provider rate table cost estimate sanity-checked at import
 
-**Commit:** TBD.
+**Commit:** `8a9526b`.
+
+**Clawless Advisor reply (received 2026-05-09 01:21):** OAuth substance deferred to founder's morning audit — Advisor doesn't have direct working knowledge of Clawless's OpenAI OAuth pointers and won't pull clawless-developer off the launch-blocker (~5 days to GA on Clawless v5). Will surface back to me when founder picks which OAuth path to mirror (OpenClaw-engine vs Clawless-wrapper). Validates the multi-provider-first sequencing — "build all three API-key paths cleanly first; the OAuth path will land cleaner on top of stable API-key plumbing." Anthropic + OpenRouter share the `messages` API shape; Gemini is the outlier (different shape + `x-goog-api-key` header). All three already shipped in `8a9526b`.
 
 ---
 
