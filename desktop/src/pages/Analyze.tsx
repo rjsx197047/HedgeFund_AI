@@ -286,6 +286,14 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
    * whatever provider then resolves. Per-provider model memories in
    * localStorage are also cleared so "Reset" really means "give me the
    * recommended setup."
+   *
+   * Reads the current provider/auth via refs so the callback's identity
+   * doesn't churn on every state change AND doesn't capture stale state
+   * if the user changed providers between renders. Reset of `activeModel`
+   * has to happen explicitly here — the sync effect at line ~132 only
+   * re-fires when `[activeProvider, openaiAuthKind, availableModels]`
+   * changes, so a model-only reset (provider unchanged) wouldn't trigger
+   * it on its own.
    */
   const onResetOverrides = useCallback(() => {
     setManualProvider(null);
@@ -300,6 +308,16 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
       }
     } catch {
       // ignore
+    }
+    // Snap the in-memory model state back to the recommendation for the
+    // currently-resolved provider so a model-only override clears
+    // immediately (not only after the next provider/auth change).
+    const provider = activeProviderRef.current;
+    const authKind = openaiAuthKindRef.current;
+    if (provider) {
+      setActiveModel(getRecommendedModel(provider, authKind));
+    } else {
+      setActiveModel(null);
     }
   }, []);
 
