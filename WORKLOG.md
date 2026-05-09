@@ -6,6 +6,47 @@
 
 ---
 
+## 2026-05-08 (continued, third autonomous block) — Phase 2.1-light real-LLM debate
+
+**Goal:** Replace the canned stub debate with real OpenAI calls when a key is configured. Keep the stub path as the default so the demo still works without one. Per advisor design review, ship the *minimal own-prompts* implementation rather than a full upstream-graph wrapper — smaller blast radius, controllable cost, debuggable.
+
+**Architect protocol (advisor before, write, reviewer after):**
+
+- Pre-design advisor consult: scoped Phase 2.1-light, flagged five pitfalls (architecture.md drift, cost caps, reviewer protocol, storage chunk landmine, token-streaming-vs-complete), required OpenAI reachability test before building.
+- OpenAI reachability test: `urllib.request.urlopen('https://api.openai.com/v1/models', timeout=5)` returned 401 (reachable, just unauthorized). Plan locked.
+- Built engine/live_debate.py + provider_config plumbing in server.py + renderer wiring in Analyze.tsx + DebateStream.tsx
+- Code review (general-purpose Sonnet agent) on the working tree before commit. 3 strong-recommends + 2 nice-to-haves; addressed all five before commit.
+
+**Reviewer fixes applied:**
+
+1. **Unsupported provider crash** — `ProviderConfig.from_dict` now rejects non-openai providers at the boundary (returns `None` → WS falls through to stub). Defense-in-depth inside `live_debate()` yields a graceful `session.complete` with HOLD@0.0 if a future caller bypasses `from_dict`.
+2. **Client per call** — lifted `AsyncOpenAI` construction from per-agent (12×) to per-session (1×). Explicit `await client.close()` after the agent loop.
+3. **docs/api.md stale fields** — updated `engine_state` to `"ready"` (always — capability not session-state), added `provider_config` to WS start frame example, refreshed `session.complete` schema with live fields, removed "Provider-config plumbing not yet defined here" line.
+4. **`hasOpenAIKey` effect dep** — skip refresh when streaming starts; only re-poll on stream end + page mount + resetSignal.
+5. **Cost-budget comment** — added one-liner documenting ~$0.005/session estimate at defaults.
+
+**Shipped:**
+
+- New: `engine/live_debate.py` — sequential per-agent OpenAI loop. 12 agents in 4 phases mirroring upstream. Cost caps: `max_tokens=400`, `MAX_AGENTS_PER_SESSION=12` (asserted at import), default `gpt-4o-mini`. Per-session estimated cost logged to stderr.
+- `engine/server.py` — `ProviderConfig.from_dict(start.get("provider_config"))`. When config returns non-None, run `live_debate()`; else `canned_debate()`. `engine_state` flipped from `"stub"` to `"ready"` (capability), added `live_supported`, `live_default_model`.
+- `engine/requirements.txt` — added `openai>=1.50.0`.
+- Renderer: `engine-client.ts` adds `ProviderConfig` + `SessionCompleteEvent` types with optional live metadata. `streamDebate` includes `provider_config` in start frame when present.
+- `desktop/src/pages/Analyze.tsx` — reads `llm:openai` from secrets bridge before each session, threads into start frame. LLM status card flips from "Not configured" to "OpenAI · live". Helper text adapts.
+- `DebateStream.tsx` — decision card shows "Live · model" badge when `session.complete.live === true`, plus token counts + estimated cost beneath.
+- `docs/api.md` — updated to match the new wire shape (engine_state, provider_config, session.complete live fields, out-of-scope refreshed).
+- `docs/architecture.md` §5 — replaced the original "wrap upstream" sketch with the actual Phase 2.1-light design, calling out the deferred full-upstream integration as future work.
+
+**Verification:**
+
+- `npm run type-check`: clean
+- `npm run build`: clean
+- `bash tools/dev-smoke.sh NVDA 2026-05-08`: 8 passed, 0 failed (stub path preserved end-to-end)
+- **Live path: NOT smoke-tested in autonomous block** — the autonomous session has no OpenAI key (it lives in the founder's OS keychain). The `provider_config` plumbing is verified by the type-checker + the from_dict allowlist + the reviewer; the actual OpenAI call path is verified when the founder pastes a key and clicks Analyze.
+
+**Commit:** TBD.
+
+---
+
 ## 2026-05-08 (continued) — tooling + docs + small UX cap
 
 **Goal:** Wrap the autonomous block with durable assets — a one-shot smoke script future sessions can run instead of curl-by-hand, and a contract doc so a fresh Claude doesn't have to re-derive the engine API by reading source.

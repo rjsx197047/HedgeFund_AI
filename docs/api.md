@@ -24,12 +24,14 @@ CORS is configured for renderer origin `http://localhost:5173` (and `http://127.
   "ok": true,
   "version": "0.0.1",
   "uptime_seconds": 12.4,
-  "engine_state": "stub",
-  "data_provider": "yfinance"
+  "engine_state": "ready",
+  "data_provider": "yfinance",
+  "live_supported": true,
+  "live_default_model": "gpt-4o-mini"
 }
 ```
 
-`engine_state` is `"stub"` while the canned debate is in use; flips to `"live"` when Phase 2.1 wires the real `tradingagents` graph. `data_provider` reports the active `BaseDataProvider.name`.
+`engine_state` describes engine *capability*, not the most recent session: it is `"ready"` whenever the server is up. Whether a given session ran a stub or a live debate is reported per-session in the `session.complete` event (see WS contract below). `data_provider` reports the active `BaseDataProvider.name`. `live_supported` indicates the engine can run real-LLM debates when given a `provider_config`. `live_default_model` is the cost-cheap default the engine assumes when a `provider_config` arrives without an explicit `model` field.
 
 ### `GET /data/summary?ticker=<X>&trade_date=<YYYY-MM-DD>`
 
@@ -99,7 +101,7 @@ Phase 2/3 stub — returns a deterministic HOLD decision regardless of input.
 }
 ```
 
-Phase 2.1 will replace the body with a real `tradingagents.graph.TradingAgentsGraph` invocation. Provider-config plumbing is **not yet defined** here — locking the wiring shape requires founder decision on the first LLM provider.
+Live-LLM `POST /analyze` is intentionally not wired today: the streaming WS path is the canonical entrypoint for real debates, and supports `provider_config`. A one-shot `POST /analyze` that ran an OpenAI session would burn ~$0.005 per request without giving the user the streaming UX. When/if a non-streaming caller appears, this endpoint will accept the same `provider_config` shape as the WS start frame.
 
 ## WebSocket endpoint
 
@@ -113,11 +115,22 @@ Bidirectional channel for streaming the multi-agent debate.
 
 Sent by the client immediately after `open`:
 
-```json
-{ "ticker": "NVDA", "trade_date": "2026-05-08" }
+```jsonc
+{
+  "ticker": "NVDA",
+  "trade_date": "2026-05-08",
+  // Optional. When present, the engine runs a real-LLM debate via the
+  // configured provider; when absent, it runs the canned stub debate.
+  "provider_config": {
+    "provider": "openai",        // currently the only allowlisted value
+    "api_key": "sk-…",
+    "model": "gpt-4o-mini",      // optional, defaults to gpt-4o-mini
+    "max_tokens": 400            // optional, defaults to 400, hard cap
+  }
+}
 ```
 
-The server reads exactly one start frame, then becomes write-only.
+The server reads exactly one start frame, then becomes write-only. If `provider` is not in the allowlist, the engine falls through to the stub path rather than erroring — this lets the renderer ship UI-side support for new providers ahead of engine-side wiring.
 
 #### Server → client: event stream
 
@@ -167,18 +180,27 @@ Emitted between phases.
 
 ##### 6. `session.complete`
 
-```json
+```jsonc
 {
   "type": "session.complete",
   "ticker": "NVDA",
   "trade_date": "2026-05-08",
   "decision": {
-    "action": "HOLD",
-    "confidence": 0.55,
+    "action": "HOLD",   // BUY | SELL | HOLD
+    "confidence": 0.55, // 0..1
     "reasoning": "..."
-  }
+  },
+  // Live-only fields — present when the session ran via a real LLM.
+  // Stub-mode session.complete carries only the four fields above.
+  "live": true,
+  "model": "gpt-4o-mini",
+  "input_tokens": 7401,
+  "output_tokens": 2384,
+  "estimated_cost_usd": 0.0025
 }
 ```
+
+When `provider_config` was supplied in the start frame, the engine populates `live`, `model`, `input_tokens`, `output_tokens`, and `estimated_cost_usd`. The renderer uses these to render a "Live · model" badge on the decision card and to log a per-session cost estimate. Cost is calculated using local rate tables (`engine/live_debate.py:_COST_PER_M_TOKENS`) and is **never** authoritative — it's a budgeting hint, not a billing record.
 
 ##### Server close
 
@@ -215,8 +237,9 @@ The Electron main process awaits `child.stdout.once('data')`, parses it once, an
 
 ## Out of scope (intentional gaps)
 
-- Provider config plumbing (LLM API keys → engine) — held for Phase 2.1; depends on founder's first-provider pick.
+- Multi-provider live debates — only OpenAI is wired today (`provider: "openai"`). Anthropic / DeepSeek / OpenRouter land when their wiring is added; the renderer can ship UI ahead of engine support because unsupported providers fall through to the stub.
+- Token-level streaming — each agent's full response is sent as a single `agent.message` event. Token-by-token streaming is a future protocol upgrade and would gate on a `agent.message.delta` event variant.
 - Multi-session orchestration — engine is per-session. A session manager + persistence is Phase 7.
 - Authentication beyond bearer — sidecar is `127.0.0.1`-bound; no remote callers.
-- Rate limiting / quotas — irrelevant until real LLM providers are wired.
+- Rate limiting / quotas — `max_tokens` and `MAX_AGENTS_PER_SESSION` are the only hard caps. The engine logs estimated cost per session to stderr, and the renderer surfaces it on the decision card; there is no enforced spend ceiling beyond the per-call cap.
 - Versioned protocol — single canonical version today. When it changes, the start frame will gain a `protocol_version` field and the server will reject mismatches with close code `1008`.

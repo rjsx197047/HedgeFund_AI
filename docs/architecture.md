@@ -1,7 +1,7 @@
 # TradingAgentsLab — Architecture
 
-> **Status:** v0.1 sketch — ratified by founder on 2026-05-07. Will iterate as Phase 1+ work surfaces refinements.
-> **Companion docs:** [`backlog.md`](../backlog.md) — phased work items · [`Handover.md`](../Handover.md) — session-to-session context · [`CLAUDE.md`](../CLAUDE.md) — orchestration rules (pending Clawless template).
+> **Status:** v0.2 — ratified 2026-05-07; updated 2026-05-08 to reflect Phase 2.1-light decision and Phase 4 secret-storage shape.
+> **Companion docs:** [`backlog.md`](../backlog.md) — phased work items · [`Handover.md`](../Handover.md) — session-to-session context · [`api.md`](api.md) — engine API contract · [`CLAUDE.md`](../CLAUDE.md) — orchestration rules.
 
 ## 1. Project posture
 
@@ -21,13 +21,13 @@ TradingAgentsLab is an **AGPL-3.0 fork** of Tauric Research's TradingAgents (mul
 |---|---|---|
 | Desktop shell | **Electron** | Matches Clawless. Lets us inherit settings page, theme tokens, and component code directly. |
 | Renderer | **React + TypeScript** | Mirrors Clawless renderer stack. |
-| Engine | **Python 3.13 sidecar** | TradingAgents core is Python; keep it native. |
+| Engine | **Python 3.13 sidecar** | TradingAgents core is Python; keep it native. The engine implements its own minimal multi-agent orchestration (Phase 2.1-light, see §5); a future phase may swap in upstream's `tradingagents.graph.TradingAgentsGraph` directly. |
 | IPC | **FastAPI on `127.0.0.1`** (HTTP + WebSocket) | Streaming agent debate over WS; one-shot calls over HTTP. |
 | LLM provider | **Two-mode abstraction** | (1) BYO keys default, (2) optional Clawless gateway tap. Same interface, two transports. |
 | Data | **yfinance default + Alpaca optional** | yfinance keeps public free; Alpaca for power users (founder). Massive.com / Polygon-class deferred. |
 | Broker | **Alpaca paper trading** (default), live trading gated | Aligns with educational posture. |
 | Storage | **SQLite** (better-sqlite3 in Electron, sqlite3 in Python) | Mirrors Clawless. |
-| Secrets | **OS keychain via `keytar`** | Never plaintext. |
+| Secrets | **Electron `safeStorage`** (OS keychain on macOS, DPAPI on Windows, libsecret on Linux). | No native dep, hard-fails if no encryption backend is available. Versioned JSON at `<userData>/secrets.json` — only base64-encoded encrypted blobs. |
 
 ## 3. Repository layout (target)
 
@@ -99,21 +99,44 @@ TradingAgentsLab/
 
 ## 5. LLM provider abstraction
 
+**Phase 2.1 decision (2026-05-08): minimal own-prompts impl, full upstream-graph integration deferred.**
+
+The original sketch assumed the engine would wrap upstream's `tradingagents.graph.TradingAgentsGraph` directly. In practice that path requires bringing in the full LangChain / LangGraph dep tree, mapping LangGraph state-graph events onto our streaming WS protocol, and reconciling upstream's data layer with our own. We chose a smaller blast radius:
+
+- The engine ships its own multi-agent orchestration in `engine/live_debate.py` — a sequential per-agent loop with role-specific prompts that mirror the *spirit* of upstream's agents (technical / fundamental / news / sentiment analysts, bull/bear/manager researchers, trader, three risk seats + portfolio manager).
+- Each agent is a single OpenAI Chat Completions call. No LangGraph, no LangChain.
+- Same wire shape as the canned stub debate — the renderer doesn't know whether a session was stub or live except via the `live: true` field on `session.complete`.
+- Cost discipline lives in code: `max_tokens=400` per call, `MAX_AGENTS_PER_SESSION=12`, default model `gpt-4o-mini`, estimated cost logged per session.
+- Multi-provider support is allowlist-gated. Today: OpenAI only. Anthropic / DeepSeek / OpenRouter land when their wiring is added; unsupported providers fall through to the stub rather than erroring.
+
+Future Phase 2.1-full may revisit upstream-graph integration — for now, the simpler path is the shipping path.
+
 ```python
-# engine/llm_providers/base.py — sketch
-class BaseLLMClient(Protocol):
-    async def complete(self, messages, model, **kwargs) -> str: ...
-    async def stream(self, messages, model, **kwargs) -> AsyncIterator[str]: ...
+# engine/live_debate.py — actual shape
+
+@dataclass
+class ProviderConfig:
+    provider: str = "openai"
+    api_key: str = ""
+    model: str = "gpt-4o-mini"
+    max_tokens: int = 400
+
+async def live_debate(
+    *, ticker, trade_date, summary, headlines, config: ProviderConfig
+) -> AsyncIterator[dict]:
+    # Yields the same event shapes as canned_debate(): session.start →
+    # phase.transition × N → agent.message × 12 → session.complete (with
+    # live=true and token/cost metadata).
+    ...
 ```
 
-Two implementations:
-
-| Class | Description |
+| Path | When |
 |---|---|
-| `BYOClient` | Direct OpenAI/Anthropic/Gemini/xAI/DeepSeek/Qwen/GLM/OpenRouter calls using user-pasted keys (or OAuth-issued OpenAI tokens). API key only for Anthropic — **OAuth banned** by Anthropic TOS. |
-| `ClawlessGatewayClient` | Translates LLM calls to OpenClaw RPCs over the gateway WebSocket. Protocol negotiation: try max=4, fall back to 3. Schema constraints: `client.id: "cli"`, `client.mode: "ui"` until upstream registers a TradingAgentsLab constant. |
+| `canned_debate` (stub) | No `provider_config` in WS start frame. Deterministic, free, used as the demo default. |
+| `live_debate` (OpenAI direct) | `provider_config.provider === "openai"`. Real LLM calls bounded by the cost caps above. |
+| `ClawlessGatewayClient` (Phase 6) | Optional connector. Translates LLM calls to OpenClaw RPCs over the gateway WebSocket. Schema constraints: `client.id: "cli"`, `client.mode: "ui"`. Not yet implemented in engine. |
 
-Provider can be selected per-call in TradingAgents config (e.g., Anthropic for analysts, OpenAI for trader).
+API-key-only for Anthropic — **OAuth banned** by Anthropic TOS. Anthropic / DeepSeek / OpenRouter wiring in the live path is the next chunk after this one ships.
 
 ## 6. Data + broker abstraction
 

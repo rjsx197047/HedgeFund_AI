@@ -6,9 +6,11 @@ import {
   getHealth,
   streamDebate,
   type DebateEvent,
+  type ProviderConfig,
   type StreamHandle,
 } from '../lib/engine-client';
 import { buildTranscriptMarkdown } from '../lib/transcript';
+import { getSecret, listSecrets } from '../lib/secrets';
 
 type EngineStatus = 'pending' | 'running' | 'error';
 
@@ -27,6 +29,8 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  /** Whether an OpenAI key is configured (drives live vs stub mode). */
+  const [hasOpenAIKey, setHasOpenAIKey] = useState<boolean>(false);
   const handleRef = useRef<StreamHandle | null>(null);
   const isStreamingRef = useRef(false);
   const engineReadyRef = useRef(false);
@@ -63,6 +67,29 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     setCopied(false);
   }, [resetSignal]);
 
+  // Re-poll secret presence whenever the page mounts, whenever the user
+  // returns from Settings (resetSignal), and whenever a session ends. The
+  // *only* meaningful transition for is-streaming is `true → false` — we
+  // skip the redundant call when streaming begins (the key didn't change).
+  useEffect(() => {
+    if (isStreaming) return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const rows = await listSecrets();
+        if (!cancelled) {
+          setHasOpenAIKey(rows.some((r) => r.key === 'llm:openai'));
+        }
+      } catch {
+        if (!cancelled) setHasOpenAIKey(false);
+      }
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+    };
+  }, [resetSignal, isStreaming]);
+
   const onAnalyze = async () => {
     if (!engineReadyRef.current || isStreamingRef.current) return;
     setEvents([]);
@@ -71,8 +98,31 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     isStreamingRef.current = true;
     setIsStreaming(true);
     try {
+      // Resolve the provider config just-in-time. If the user pasted a key
+      // in Settings, run the live debate; otherwise fall through to the stub.
+      let providerConfig: ProviderConfig | undefined;
+      try {
+        const apiKey = await getSecret('llm:openai');
+        if (apiKey) {
+          providerConfig = {
+            provider: 'openai',
+            api_key: apiKey,
+            model: 'gpt-4o-mini',
+            max_tokens: 400,
+          };
+        }
+      } catch {
+        // If secret retrieval fails for any reason (encryption offline, etc.)
+        // we silently fall back to the stub. The engine status banner already
+        // surfaces the broken-encryption case.
+      }
+
       const handle = await streamDebate(
-        { ticker, trade_date: date },
+        {
+          ticker,
+          trade_date: date,
+          provider_config: providerConfig,
+        },
         (event) => setEvents((prev) => [...prev, event]),
         (err) => {
           setStreamError(err instanceof Error ? err.message : 'stream error');
@@ -199,8 +249,10 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         <div className={styles.cardFooter}>
           <p className={styles.helper}>
             {engineStatus === 'pending' && 'Engine starting — sidecar handshake pending.'}
-            {engineStatus === 'running' && !isStreaming &&
-              'Stub debate — analyst messages reference real data when reachable.'}
+            {engineStatus === 'running' && !isStreaming && hasOpenAIKey &&
+              'Live debate — sequential calls to OpenAI gpt-4o-mini, capped per agent.'}
+            {engineStatus === 'running' && !isStreaming && !hasOpenAIKey &&
+              'Stub debate — paste an OpenAI key in Settings to switch to live agents.'}
             {engineStatus === 'running' && isStreaming &&
               'Streaming agent debate from sidecar — Stop to abort.'}
             {engineStatus === 'error' &&
@@ -259,10 +311,18 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         <div className={styles.statusCard}>
           <div className={styles.statusLabel}>LLM</div>
           <div className={styles.statusValue}>
-            <span className={styles.statusDotPending} />
-            Not configured
+            <span
+              className={
+                hasOpenAIKey ? styles.statusDotOk : styles.statusDotPending
+              }
+            />
+            {hasOpenAIKey ? 'OpenAI · live' : 'Not configured'}
           </div>
-          <div className={styles.statusHint}>Settings → LLM Providers (Phase 4)</div>
+          <div className={styles.statusHint}>
+            {hasOpenAIKey
+              ? 'gpt-4o-mini · sequential agent calls'
+              : 'Settings → LLM Providers · stub debate until configured'}
+          </div>
         </div>
         <div className={styles.statusCard}>
           <div className={styles.statusLabel}>Clawless</div>

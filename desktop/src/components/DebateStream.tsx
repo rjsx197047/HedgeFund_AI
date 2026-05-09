@@ -81,6 +81,28 @@ function findDecision(events: DebateEvent[]): AnalyzeDecision | null {
   return null;
 }
 
+interface DecisionMeta {
+  live: boolean;
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  estimatedCostUsd?: number;
+}
+
+function findDecisionMeta(events: DebateEvent[]): DecisionMeta {
+  const complete = events.find((e) => e.type === 'session.complete');
+  if (complete && complete.type === 'session.complete') {
+    return {
+      live: complete.live === true,
+      model: complete.model,
+      inputTokens: complete.input_tokens,
+      outputTokens: complete.output_tokens,
+      estimatedCostUsd: complete.estimated_cost_usd,
+    };
+  }
+  return { live: false };
+}
+
 const PHASE_LABEL: Record<string, string> = {
   analysts: 'Analysts',
   researchers: 'Researchers',
@@ -101,6 +123,7 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
   const news = findHeadlines(events);
   const groups = groupByPhase(events);
   const decision = findDecision(events);
+  const meta = findDecisionMeta(events);
 
   if (events.length === 0) {
     return null;
@@ -220,7 +243,14 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
 
       {decision && (
         <div className={`${styles.decision} ${styles[`decision_${decision.action}`] ?? ''}`}>
-          <div className={styles.decisionLabel}>Decision</div>
+          <div className={styles.decisionLabel}>
+            Decision
+            {meta.live && (
+              <span className={styles.decisionLiveBadge}>
+                Live · {meta.model ?? 'openai'}
+              </span>
+            )}
+          </div>
           <div className={styles.decisionAction}>{decision.action}</div>
           <div className={styles.decisionConfidence}>
             Confidence{' '}
@@ -229,6 +259,20 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
             </span>
           </div>
           <div className={styles.decisionReasoning}>{decision.reasoning}</div>
+          {meta.live && (meta.estimatedCostUsd !== undefined || meta.inputTokens !== undefined) && (
+            <div className={styles.decisionUsage}>
+              {meta.inputTokens !== undefined && meta.outputTokens !== undefined && (
+                <span>
+                  {meta.inputTokens.toLocaleString()} in · {meta.outputTokens.toLocaleString()} out tokens
+                </span>
+              )}
+              {meta.estimatedCostUsd !== undefined && (
+                <span>
+                  est cost ${meta.estimatedCostUsd.toFixed(4)}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </section>

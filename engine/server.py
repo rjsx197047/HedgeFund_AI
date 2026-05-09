@@ -34,6 +34,7 @@ from .data_providers import (
     QuoteSummary,
     default_provider,
 )
+from .live_debate import ProviderConfig, live_debate
 from .stub_debate import canned_debate
 
 
@@ -80,8 +81,14 @@ def build_app(*, token: str) -> FastAPI:
             "ok": True,
             "version": __version__,
             "uptime_seconds": round(time.monotonic() - started_at, 2),
-            "engine_state": "stub",
+            # "engine_state" describes the *capability* of the engine. The
+            # WS path uses the canned stub when no provider_config arrives in
+            # the start frame, and the live path otherwise — so the engine
+            # itself reports "ready" rather than "stub" or "live".
+            "engine_state": "ready",
             "data_provider": default_provider.name,
+            "live_supported": True,
+            "live_default_model": "gpt-4o-mini",
         }
 
     @app.get("/data/summary", dependencies=bearer)
@@ -146,10 +153,21 @@ def build_app(*, token: str) -> FastAPI:
         await ws.accept()
 
         try:
-            # Wait for the client's start frame: {"ticker": "...", "trade_date": "..."}
+            # Wait for the client's start frame:
+            #   {
+            #     "ticker": "NVDA",
+            #     "trade_date": "2026-05-08",
+            #     "provider_config": {                  # optional
+            #       "provider": "openai",
+            #       "api_key": "sk-...",
+            #       "model": "gpt-4o-mini",
+            #       "max_tokens": 400
+            #     }
+            #   }
             start = await ws.receive_json()
             ticker = (start.get("ticker") or "").upper()
             trade_date = start.get("trade_date") or ""
+            config = ProviderConfig.from_dict(start.get("provider_config"))
 
             # Best-effort data fetch; debate degrades gracefully if it fails.
             summary = await _fetch_summary_safe(ticker=ticker, trade_date=trade_date)
@@ -167,14 +185,29 @@ def build_app(*, token: str) -> FastAPI:
                     "headlines": [_headline_to_dict(h) for h in headlines],
                 })
 
-            for event in canned_debate(
-                ticker=ticker,
-                trade_date=trade_date,
-                summary=summary,
-                headlines=headlines,
-            ):
-                await ws.send_json(event)
-                await asyncio.sleep(event.pop("_delay", 0.4))
+            if config is not None:
+                # Live debate path. Each agent.message arrives as the LLM
+                # response completes — we throttle a little between events
+                # so the UI's transition animations are still visible.
+                async for event in live_debate(
+                    ticker=ticker,
+                    trade_date=trade_date,
+                    summary=summary,
+                    headlines=headlines,
+                    config=config,
+                ):
+                    await ws.send_json(event)
+                    await asyncio.sleep(0.15)
+            else:
+                # Stub debate path — same UX, deterministic content.
+                for event in canned_debate(
+                    ticker=ticker,
+                    trade_date=trade_date,
+                    summary=summary,
+                    headlines=headlines,
+                ):
+                    await ws.send_json(event)
+                    await asyncio.sleep(event.pop("_delay", 0.4))
             await ws.close(code=1000)
         except WebSocketDisconnect:
             return

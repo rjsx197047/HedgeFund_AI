@@ -302,6 +302,41 @@ a.newsTitle:hover {
   letter-spacing: 0.08em;
   color: var(--tal-text-muted);
   align-self: end;
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-2);
+}
+
+.decisionLiveBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--tal-accent-muted);
+  color: var(--tal-accent);
+  border: 1px solid var(--tal-accent-border);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.decisionUsage {
+  grid-column: 2;
+  grid-row: 4;
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  display: flex;
+  gap: var(--tal-space-3);
+  flex-wrap: wrap;
+  margin-top: var(--tal-space-2);
+}
+
+@media (max-width: 720px) {
+  .decisionUsage {
+    grid-column: 1;
+    grid-row: 5;
+  }
 }
 
 .decisionAction {

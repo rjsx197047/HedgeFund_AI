@@ -49,6 +49,7 @@ See `WORKLOG.md` for the chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
+<Phase 2.1-light commit lands here>
 be6d12d  Tooling + docs: backend smoke script, engine API contract, date cap
 0de893a  Stretch: keyboard shortcuts + Electron app menu
 a984179  Stretch: yfinance news headlines in WS stream + UI news card
