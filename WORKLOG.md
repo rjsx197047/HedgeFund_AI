@@ -93,6 +93,56 @@ Vite HMR picked up the CSS change with no restart needed — verified by founder
 
 ---
 
+## 2026-05-10 (early hours) — Reviewer fix + JWT plan-tier + lessons doc
+
+**Quiet wrap-up after the long OAuth-debug-loop day.** Founder gave another autonomous block but advisor reframed: building CostGuard or Playwright at 2:30 AM unsupervised is bad — money on the line for CostGuard, no escalation path if Electron Playwright hits the macOS gauntlet. Instead, three small reversible commits and stop.
+
+**Shipped:**
+
+- `f0c8fbb` Analyze: fix Reset leaving activeModel stale. Reviewer pass on c81b1d0 caught a real bug — `onResetOverrides` cleared localStorage and `manualProvider` but never reset the in-memory `activeModel` state. The model-sync useEffect only re-fires on (provider, authKind) changes, so a model-only reset (provider unchanged) silently failed in memory. Fix: snap `activeModel` to recommended explicitly at end of reset, reading provider/authKind via refs (consistent with `onAnalyze`'s pattern).
+- `b9c6b3b` OAuth JWT plan-tier detection. Decode `chatgpt_plan_type` from the access JWT at receive time (and on refresh), store in `StoredOAuthCredentials.planType`. Surface as `OAuthStatus.planType` + `isFreeTier`. Settings UI shows plan tier inline ("Connected as ... · plus plan") and a banner if free-tier ("⚠ Codex routing is unreliable on free-tier accounts"). 9-case unit verification of the decoder against synthetic JWTs all pass. Defensive — never blocks login.
+
+---
+
+### Lessons from the OAuth iteration loop (for next session)
+
+The OAuth/Codex chunk shipped 8 commits in ~2 hours of founder-supervised testing. Looking back, 4-6 of those commits were avoidable. Distilling for the next time we integrate against an undocumented endpoint:
+
+**1. Read the working reference implementation in full BEFORE the first commit.**
+
+We had `@earendil-works/pi-ai/openai-codex-responses.js` available locally — it's the working reference for exactly this integration. Today's debug loop followed a "ship → empirical 400 → diagnose → ship" cycle when the cure was a single 30-minute source dive into pi-ai's `buildRequestBody` + `buildBaseCodexHeaders`. After that dive, the body and headers are deterministic; everything else is infrastructure.
+
+The pattern to internalize: **when integrating against an undocumented endpoint where a working reference implementation exists, read the reference's request construction in full FIRST, mirror it exactly, then iterate from there**. Don't ship a partial implementation that's 80% guessed.
+
+**2. Codex backend rejects more parameters than it accepts.**
+
+Empirically learned today (in commit-by-commit order):
+- `gpt-4o-mini`: rejected ("not supported when using Codex with a ChatGPT account")
+- `gpt-5.1-codex-mini`: rejected (same wording — codex-tuned variants are restricted)
+- `temperature`: rejected as unsupported parameter (GPT-5 family is reasoning-tuned)
+- `max_output_tokens`: rejected as unsupported parameter (Codex doesn't accept ANY token-limit field)
+- Working: `gpt-5.4` model + body matching pi-ai's exact shape (no temperature, no max_output_tokens, with `text.verbosity`, `include`, `tool_choice`, `parallel_tool_calls`, `store: false`, `stream: true`)
+
+For next time: pi-ai's body shape is the contract. Don't add fields it doesn't have.
+
+**3. Plan-tier matters for model availability.**
+
+Per Clawless Advisor B34: codex-tuned variants (`*-codex`, `*-codex-max`, `*-codex-mini`) work on paid tiers but hang/fail on free-tier accounts. Even `gpt-4o-mini` is available on the API tier but rejected on Codex routing. There is no public allowlist — the empirical data is the only reliable source. Curated UI lists must be conservative (general-flagship variants only) with codex-tuned ones as opt-in or excluded.
+
+**4. Engine restart matters whenever the engine code changes.**
+
+Shipped a temperature fix → founder retested → got the SAME error → realized the engine sidecar was a leftover process from before the fix. Vite HMR delivers renderer changes immediately, but the Python engine has to be killed and respawned. **Always communicate "engine restart required" loudly when the fix is in `engine/`** — and in autonomous chunks, kill the engine before declaring the fix verified.
+
+**5. Reviewer's pre-commit warnings are a leading indicator. Heed them.**
+
+The OAuth commit (`ed35277`) shipped with reviewer's B2 ("subscription routing not contractually guaranteed by either pi-ai or this integration") flagged loudly in the commit message. We shipped anyway because we couldn't verify without the founder's token. Founder's first run hit the exact failure that B2 predicted (429 against API tier instead of subscription routing). The reviewer was right; we just didn't have a way to verify. Pattern: **when the reviewer flags something we can't verify, ship with the loudest possible warning AND prepare the most-likely-needed fix in advance** so the iteration loop is one commit instead of five.
+
+**6. Authorization is not a directive.**
+
+Founder offered another autonomous block tonight — generous, but advisor (correctly) flagged that CostGuard at 2:30 AM with money on the line is bad. Stopping at a high-water mark IS a feature. The bias toward "use all the runway" produces reactive cycles like today's OAuth loop. Tomorrow with founder awake = better verification loop, much faster correction cycle, less wasted code.
+
+---
+
 ## 2026-05-09 (end-of-day) — OAuth empirical fixes + per-provider model picker
 
 **Founder back from sleep, smoke-tested live OAuth, hit a series of empirical issues with the Codex backend. Fixed each iteratively in tight commits.**
