@@ -48,11 +48,23 @@ Common causes:
 
 ## Debate / stream problems
 
-### Debate runs but shows stub messages even after configuring an OpenAI key
+### Debate runs but shows stub messages even after configuring a provider
 
-This is expected behavior in the current version. The renderer-to-engine key injection (Phase 2.1) is in progress. The Settings page stores your key securely, but the Analyze page does not yet read and inject it into the WebSocket start frame. Until that wiring lands, debates always run in stub mode.
+The Analyze page should inject your stored credentials automatically. If you still see stub messages:
+
+1. Check that the **"Run with"** dropdown in the Analyze header shows your provider (not "Stub mode"). If only stub is offered, the credentials weren't successfully decrypted — try **Replace** in Settings to re-save the key.
+2. If the dropdown shows your provider but the decision card still says "Stub canned debate", look at engine stderr (visible in the Vite terminal) for messages prefixed `[live_debate]`. A fall-through to stub usually means the provider name in the WS start frame doesn't match the engine's allowlist (`openai`, `anthropic`, `openrouter`, `gemini`).
+3. For OAuth specifically — if **Settings → OpenAI account** shows "Connected" but debates run as stub, click **Disconnect** and **Connect** again to refresh the tokens.
 
 The decision card's reasoning text says "Stub canned debate" to make this visible.
+
+### OAuth: 429 rate limit error
+
+You've exceeded your ChatGPT subscription's rate window. ChatGPT Plus/Pro accounts have rolling-window limits (often ~80 messages per 3 hours for GPT-4-class models). Wait an hour or switch to the API-key path for the rest of the day. See [oauth.md](oauth.md).
+
+### OAuth: free-tier banner appears
+
+Codex routing is unreliable on free-tier ChatGPT accounts. Paste an OpenAI API key on the API-key row and pick that path on the Analyze "Run with" dropdown instead.
 
 ### Stream error banner appears mid-debate
 

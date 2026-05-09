@@ -84,6 +84,26 @@ No. You can run TradingAgentsLab entirely without Clawless. The Clawless connect
 
 ---
 
+## LLM providers
+
+### Which LLM providers can I use?
+
+Four provider families are wired end-to-end today: **OpenAI**, **Anthropic**, **OpenRouter**, and **Google Gemini**. All work with API keys; OpenAI also supports OAuth via your ChatGPT subscription. See [configuring-llm-providers.md](configuring-llm-providers.md).
+
+### Can I use my paid ChatGPT account instead of an API key?
+
+Yes — for OpenAI only. The OAuth flow routes debates through `chatgpt.com/backend-api/codex/responses` (the Codex backend, same as the ChatGPT web app and Codex CLI), so debates bill against your ChatGPT subscription rate limits rather than per-token API charges. See [oauth.md](oauth.md). Free-tier ChatGPT accounts are unreliable here — paste an API key instead.
+
+### Why is there no Anthropic OAuth?
+
+Anthropic's Terms of Service prohibit OAuth flows for their API. TradingAgentsLab respects this — Anthropic is API-key only.
+
+### Can I use multiple providers simultaneously?
+
+You can have keys (and OAuth) for all four providers connected at once. Each individual debate uses one provider, picked via the **"Run with"** dropdown on the Analyze page. Your last selection persists per (provider, auth-mode) combination.
+
+---
+
 ## Data and privacy
 
 ### Where does market data come from?
@@ -93,12 +113,16 @@ Yahoo Finance by default (free, no API key required). Optionally Alpaca for powe
 ### Does TradingAgentsLab send data to any server?
 
 - Market data is fetched from Yahoo Finance's public endpoints.
-- LLM calls go to your configured provider (OpenAI, Anthropic, etc.) using your own API key.
-- No data is sent to TradingAgentsLab's own servers — the app has none. All processing happens locally.
+- LLM calls go to your configured provider (OpenAI, Anthropic, OpenRouter, Gemini) using your own key — or, for OpenAI OAuth, through the Codex backend using your ChatGPT subscription.
+- No data is sent to TradingAgentsLab's own servers — the app has none. No telemetry, no analytics, no error reports. All processing happens locally.
 
 ### Are my API keys safe?
 
-Yes. Keys are encrypted by your OS keychain before touching disk. Plaintext is never written anywhere. See [security-and-storage.md](security-and-storage.md).
+Yes. Keys are encrypted by your OS keychain (Keychain on macOS, DPAPI on Windows, libsecret on Linux) before touching disk. Plaintext is never written anywhere. OAuth tokens are encrypted the same way. See [security-and-storage.md](security-and-storage.md).
+
+### Where is my debate history stored?
+
+Locally, in `<repo>/data/sessions.db` (SQLite). The History page reads from this file. Delete the file to wipe history. It is not encrypted at rest — store the repo on an encrypted volume (FileVault, BitLocker, LUKS) if you want at-rest encryption for transcripts.
 
 ---
 
@@ -106,5 +130,7 @@ Yes. Keys are encrypted by your OS keychain before touching disk. Plaintext is n
 
 - [Getting started](getting-started.md) — install and run
 - [How it works](how-it-works.md) — the multi-agent pipeline
+- [Configuring LLM providers](configuring-llm-providers.md) — set up your providers
+- [OAuth](oauth.md) — ChatGPT subscription routing
 - [Clawless connector](clawless-connector.md) — optional gateway tap
 - [Security and storage](security-and-storage.md) — how keys are protected

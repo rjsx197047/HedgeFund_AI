@@ -15,17 +15,50 @@ When you click **Analyze**, TradingAgentsLab runs a structured debate among a fi
 3. **Trader** — produce a concrete trade plan
 4. **Risk** — stress-test the plan and make the final call
 
-The output is a decision card: BUY, SELL, or HOLD, with a confidence level and a brief reasoning paragraph.
+The output is a **decision card**: BUY, SELL, or HOLD, with a confidence level and a brief reasoning paragraph.
 
 This is educational research. The decision is not a trade instruction. Paper trading only.
 
 ---
 
+## The pipeline
+
+```mermaid
+flowchart TD
+    Start([User clicks Analyze on a ticker]) --> Data[Fetch QuoteSummary + News<br/>via yfinance]
+
+    Data --> P1{{Phase 1 — Analysts}}
+    P1 --> A1[technical_analyst<br/>price action, momentum, volume]
+    P1 --> A2[fundamental_analyst<br/>earnings, balance sheet, valuation]
+    P1 --> A3[news_analyst<br/>catalysts vs noise]
+    P1 --> A4[sentiment_analyst<br/>positioning, conviction]
+
+    A1 & A2 & A3 & A4 --> P2{{Phase 2 — Researchers}}
+    P2 --> R1[bull_researcher]
+    P2 --> R2[bear_researcher]
+    R1 & R2 --> R3[research_manager<br/>directional lean]
+
+    R3 --> P3{{Phase 3 — Trader}}
+    P3 --> T[trader<br/>concrete plan: entry, size, stop]
+
+    T --> P4{{Phase 4 — Risk Committee}}
+    P4 --> RA[risk_aggressive]
+    P4 --> RC[risk_conservative]
+    P4 --> RN[risk_neutral]
+    RA & RC & RN --> PM[portfolio_manager]
+
+    PM --> Out([BUY / SELL / HOLD<br/>+ confidence + reasoning])
+```
+
+Each agent is a single chat-completion call to your selected LLM provider. The full transcript of earlier agents accumulates as later agents run, so the bull researcher reads all four analyst reports, the trader reads the bull/bear/manager debate, and the risk committee reads the trader's plan.
+
+---
+
 ## The two debate modes
 
-### Stub mode (default today)
+### Stub mode (default when no provider is configured)
 
-When no LLM provider is configured, the engine runs a canned debate from `engine/stub_debate.py`. The structure — phases, agent order, event types — is identical to the live mode. The agent messages are templated, but they reference real data fetched from Yahoo Finance:
+When no LLM provider is configured (no API keys saved, no OAuth connected), the engine runs a canned debate from `engine/stub_debate.py`. The structure — phases, agent order, event types — is identical to live mode. The agent messages are templated, but they reference real data fetched from Yahoo Finance:
 
 - last close price
 - period price change
@@ -37,19 +70,25 @@ Stub mode is useful for verifying that the pipeline, data fetching, and UI rende
 
 The status cards on the Analyze page show **LLM: Not configured** when the engine is in stub mode.
 
-### Live mode (activated by configuring an OpenAI key)
+### Live mode (activated automatically when any provider is configured)
 
-When a valid OpenAI API key is configured and passed to the engine in the WebSocket start frame, the engine runs `engine/live_debate.py`. Each agent sends a real prompt to the OpenAI API and waits for a response. The agent messages you see in the UI are actual model output, not templates.
+When you have at least one LLM provider configured — OpenAI (API key or OAuth), Anthropic, OpenRouter, or Google Gemini — the engine runs `engine/live_debate.py`. Each agent sends a real prompt to your selected LLM and waits for a response. The agent messages you see in the UI are actual model output, not templates.
 
-**Note on wiring status:** The API key → engine plumbing is partially complete. The Settings page stores your key securely, and the engine supports receiving it in the start frame. The renderer-to-engine wiring (injecting the stored key into the WS start frame) is in progress as part of Phase 2.1. Until that wiring lands, debates run in stub mode even when a key is configured. Watch the `session.complete` event — it carries a `live: true` field when a real LLM was used.
+The Analyze page header shows a **"Run with"** dropdown listing every connected provider. Pick which one drives a particular debate; pick the specific model for that provider on the second dropdown. Selections persist per (provider, auth-mode) so the app remembers your last choice independently for each combination.
 
-Live mode defaults to `gpt-4o-mini` to keep costs reasonable. Each full debate calls 12 agents, each capped at 400 tokens of output. A single session costs roughly $0.001–0.003 at `gpt-4o-mini` pricing.
+Live mode bounds:
+
+- **12 agents per session** (`MAX_AGENTS_PER_SESSION=12`)
+- **400 tokens per agent** (`max_tokens=400` default, hard-capped at 800)
+- Sequential — agents run one at a time, in deterministic order
+
+The `session.complete` event in live mode carries `live: true`, the model name, input/output token counts, and an estimated USD cost. OAuth-routed sessions report `estimated_cost_usd: 0` since they bill via subscription, not per token.
 
 ---
 
 ## Phase 1: Analysts
 
-Four analysts run in parallel (sequentially in the current implementation). Each analyzes the ticker independently from a different angle.
+Four analysts run in sequence. Each analyzes the ticker independently from a different angle.
 
 | Agent | Role |
 |---|---|
@@ -58,7 +97,7 @@ Four analysts run in parallel (sequentially in the current implementation). Each
 | `news_analyst` | Recent headlines — catalysts vs. noise, what is missing |
 | `sentiment_analyst` | What tape + headlines imply about positioning and conviction |
 
-Each analyst receives the same context block: the ticker, the trade date, and the `QuoteSummary` (last close, period range, average volume) plus up to 6 recent news headlines. In live mode they also see the prior turns of the debate as it accumulates, so later agents have the full context.
+Each analyst receives the same context block: the ticker, the trade date, and the `QuoteSummary` (last close, period range, average volume) plus up to 6 recent news headlines. Later agents see the prior turns of the debate as it accumulates, so each agent has the full context of what has already been said.
 
 ---
 
@@ -110,32 +149,48 @@ At `session.complete`, the engine sends:
     "action": "HOLD",
     "confidence": 0.55,
     "reasoning": "..."
-  }
+  },
+  "live": true,
+  "model": "gpt-4o-mini",
+  "input_tokens": 4823,
+  "output_tokens": 1922,
+  "estimated_cost_usd": 0.00231
 }
 ```
-
-In live mode the event also carries `live: true`, the model name, token counts, and an estimated cost in USD.
 
 The UI renders the decision card with color coding: green for BUY, red for SELL, amber for HOLD.
 
 ---
 
-## Data flow
+## Data flow on the wire
 
-```
-User clicks Analyze
-  → renderer sends WS start frame {ticker, trade_date, [provider_config]}
-  → engine fetches QuoteSummary via yfinance (GET /data/summary)
-  → engine fetches news headlines via yfinance (GET /data/news)
-  → engine emits data.summary event → news.headlines event
-  → engine runs debate (stub or live)
-  → each agent.message streamed as produced
-  → phase.transition emitted between phases
-  → session.complete emitted with final decision
-  → WS closes with code 1000
+```mermaid
+sequenceDiagram
+    actor U as You
+    participant R as Renderer
+    participant E as Engine
+    participant Y as yfinance
+    participant L as LLM
+
+    U->>R: Click Analyze
+    R->>E: WS open + start frame<br/>{ticker, date, provider_config}
+    E->>Y: fetch summary + news
+    Y-->>E: QuoteSummary + headlines
+    E-->>R: data.summary
+    E-->>R: news.headlines
+
+    loop 12 agents
+        E->>L: chat completion
+        L-->>E: response
+        E-->>R: agent.message
+    end
+
+    E-->>R: session.complete
+    E->>E: persist to sessions.db
+    E--xR: WS close (1000)
 ```
 
-The renderer accumulates events and renders them progressively. You see agent messages appear as they arrive. The streaming badge on the session header is visible while the connection is open.
+The renderer accumulates events and renders them progressively. You see agent messages appear as they arrive. The streaming badge on the session header is visible while the connection is open. After `session.complete`, the engine writes the full session — events, decision, token counts — to `sessions.db` so the History page can replay it later.
 
 ---
 
@@ -149,5 +204,6 @@ TradingAgentsLab is forked from [Tauric Research's TradingAgents](https://github
 
 - [Data providers](data-providers.md) — what data the analysts see
 - [Configuring LLM providers](configuring-llm-providers.md) — how to enable live mode
+- [OAuth](oauth.md) — ChatGPT subscription routing
 - [Reading the debate](reading-the-debate.md) — how the UI presents the stream
 - Engine API contract: [docs/api.md](../api.md)

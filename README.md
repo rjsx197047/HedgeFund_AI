@@ -1,8 +1,241 @@
 # TradingAgentsLab
 
-> **A derivative work of [TradingAgents](https://github.com/TauricResearch/TradingAgents) by Tauric Research.**
-> Maintained by Junaid Siddiqi. Goal: build a top-of-the-line desktop UI on top of the
-> TradingAgents multi-agent framework and integrate it into a broader trading platform.
+> **An open-source desktop lab for studying multi-agent LLM trading research — with paper trading, multi-provider LLM support, and bring-your-own-API-key economics.**
+>
+> *For educational research and paper trading. This is not investment advice.*
+
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+[![Upstream: Apache 2.0](https://img.shields.io/badge/Upstream-Apache%202.0-green.svg)](LICENSE-APACHE)
+[![Status: Active Development](https://img.shields.io/badge/Status-Active%20Development-orange.svg)](backlog.md)
+
+TradingAgentsLab is a standalone desktop application that lets you watch multi-agent LLM "trading firms" debate a ticker live — fundamentals analyst, sentiment analyst, news analyst, technical analyst, bull researcher, bear researcher, trader, and a risk-management committee — and produce a transparent, auditable trade thesis with a confidence score. Every step of the debate streams into the UI, every transcript is saved locally, and every API call uses your own key (or your own ChatGPT subscription via OAuth).
+
+It is **not** a trading bot, brokerage, or signal service. It is a lab for *understanding how LLM agents reason about markets* — built for researchers, students, and traders who want to see the full chain of reasoning behind a recommendation rather than a black-box buy/sell call.
+
+---
+
+## Screenshots
+
+> 📸 *Screenshots are added as the UI matures. Drop new captures into [`assets/screenshots/`](assets/screenshots/) and reference them here.*
+
+| Analyze — live debate stream | Settings — provider keys & OAuth |
+|:---:|:---:|
+| ![Analyze page](assets/screenshots/analyze.png) | ![Settings page](assets/screenshots/settings.png) |
+| Pick a ticker, pick an LLM provider, watch 12 agents debate live with cost displayed per session. | Bring-your-own keys for OpenAI, Anthropic, OpenRouter, and Google Gemini, or sign in to ChatGPT with OAuth (Codex routing). |
+
+| History — every debate persisted | Watchlist — track tickers locally |
+|:---:|:---:|
+| ![History page](assets/screenshots/history.png) | ![Watchlist page](assets/screenshots/watchlist.png) |
+| Browse past sessions, replay the full transcript, copy as Markdown. SQLite-backed at `data/sessions.db`. | Add tickers, deep-link straight into Analyze. No server, no telemetry. |
+
+---
+
+## What it does
+
+- 🧠 **Multi-agent LLM debate.** A team of specialised agents (analysts → researchers → trader → risk-management committee → portfolio manager) reasons about a ticker under your selected LLM, then produces a HOLD / BUY / SELL recommendation with confidence and a complete reasoning trail.
+- 🔌 **Bring your own LLM provider.** First-class support for **OpenAI** (API key or **ChatGPT OAuth via the Codex backend**), **Anthropic**, **OpenRouter**, and **Google Gemini**. Pick your provider per session; switch model per provider with persistent memory of your last choice.
+- 📈 **Real market data, free.** Built-in [yfinance](https://github.com/ranaroussi/yfinance) integration pulls quotes, price history, volume, and Yahoo Finance news headlines into the agent context — no separate market-data subscription required.
+- 💾 **Everything is local.** SQLite session storage, OS-keychain-backed secrets (Electron `safeStorage`), no telemetry, no analytics, no calls home. Your debates, your keys, your machine.
+- ⌨️ **Native desktop app.** Electron + React + TypeScript on the front, FastAPI + Python sidecar on the back. Cmd+N (new analysis), Cmd+. (stop), Cmd+, (settings), Cmd+1/2/3 (navigate). Real macOS / Windows / Linux app menu.
+- 📰 **News integration.** Per-session headline pull from Yahoo Finance, surfaced in a linked News card and included in transcript export.
+- 🪙 **Cost-aware by design.** Token usage and estimated USD cost shown per session for API-key paths. ChatGPT OAuth sessions route through your subscription (no per-token billing).
+- 🔓 **Open source under AGPL-3.0.** Modify it, study it, self-host it. Commercial licenses available — see [License](#license).
+
+## How it works
+
+### The big picture — three cooperating processes
+
+```mermaid
+flowchart LR
+    User([👤 You])
+
+    subgraph Desktop["🖥️  Desktop App (Electron)"]
+        direction TB
+        Renderer["Renderer<br/>React + TypeScript"]
+        Main["Main Process<br/>Node.js"]
+        SafeStorage[("🔐 safeStorage<br/>OS Keychain")]
+        SessionsDB[("💾 SQLite<br/>sessions + watchlist")]
+        Renderer <-. IPC .-> Main
+        Main --- SafeStorage
+        Main --- SessionsDB
+    end
+
+    subgraph Engine["🐍  Engine Sidecar (Python)"]
+        direction TB
+        FastAPI["FastAPI<br/>127.0.0.1:dyn"]
+        Orchestrator["LiveDebate<br/>orchestrator"]
+        Adapters["LLMAdapter Protocol<br/>5 implementations"]
+        DataMod["yfinance<br/>data + news"]
+        FastAPI --> Orchestrator
+        Orchestrator --> Adapters
+        FastAPI --> DataMod
+    end
+
+    subgraph LLM["☁️  LLM Providers (your keys)"]
+        OpenAI["OpenAI<br/>API key or OAuth"]
+        Anthropic["Anthropic<br/>API key only"]
+        Gemini["Google Gemini"]
+        OpenRouter["OpenRouter<br/>100+ models"]
+        Codex["ChatGPT subscription<br/>via Codex backend"]
+    end
+
+    Yahoo[("Yahoo Finance<br/>public data")]
+
+    User --> Renderer
+    Renderer <==>|"WebSocket<br/>debate stream"| FastAPI
+    Main -. spawns .-> FastAPI
+    Adapters --> OpenAI
+    Adapters --> Anthropic
+    Adapters --> Gemini
+    Adapters --> OpenRouter
+    Adapters --> Codex
+    DataMod --> Yahoo
+```
+
+The **desktop** holds your secrets and renders the UI. The **engine** orchestrates the debate and talks to LLMs. They communicate over a local-only WebSocket on `127.0.0.1` with a per-process bearer token. Nothing ever leaves your machine except the LLM API calls (using your own key) and the public yfinance fetches.
+
+### The debate pipeline — 12 agents across 4 phases
+
+```mermaid
+flowchart TD
+    Start([User clicks Analyze on a ticker]) --> Data[Fetch QuoteSummary + News<br/>yfinance]
+
+    Data --> P1{{"Phase 1 — Analysts"}}
+    P1 --> A1[📊 technical_analyst<br/>price action, momentum, volume]
+    P1 --> A2[📑 fundamental_analyst<br/>earnings, balance sheet, valuation]
+    P1 --> A3[📰 news_analyst<br/>catalysts vs noise]
+    P1 --> A4[💬 sentiment_analyst<br/>positioning, conviction]
+
+    A1 & A2 & A3 & A4 --> P2{{"Phase 2 — Researchers"}}
+    P2 --> R1[🐂 bull_researcher]
+    P2 --> R2[🐻 bear_researcher]
+    R1 & R2 --> R3[⚖️ research_manager<br/>directional lean]
+
+    R3 --> P3{{"Phase 3 — Trader"}}
+    P3 --> T[💼 trader<br/>concrete plan: entry, size, stop]
+
+    T --> P4{{"Phase 4 — Risk Committee"}}
+    P4 --> RA[🔥 risk_aggressive]
+    P4 --> RC[❄️ risk_conservative]
+    P4 --> RN[⚖️ risk_neutral]
+    RA & RC & RN --> PM[👔 portfolio_manager]
+
+    PM --> Out([🎯 BUY / SELL / HOLD<br/>+ confidence + reasoning])
+
+    style Out fill:#f0a830,stroke:#0d1117,color:#0d1117
+    style Start fill:#0d1117,stroke:#f0a830,color:#f0a830
+```
+
+Each agent is a single chat-completion call to your selected LLM provider, bounded by a hard token cap (`max_tokens=400` per agent, 12 agents per debate). Later agents see the full transcript of earlier agents — debate is sequential, not parallel, so the bull researcher can read the analyst reports, the trader can read the bull/bear arguments, and the risk committee can read the trader's plan.
+
+### What happens when you click Analyze
+
+```mermaid
+sequenceDiagram
+    actor U as You
+    participant R as Renderer
+    participant M as Electron Main
+    participant E as Python Engine
+    participant Y as Yahoo Finance
+    participant L as LLM Provider
+
+    U->>R: Click "Analyze NVDA"
+    R->>M: secrets:get('llm:openai')<br/>or oauth:credentials
+    M->>M: safeStorage.decrypt
+    M-->>R: api key / OAuth token
+    R->>E: WS open + start frame<br/>{ticker, date, provider_config}
+    E->>Y: HTTP GET quote + news
+    Y-->>E: QuoteSummary + headlines
+    E-->>R: data.summary event
+    E-->>R: news.headlines event
+
+    loop 12 agents (Phase 1 → 4)
+        E->>L: Chat completion<br/>(role-specific prompt)
+        L-->>E: agent message
+        E-->>R: agent.message event<br/>(streamed live)
+    end
+
+    E-->>R: session.complete<br/>{decision, tokens, cost}
+    E->>E: persist to sessions.db
+    E--xR: WS close (1000)
+    R->>U: 🎯 Render decision card
+```
+
+The whole loop typically takes 5-15 seconds for a `gpt-4o-mini` debate, costing ~$0.001-$0.003. ChatGPT-OAuth debates route through your subscription — no per-token billing — but are subject to subscription rate limits.
+
+For a deeper conceptual walkthrough, see [`docs/kb/how-it-works.md`](docs/kb/how-it-works.md). For the precise on-the-wire event shapes, see [`docs/api.md`](docs/api.md).
+
+## Quick start (development)
+
+> Distribution builds (signed `.dmg` / `.exe` / AppImage) are not yet available — see the [Roadmap](#roadmap). For now, run from source.
+
+**Prerequisites:** Python 3.13, Node.js 20+, npm.
+
+```bash
+# 1. Clone
+git clone https://github.com/jaysidd/TradingAgentsLab.git
+cd TradingAgentsLab
+
+# 2. Install Python engine dependencies
+pip install -e .
+pip install -r requirements.txt
+
+# 3. Install desktop dependencies
+cd desktop
+npm install
+
+# 4. Launch the app (engine + Vite + Electron all in one)
+npm run dev
+```
+
+The Electron window opens within a few seconds. The engine status pill in the corner flips from "Starting…" to "Running" (green) once the Python sidecar is ready. Click **Analyze** with the default ticker `NVDA`, pick a provider, and watch the debate stream in.
+
+For backend-only smoke testing without the UI:
+
+```bash
+bash tools/dev-smoke.sh
+```
+
+## LLM providers
+
+| Provider | Auth | Notes |
+|---|---|---|
+| **OpenAI** | API key **or** ChatGPT OAuth | OAuth routes through `chatgpt.com/backend-api/codex/responses` (Codex backend) — uses your ChatGPT subscription, not per-token API billing. Plan tier auto-detected from the JWT. |
+| **Anthropic** | API key only | OAuth is not supported — banned by Anthropic Terms of Service. |
+| **OpenRouter** | API key | Access to 100+ models behind one key. |
+| **Google Gemini** | API key | Gemini 3.x family. |
+
+All keys are stored encrypted via Electron's native `safeStorage` (OS keychain on macOS, DPAPI on Windows). Keys never leave your machine and are never logged to disk in plaintext.
+
+## Architecture
+
+TradingAgentsLab is built as **two cooperating processes**:
+
+- **Desktop (Electron + Vite + React + TypeScript)** — the user-facing app you interact with. Renders pages, manages secrets (in the Electron main process via `safeStorage`), drives the OAuth flow, and streams debate events into the UI over WebSocket.
+- **Engine (Python 3.13 + FastAPI + uvicorn)** — a local sidecar that wraps the upstream `tradingagents` LangGraph core, exposes a small REST + WebSocket API on `127.0.0.1`, and orchestrates the multi-agent debate loop. The engine speaks to LLM providers using a shared `LLMAdapter` protocol with five concrete implementations.
+
+Full design and rationale: [`docs/architecture.md`](docs/architecture.md). Engine HTTP/WS API contract: [`docs/api.md`](docs/api.md). User-facing knowledge base: [`docs/kb/`](docs/kb/).
+
+## Project structure
+
+```
+TradingAgentsLab/
+├── desktop/             Electron + React desktop app (AGPL-3.0)
+├── engine/              Python FastAPI sidecar wrapping the agent core (AGPL-3.0)
+├── tradingagents/       Upstream multi-agent core (Apache 2.0, vendored)
+├── tools/               Probes, smoke scripts, dev utilities
+├── docs/                Architecture, API contract, knowledge base
+├── data/                Local SQLite session + watchlist storage (gitignored)
+└── assets/              Logos, diagrams, screenshots
+```
+
+## Roadmap
+
+Phase status lives in [`backlog.md`](backlog.md). High-level:
+
+- ✅ **Phases 0–5 (part 1):** Desktop shell, Python sidecar, end-to-end debate streaming, settings + secrets, multi-provider LLM picker, ChatGPT OAuth, history, watchlist, yfinance market data + news.
+- ⏳ **In progress:** Cost guard with per-day / per-week / per-month budget caps, Playwright UI tests.
+- 🔜 **Next:** Alpaca paper-trading integration, optional Clawless gateway tap, signed distribution builds, auto-update.
 
 ## License
 
@@ -10,314 +243,45 @@ TradingAgentsLab uses a **dual-license** structure:
 
 | Code | License | File |
 |---|---|---|
-| Original code from upstream TradingAgents | Apache License 2.0 | [`LICENSE-APACHE`](LICENSE-APACHE) |
-| All new code, modifications, and the desktop UI in this repo | GNU Affero General Public License v3.0 | [`LICENSE`](LICENSE) |
+| All new code in this repo (`desktop/`, `engine/`, `tools/`, `docs/`, etc.) | GNU Affero General Public License v3.0 | [`LICENSE`](LICENSE) |
+| Upstream `tradingagents/` core (vendored, lightly modified) | Apache License 2.0 | [`LICENSE-APACHE`](LICENSE-APACHE) |
 
-The combined work is distributed under **AGPL-3.0**. The Apache 2.0 portions
-remain individually identifiable. See [`NOTICE`](NOTICE) for full attribution
-and details.
+The combined work is distributed under **AGPL-3.0**. The Apache 2.0 portions remain individually identifiable. See [`NOTICE`](NOTICE) for full attribution.
 
 **What this means in practice:**
+
 - ✅ Free to use, study, and modify for personal, academic, and internal commercial use
 - ✅ Free to self-host
-- ⚠️ If you offer this software as a network service (SaaS), you must publish your
-  modifications under AGPL-3.0
-- ⚠️ If you distribute a modified version, you must publish your modifications under
-  AGPL-3.0
-- 💼 Commercial licenses without the AGPL-3.0 copyleft requirement may be available
-  by contacting the maintainer
+- ⚠️ If you offer this software as a network service (SaaS), you must publish your modifications under AGPL-3.0
+- ⚠️ If you distribute a modified version, you must publish your modifications under AGPL-3.0
+- 💼 Commercial licenses without the AGPL-3.0 copyleft requirement may be available — contact the maintainer.
 
 ## Contributing
 
-Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and sign
-the [`CLA`](CLA.md) before opening a pull request.
+Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and sign the [`CLA`](CLA.md) before opening a pull request. Bug reports and feature requests via [GitHub Issues](https://github.com/jaysidd/TradingAgentsLab/issues).
 
-## Staying in Sync With Upstream
+## Disclaimer
 
-Upstream TradingAgents is tracked as the `upstream` git remote. To pull in the latest
-changes from Tauric Research:
+TradingAgentsLab is for **educational research and paper trading only**. Nothing produced by the system constitutes financial, investment, or trading advice. LLM agents can and do hallucinate. Do not use any output from this software to make real-money trading decisions without independent verification by a qualified professional.
 
-```bash
-git fetch upstream
-git merge upstream/main          # or: git rebase upstream/main
-```
+---
 
 ## Acknowledgements
 
-This project would not exist without the excellent work of the **Tauric Research**
-team and the upstream TradingAgents contributors. Their original README follows
-below for reference.
+TradingAgentsLab is a derivative work of **[TradingAgents](https://github.com/TauricResearch/TradingAgents)** by [Tauric Research](https://tauric.ai/) — the original multi-agent LLM trading framework that powers the debate engine inside this app. The vendored `tradingagents/` directory remains under Apache 2.0 and credit belongs entirely to its authors.
 
----
+If you use the framework in academic work, please cite the upstream paper:
 
-<p align="center">
-  <img src="assets/TauricResearch.png" style="width: 60%; height: auto;">
-</p>
-
-<div align="center" style="line-height: 1;">
-  <a href="https://arxiv.org/abs/2412.20138" target="_blank"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-2412.20138-B31B1B?logo=arxiv"/></a>
-  <a href="https://discord.com/invite/hk9PGKShPK" target="_blank"><img alt="Discord" src="https://img.shields.io/badge/Discord-TradingResearch-7289da?logo=discord&logoColor=white&color=7289da"/></a>
-  <a href="./assets/wechat.png" target="_blank"><img alt="WeChat" src="https://img.shields.io/badge/WeChat-TauricResearch-brightgreen?logo=wechat&logoColor=white"/></a>
-  <a href="https://x.com/TauricResearch" target="_blank"><img alt="X Follow" src="https://img.shields.io/badge/X-TauricResearch-white?logo=x&logoColor=white"/></a>
-  <br>
-  <a href="https://github.com/TauricResearch/" target="_blank"><img alt="Community" src="https://img.shields.io/badge/Join_GitHub_Community-TauricResearch-14C290?logo=discourse"/></a>
-</div>
-
-<div align="center">
-  <!-- Keep these links. Translations will automatically update with the README. -->
-  <a href="https://www.readme-i18n.com/TauricResearch/TradingAgents?lang=de">Deutsch</a> | 
-  <a href="https://www.readme-i18n.com/TauricResearch/TradingAgents?lang=es">Español</a> | 
-  <a href="https://www.readme-i18n.com/TauricResearch/TradingAgents?lang=fr">français</a> | 
-  <a href="https://www.readme-i18n.com/TauricResearch/TradingAgents?lang=ja">日本語</a> | 
-  <a href="https://www.readme-i18n.com/TauricResearch/TradingAgents?lang=ko">한국어</a> | 
-  <a href="https://www.readme-i18n.com/TauricResearch/TradingAgents?lang=pt">Português</a> | 
-  <a href="https://www.readme-i18n.com/TauricResearch/TradingAgents?lang=ru">Русский</a> | 
-  <a href="https://www.readme-i18n.com/TauricResearch/TradingAgents?lang=zh">中文</a>
-</div>
-
----
-
-# TradingAgents: Multi-Agents LLM Financial Trading Framework
-
-## News
-- [2026-04] **TradingAgents v0.2.4** released with structured-output agents (Research Manager, Trader, Portfolio Manager), LangGraph checkpoint resume, persistent decision log, DeepSeek/Qwen/GLM/Azure provider support, Docker, and a Windows UTF-8 encoding fix. See [CHANGELOG.md](CHANGELOG.md) for the full list.
-- [2026-03] **TradingAgents v0.2.3** released with multi-language support, GPT-5.4 family models, unified model catalog, backtesting date fidelity, and proxy support.
-- [2026-03] **TradingAgents v0.2.2** released with GPT-5.4/Gemini 3.1/Claude 4.6 model coverage, five-tier rating scale, OpenAI Responses API, Anthropic effort control, and cross-platform stability.
-- [2026-02] **TradingAgents v0.2.0** released with multi-provider LLM support (GPT-5.x, Gemini 3.x, Claude 4.x, Grok 4.x) and improved system architecture.
-- [2026-01] **Trading-R1** [Technical Report](https://arxiv.org/abs/2509.11420) released, with [Terminal](https://github.com/TauricResearch/Trading-R1) expected to land soon.
-
-<div align="center">
-<a href="https://www.star-history.com/#TauricResearch/TradingAgents&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=TauricResearch/TradingAgents&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=TauricResearch/TradingAgents&type=Date" />
-   <img alt="TradingAgents Star History" src="https://api.star-history.com/svg?repos=TauricResearch/TradingAgents&type=Date" style="width: 80%; height: auto;" />
- </picture>
-</a>
-</div>
-
-> 🎉 **TradingAgents** officially released! We have received numerous inquiries about the work, and we would like to express our thanks for the enthusiasm in our community.
->
-> So we decided to fully open-source the framework. Looking forward to building impactful projects with you!
-
-<div align="center">
-
-🚀 [TradingAgents](#tradingagents-framework) | ⚡ [Installation & CLI](#installation-and-cli) | 🎬 [Demo](https://www.youtube.com/watch?v=90gr5lwjIho) | 📦 [Package Usage](#tradingagents-package) | 🤝 [Contributing](#contributing) | 📄 [Citation](#citation)
-
-</div>
-
-## TradingAgents Framework
-
-TradingAgents is a multi-agent trading framework that mirrors the dynamics of real-world trading firms. By deploying specialized LLM-powered agents: from fundamental analysts, sentiment experts, and technical analysts, to trader, risk management team, the platform collaboratively evaluates market conditions and informs trading decisions. Moreover, these agents engage in dynamic discussions to pinpoint the optimal strategy.
-
-<p align="center">
-  <img src="assets/schema.png" style="width: 100%; height: auto;">
-</p>
-
-> TradingAgents framework is designed for research purposes. Trading performance may vary based on many factors, including the chosen backbone language models, model temperature, trading periods, the quality of data, and other non-deterministic factors. [It is not intended as financial, investment, or trading advice.](https://tauric.ai/disclaimer/)
-
-Our framework decomposes complex trading tasks into specialized roles. This ensures the system achieves a robust, scalable approach to market analysis and decision-making.
-
-### Analyst Team
-- Fundamentals Analyst: Evaluates company financials and performance metrics, identifying intrinsic values and potential red flags.
-- Sentiment Analyst: Analyzes social media and public sentiment using sentiment scoring algorithms to gauge short-term market mood.
-- News Analyst: Monitors global news and macroeconomic indicators, interpreting the impact of events on market conditions.
-- Technical Analyst: Utilizes technical indicators (like MACD and RSI) to detect trading patterns and forecast price movements.
-
-<p align="center">
-  <img src="assets/analyst.png" width="100%" style="display: inline-block; margin: 0 2%;">
-</p>
-
-### Researcher Team
-- Comprises both bullish and bearish researchers who critically assess the insights provided by the Analyst Team. Through structured debates, they balance potential gains against inherent risks.
-
-<p align="center">
-  <img src="assets/researcher.png" width="70%" style="display: inline-block; margin: 0 2%;">
-</p>
-
-### Trader Agent
-- Composes reports from the analysts and researchers to make informed trading decisions. It determines the timing and magnitude of trades based on comprehensive market insights.
-
-<p align="center">
-  <img src="assets/trader.png" width="70%" style="display: inline-block; margin: 0 2%;">
-</p>
-
-### Risk Management and Portfolio Manager
-- Continuously evaluates portfolio risk by assessing market volatility, liquidity, and other risk factors. The risk management team evaluates and adjusts trading strategies, providing assessment reports to the Portfolio Manager for final decision.
-- The Portfolio Manager approves/rejects the transaction proposal. If approved, the order will be sent to the simulated exchange and executed.
-
-<p align="center">
-  <img src="assets/risk.png" width="70%" style="display: inline-block; margin: 0 2%;">
-</p>
-
-## Installation and CLI
-
-### Installation
-
-Clone TradingAgents:
-```bash
-git clone https://github.com/TauricResearch/TradingAgents.git
-cd TradingAgents
-```
-
-Create a virtual environment in any of your favorite environment managers:
-```bash
-conda create -n tradingagents python=3.13
-conda activate tradingagents
-```
-
-Install the package and its dependencies:
-```bash
-pip install .
-```
-
-### Docker
-
-Alternatively, run with Docker:
-```bash
-cp .env.example .env  # add your API keys
-docker compose run --rm tradingagents
-```
-
-For local models with Ollama:
-```bash
-docker compose --profile ollama run --rm tradingagents-ollama
-```
-
-### Required APIs
-
-TradingAgents supports multiple LLM providers. Set the API key for your chosen provider:
-
-```bash
-export OPENAI_API_KEY=...          # OpenAI (GPT)
-export GOOGLE_API_KEY=...          # Google (Gemini)
-export ANTHROPIC_API_KEY=...       # Anthropic (Claude)
-export XAI_API_KEY=...             # xAI (Grok)
-export DEEPSEEK_API_KEY=...        # DeepSeek
-export DASHSCOPE_API_KEY=...       # Qwen (Alibaba DashScope)
-export ZHIPU_API_KEY=...           # GLM (Zhipu)
-export OPENROUTER_API_KEY=...      # OpenRouter
-export ALPHA_VANTAGE_API_KEY=...   # Alpha Vantage
-```
-
-For enterprise providers (e.g. Azure OpenAI, AWS Bedrock), copy `.env.enterprise.example` to `.env.enterprise` and fill in your credentials.
-
-For local models, configure Ollama with `llm_provider: "ollama"` in your config.
-
-Alternatively, copy `.env.example` to `.env` and fill in your keys:
-```bash
-cp .env.example .env
-```
-
-### CLI Usage
-
-Launch the interactive CLI:
-```bash
-tradingagents          # installed command
-python -m cli.main     # alternative: run directly from source
-```
-You will see a screen where you can select your desired tickers, analysis date, LLM provider, research depth, and more.
-
-<p align="center">
-  <img src="assets/cli/cli_init.png" width="100%" style="display: inline-block; margin: 0 2%;">
-</p>
-
-An interface will appear showing results as they load, letting you track the agent's progress as it runs.
-
-<p align="center">
-  <img src="assets/cli/cli_news.png" width="100%" style="display: inline-block; margin: 0 2%;">
-</p>
-
-<p align="center">
-  <img src="assets/cli/cli_transaction.png" width="100%" style="display: inline-block; margin: 0 2%;">
-</p>
-
-## TradingAgents Package
-
-### Implementation Details
-
-We built TradingAgents with LangGraph to ensure flexibility and modularity. The framework supports multiple LLM providers: OpenAI, Google, Anthropic, xAI, DeepSeek, Qwen (Alibaba DashScope), GLM (Zhipu), OpenRouter, Ollama for local models, and Azure OpenAI for enterprise.
-
-### Python Usage
-
-To use TradingAgents inside your code, you can import the `tradingagents` module and initialize a `TradingAgentsGraph()` object. The `.propagate()` function will return a decision. You can run `main.py`, here's also a quick example:
-
-```python
-from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents.default_config import DEFAULT_CONFIG
-
-ta = TradingAgentsGraph(debug=True, config=DEFAULT_CONFIG.copy())
-
-# forward propagate
-_, decision = ta.propagate("NVDA", "2026-01-15")
-print(decision)
-```
-
-You can also adjust the default configuration to set your own choice of LLMs, debate rounds, etc.
-
-```python
-from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents.default_config import DEFAULT_CONFIG
-
-config = DEFAULT_CONFIG.copy()
-config["llm_provider"] = "openai"        # openai, google, anthropic, xai, deepseek, qwen, glm, openrouter, ollama, azure
-config["deep_think_llm"] = "gpt-5.4"     # Model for complex reasoning
-config["quick_think_llm"] = "gpt-5.4-mini" # Model for quick tasks
-config["max_debate_rounds"] = 2
-
-ta = TradingAgentsGraph(debug=True, config=config)
-_, decision = ta.propagate("NVDA", "2026-01-15")
-print(decision)
-```
-
-See `tradingagents/default_config.py` for all configuration options.
-
-## Persistence and Recovery
-
-TradingAgents persists two kinds of state across runs.
-
-### Decision log
-
-The decision log is always on. Each completed run appends its decision to `~/.tradingagents/memory/trading_memory.md`. On the next run for the same ticker, TradingAgents fetches the realised return (raw and alpha vs SPY), generates a one-paragraph reflection, and injects the most recent same-ticker decisions plus recent cross-ticker lessons into the Portfolio Manager prompt, so each analysis carries forward what worked and what didn't.
-
-Override the path with `TRADINGAGENTS_MEMORY_LOG_PATH`.
-
-### Checkpoint resume
-
-Checkpoint resume is opt-in via `--checkpoint`. When enabled, LangGraph saves state after each node so a crashed or interrupted run resumes from the last successful step instead of starting over. On a resume run you will see `Resuming from step N for <TICKER> on <date>` in the logs; on a new run you will see `Starting fresh`. Checkpoints are cleared automatically on successful completion.
-
-Per-ticker SQLite databases live at `~/.tradingagents/cache/checkpoints/<TICKER>.db` (override the base with `TRADINGAGENTS_CACHE_DIR`). Use `--clear-checkpoints` to reset all of them before a run.
-
-```bash
-tradingagents analyze --checkpoint           # enable for this run
-tradingagents analyze --clear-checkpoints    # reset before running
-```
-
-```python
-config = DEFAULT_CONFIG.copy()
-config["checkpoint_enabled"] = True
-ta = TradingAgentsGraph(config=config)
-_, decision = ta.propagate("NVDA", "2026-01-15")
-```
-
-## Contributing
-
-We welcome contributions from the community! Whether it's fixing a bug, improving documentation, or suggesting a new feature, your input helps make this project better. If you are interested in this line of research, please consider joining our open-source financial AI research community [Tauric Research](https://tauric.ai/).
-
-Past contributions, including code, design feedback, and bug reports, are credited per release in [`CHANGELOG.md`](CHANGELOG.md).
-
-## Citation
-
-Please reference our work if you find *TradingAgents* provides you with some help :)
-
-```
+```bibtex
 @misc{xiao2025tradingagentsmultiagentsllmfinancial,
-      title={TradingAgents: Multi-Agents LLM Financial Trading Framework}, 
+      title={TradingAgents: Multi-Agents LLM Financial Trading Framework},
       author={Yijia Xiao and Edward Sun and Di Luo and Wei Wang},
       year={2025},
       eprint={2412.20138},
       archivePrefix={arXiv},
       primaryClass={q-fin.TR},
-      url={https://arxiv.org/abs/2412.20138}, 
+      url={https://arxiv.org/abs/2412.20138}
 }
 ```
+
+For the full upstream README — framework architecture diagrams, CLI walkthrough, package usage, agent role descriptions, and Tauric Research's own roadmap — see the **[upstream repository](https://github.com/TauricResearch/TradingAgents)** and the [arXiv paper](https://arxiv.org/abs/2412.20138).

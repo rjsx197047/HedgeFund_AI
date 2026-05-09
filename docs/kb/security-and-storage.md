@@ -8,13 +8,15 @@
 
 | What | Where | Format | Protection |
 |---|---|---|---|
-| API keys and tokens | `<userData>/secrets.json` | Encrypted ciphertext | OS keychain (safeStorage) |
-| Session history + paper-trade log | `<userData>/sessions.db` | SQLite (planned, not yet present) | File-system permissions only |
+| API keys | `<userData>/secrets.json` (`llm:*` prefix) | Encrypted ciphertext | OS keychain (safeStorage) |
+| OAuth tokens (OpenAI) | `<userData>/secrets.json` (`oauth:openai` key) | Encrypted JSON blob | OS keychain (safeStorage) |
+| Session history + transcripts | `<repo>/data/sessions.db` | SQLite | File-system permissions only |
+| Watchlist tickers | `<repo>/data/sessions.db` (`watchlist` table) | SQLite | File-system permissions only |
 | Engine sidecar process | spawned at runtime | n/a | Binds to 127.0.0.1 only; bearer token auth |
 
 ---
 
-## The userData directory
+## The userData directory (encrypted secrets)
 
 Electron stores application data in a platform-specific location:
 
@@ -46,16 +48,21 @@ Plaintext is never written to disk. The `secrets.json` file contains:
       "hint": "…k3f9",
       "updatedAt": "2026-05-08T14:23:00.000Z",
       "cipher": "<base64-encoded encrypted bytes>"
+    },
+    "oauth:openai": {
+      "hint": "oauth",
+      "updatedAt": "2026-05-09T01:11:00.000Z",
+      "cipher": "<base64-encoded JSON of {access, refresh, expires, email, accountId, planType}>"
     }
   }
 }
 ```
 
-The `hint` field (last 4 characters of the original value) is stored in plaintext solely for UI identification. It is not usable for decryption.
+The `hint` field (last 4 plaintext characters of an API key, or `"oauth"` for OAuth blobs) is stored unencrypted solely for UI identification. It is not usable for decryption.
 
 ### Hard-fail design
 
-If `safeStorage.isEncryptionAvailable()` returns false, the app refuses to store or read secrets rather than silently falling back to plaintext. On Linux without a keyring, all Settings operations will show an error banner: "Encryption backend unavailable on this OS."
+If `safeStorage.isEncryptionAvailable()` returns false, the app refuses to store or read secrets rather than silently falling back to plaintext. On Linux without a keyring, all Settings operations will show an error banner: *"Encryption backend unavailable on this OS."*
 
 ### Atomic writes
 
@@ -64,6 +71,32 @@ The `secrets.json` file is written atomically: the new content is written to a `
 ### File permissions
 
 `secrets.json` is written with mode `0600` (readable only by the file owner on macOS/Linux).
+
+### OAuth token lifecycle
+
+OAuth access tokens are short-lived (typically 1 hour). The OAuth service in the Electron main process auto-refreshes within a 60-second window of expiry using the stored refresh token. On every refresh, a new ciphertext blob is written atomically to `secrets.json`. The renderer fetches fresh credentials via `getOpenAICredentialsForRequest()` immediately before each WebSocket start frame — tokens never live in React state for longer than one stream frame.
+
+---
+
+## sessions.db — local debate history
+
+The engine writes every completed debate to SQLite at `<repo>/data/sessions.db`. This is **not encrypted** — it lives under your repo directory and is protected only by file-system permissions.
+
+What's stored per session:
+
+- Ticker + trade date
+- Provider, model, auth mode (api_key / oauth)
+- Full agent transcript (all 12 messages)
+- Decision (action, confidence, reasoning)
+- Token counts and estimated cost
+- Created timestamp
+- yfinance summary and headlines snapshot
+
+The database also holds your **Watchlist** tickers in a separate table.
+
+If you want this data to be encrypted at rest, store the repo on an encrypted volume (FileVault on macOS, BitLocker on Windows, LUKS on Linux). There is no per-session encryption today.
+
+To reset history: delete the `data/sessions.db` file. The engine recreates it on next start.
 
 ---
 
@@ -75,22 +108,20 @@ WebSocket authentication uses a query parameter (`?token=…`) because browsers 
 
 ---
 
-## Planned storage (sessions.db)
-
-Session history, past debates, and paper-trade records will be persisted in a SQLite database at `<userData>/sessions.db`. This is planned for Phase 7. It does not exist yet. No past analysis results are retained between app restarts in the current version.
-
----
-
 ## Machine migration
 
 Because `safeStorage` encryption is machine- and user-bound, you cannot copy `secrets.json` to a new machine and have it work. The ciphertext cannot be decrypted outside the original machine + user context.
+
+`sessions.db` is portable — copy the file to the new machine and the History page will show your previous debates immediately. (It contains transcripts, not credentials, so there's no decryption issue.)
 
 ### Recovery procedure
 
 1. On your new machine, install TradingAgentsLab from scratch (see [getting-started.md](getting-started.md)).
 2. Open Settings and re-paste each API key from your password manager or the provider's dashboard.
+3. Re-connect OpenAI OAuth via the Connect button.
+4. Optionally, copy `data/sessions.db` from the old machine to preserve history.
 
-There is no secrets export/import feature yet. Manual re-entry is the current migration path.
+There is no automated secrets export/import feature today. Manual re-entry is the current migration path.
 
 ---
 
@@ -98,13 +129,14 @@ There is no secrets export/import feature yet. Manual re-entry is the current mi
 
 - Plaintext API keys — never written anywhere.
 - Engine bearer tokens — generated at runtime, held in memory only.
-- Debate transcripts — currently not persisted (sessions.db is pending).
-- Clawless gateway tokens — stored via the same safeStorage path as API keys.
+- Plaintext OAuth tokens — only the encrypted blob hits disk; in-memory access tokens are dropped between debate sessions.
+- Telemetry — TradingAgentsLab sends no analytics, no error reports, no usage data anywhere.
 
 ---
 
 ## Further reading
 
-- [Configuring LLM providers](configuring-llm-providers.md) — how to paste and manage keys
+- [Configuring LLM providers](configuring-llm-providers.md) — how to add and manage keys
+- [OAuth](oauth.md) — token lifecycle and refresh model
 - [Troubleshooting](troubleshooting.md) — encryption unavailable on Linux
 - [Getting started](getting-started.md) — initial setup
