@@ -17,6 +17,10 @@ import {
 import { buildTranscriptMarkdown } from '../lib/transcript';
 import { getSecret, listSecrets } from '../lib/secrets';
 import { consumePendingTicker } from '../lib/handoff';
+import {
+  getOpenAICredentialsForRequest,
+  getOpenAIOAuthStatus,
+} from '../lib/oauth';
 
 type EngineStatus = 'pending' | 'running' | 'error';
 
@@ -45,6 +49,16 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
    * configured, debate runs in stub mode.
    */
   const [activeProvider, setActiveProvider] = useState<LLMProvider | null>(null);
+  /**
+   * Whether OpenAI auth resolves to OAuth (subscription plan) vs API key.
+   * Surfaced in the LLM status hint so the founder can see at a glance
+   * which billing path the next debate will hit. Null when activeProvider
+   * isn't openai or no key is configured.
+   *
+   * Priority: OAuth > API key when both are stored (founder's stated
+   * preference for personal use). User-facing override is Phase 7 polish.
+   */
+  const [openaiAuthKind, setOpenaiAuthKind] = useState<'oauth' | 'api_key' | null>(null);
   const handleRef = useRef<StreamHandle | null>(null);
   const isStreamingRef = useRef(false);
   const engineReadyRef = useRef(false);
@@ -91,15 +105,33 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     let cancelled = false;
     const refresh = async () => {
       try {
-        const rows = await listSecrets();
+        const [rows, oauth] = await Promise.all([
+          listSecrets(),
+          getOpenAIOAuthStatus().catch(() => ({ connected: false } as const)),
+        ]);
         if (cancelled) return;
         const stored = new Set(rows.map((r) => r.key));
-        const chosen = PROVIDER_PRIORITY.find(
-          (p) => stored.has(PROVIDER_SECRET_KEY[p]),
+        const hasOpenAI =
+          oauth.connected || stored.has(PROVIDER_SECRET_KEY.openai);
+        // Priority: openai > anthropic > openrouter > gemini, where openai
+        // counts as configured if EITHER OAuth tokens OR an API key exist.
+        const chosen = PROVIDER_PRIORITY.find((p) =>
+          p === 'openai'
+            ? hasOpenAI
+            : stored.has(PROVIDER_SECRET_KEY[p]),
         );
         setActiveProvider(chosen ?? null);
+        if (chosen === 'openai') {
+          // OAuth wins when both are present (founder's stated preference).
+          setOpenaiAuthKind(oauth.connected ? 'oauth' : 'api_key');
+        } else {
+          setOpenaiAuthKind(null);
+        }
       } catch {
-        if (!cancelled) setActiveProvider(null);
+        if (!cancelled) {
+          setActiveProvider(null);
+          setOpenaiAuthKind(null);
+        }
       }
     };
     void refresh();
@@ -119,14 +151,46 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
       // Resolve the provider config just-in-time. If a key is configured for
       // any provider in PROVIDER_PRIORITY, run the live debate; otherwise
       // fall through to the stub.
+      //
+      // OpenAI special case: prefer OAuth (subscription plan) when both
+      // OAuth tokens AND an API key are stored. The main-process service
+      // silently refreshes the access token if it's within 60s of expiry.
       let providerConfig: ProviderConfig | undefined;
       try {
-        if (activeProvider) {
+        if (activeProvider === 'openai') {
+          if (openaiAuthKind === 'oauth') {
+            const creds = await getOpenAICredentialsForRequest();
+            if (creds) {
+              providerConfig = {
+                provider: 'openai',
+                auth: {
+                  type: 'oauth',
+                  access: creds.access,
+                  refresh: creds.refresh,
+                  expires: creds.expires,
+                },
+                model: PROVIDER_DEFAULT_MODEL.openai,
+                max_tokens: 400,
+              };
+            }
+          }
+          if (!providerConfig) {
+            const apiKey = await getSecret(PROVIDER_SECRET_KEY.openai);
+            if (apiKey) {
+              providerConfig = {
+                provider: 'openai',
+                auth: { type: 'api_key', api_key: apiKey },
+                model: PROVIDER_DEFAULT_MODEL.openai,
+                max_tokens: 400,
+              };
+            }
+          }
+        } else if (activeProvider) {
           const apiKey = await getSecret(PROVIDER_SECRET_KEY[activeProvider]);
           if (apiKey) {
             providerConfig = {
               provider: activeProvider,
-              api_key: apiKey,
+              auth: { type: 'api_key', api_key: apiKey },
               model: PROVIDER_DEFAULT_MODEL[activeProvider],
               max_tokens: 400,
             };
@@ -342,9 +406,11 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
               : 'Not configured'}
           </div>
           <div className={styles.statusHint}>
-            {activeProvider
-              ? `${PROVIDER_DEFAULT_MODEL[activeProvider]} · sequential agent calls`
-              : 'Settings → LLM Providers · stub debate until configured'}
+            {activeProvider === 'openai' && openaiAuthKind === 'oauth'
+              ? 'OAuth · gpt-4o-mini · sequential agent calls'
+              : activeProvider
+                ? `${PROVIDER_DEFAULT_MODEL[activeProvider]} · sequential agent calls`
+                : 'Settings → LLM Providers · stub debate until configured'}
           </div>
         </div>
         <div className={styles.statusCard}>

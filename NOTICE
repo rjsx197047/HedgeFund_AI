@@ -43,6 +43,28 @@ authoritative record of changes made by TradingAgentsLab contributors.
 
 ================================================================================
 
+THIRD-PARTY DEPENDENCIES
+================================================================================
+
+This product includes the following third-party software, each retaining
+its own copyright and license. Inclusion does not transfer ownership.
+
+@earendil-works/pi-ai
+  Copyright (c) Mario Zechner and contributors
+  https://github.com/earendil-works/pi-mono
+  Licensed under the MIT License (per the package's npm metadata; the
+  installed tarball does not ship a LICENSE file, so this attribution
+  reflects the published `package.json`).
+
+  Used in the desktop application's Electron main process to handle the
+  OpenAI OAuth (Codex / ChatGPT subscription) login flow — PKCE state,
+  the localhost callback listener on port 1455, browser-callback +
+  manual-paste fallback, and access/refresh token exchange. The MIT
+  license permits this combination with the AGPL-3.0 portions of
+  TradingAgentsLab.
+
+================================================================================
+
 TRADEMARKS
 ================================================================================
 

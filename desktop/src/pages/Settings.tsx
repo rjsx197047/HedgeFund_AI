@@ -8,6 +8,15 @@ import {
   type SecretListing,
   type SecretsAvailability,
 } from '../lib/secrets';
+import {
+  disconnectOpenAIOAuth,
+  getOpenAIOAuthStatus,
+  onOAuthProgress,
+  onOAuthPrompt,
+  startOpenAIOAuthLogin,
+  submitOAuthPromptResponse,
+  type OAuthStatus,
+} from '../lib/oauth';
 
 type Tab = 'llm' | 'data' | 'broker' | 'clawless' | 'about';
 
@@ -68,10 +77,10 @@ interface SecretRow {
 const LLM_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'llm:openai',
-    name: 'OpenAI',
-    note: 'GPT-4o family. API key today; OAuth lands in a follow-up commit.',
-    pillLabel: 'Recommended',
-    pillVariant: 'default',
+    name: 'OpenAI (API key fallback)',
+    note: 'GPT-4o family via API key. The OAuth row above wins when both are configured — keep an API key here only if you want a manual fallback.',
+    pillLabel: 'Fallback',
+    pillVariant: 'optional',
     placeholder: 'sk-…',
   },
   {
@@ -246,12 +255,15 @@ function Settings() {
           </header>
 
           {active === 'llm' && (
-            <SecretRowList
-              rows={LLM_PROVIDERS}
-              listingByKey={listingByKey}
-              disabled={!availability?.available}
-              onChange={refresh}
-            />
+            <>
+              <OpenAIOAuthRow disabled={!availability?.available} />
+              <SecretRowList
+                rows={LLM_PROVIDERS}
+                listingByKey={listingByKey}
+                disabled={!availability?.available}
+                onChange={refresh}
+              />
+            </>
           )}
           {active === 'data' && (
             <>
@@ -448,6 +460,172 @@ function YfinanceRow() {
       </div>
       <div className={styles.rowAside}>
         <span className={`${styles.pill} ${styles.pill_default}`}>Active · default</span>
+      </div>
+    </div>
+  );
+}
+
+interface OpenAIOAuthRowProps {
+  disabled: boolean;
+}
+
+function OpenAIOAuthRow({ disabled }: OpenAIOAuthRowProps) {
+  const [status, setStatus] = useState<OAuthStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState<{ message: string; placeholder?: string } | null>(null);
+  const [pasteValue, setPasteValue] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      const next = await getOpenAIOAuthStatus();
+      setStatus(next);
+    } catch (err) {
+      setStatus({ connected: false });
+      setError(err instanceof Error ? err.message : 'oauth status check failed');
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshStatus();
+  }, [refreshStatus]);
+
+  useEffect(() => {
+    const offProgress = onOAuthProgress((event) => {
+      setProgress(event.message);
+    });
+    const offPrompt = onOAuthPrompt((event) => {
+      setPrompt({ message: event.message, placeholder: event.placeholder });
+    });
+    return () => {
+      offProgress();
+      offPrompt();
+    };
+  }, []);
+
+  const onConnect = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setProgress('Starting…');
+    setPrompt(null);
+    try {
+      const result = await startOpenAIOAuthLogin();
+      if (result.success) {
+        setProgress(
+          result.email
+            ? `Connected as ${result.email}`
+            : 'Connected.',
+        );
+      } else {
+        setError(result.error ?? 'Login failed.');
+        setProgress(null);
+      }
+      await refreshStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'oauth start failed');
+      setProgress(null);
+    } finally {
+      setBusy(false);
+      setPrompt(null);
+      setPasteValue('');
+    }
+  }, [refreshStatus]);
+
+  const onDisconnect = useCallback(async () => {
+    if (!confirm('Disconnect the OpenAI account? Stored OAuth tokens will be erased.')) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await disconnectOpenAIOAuth();
+      setProgress(null);
+      await refreshStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'disconnect failed');
+    } finally {
+      setBusy(false);
+    }
+  }, [refreshStatus]);
+
+  const onSubmitPaste = useCallback(() => {
+    const value = pasteValue.trim();
+    if (!value) return;
+    submitOAuthPromptResponse(value);
+    setPrompt(null);
+    setPasteValue('');
+  }, [pasteValue]);
+
+  const connected = status?.connected ?? false;
+
+  return (
+    <div className={styles.row}>
+      <div className={styles.rowMain}>
+        <div className={styles.rowName}>OpenAI account (OAuth)</div>
+        <div className={styles.rowNote}>
+          Sign in with your OpenAI account. Wins over the API key when both
+          are configured. <strong>Note:</strong> whether OAuth tokens route
+          through your ChatGPT subscription vs. per-token billing depends on
+          your OpenAI account configuration — verify with a low-cost model
+          first and check your billing dashboard before relying on this for
+          cost savings.
+        </div>
+        {connected && (
+          <div className={styles.rowMeta}>
+            Connected{status?.email ? ` as ${status.email}` : ''}
+            {status?.needsRefresh && ' · token will refresh on next use'}
+          </div>
+        )}
+        {progress && !error && (
+          <div className={styles.rowMeta}>{progress}</div>
+        )}
+        {prompt && (
+          <div className={styles.editor}>
+            <div className={styles.label}>{prompt.message}</div>
+            <input
+              className={styles.input}
+              value={pasteValue}
+              onChange={(e) => setPasteValue(e.target.value)}
+              placeholder={prompt.placeholder ?? 'paste here'}
+              autoFocus
+              disabled={busy && !prompt}
+            />
+            <div className={styles.editorActions}>
+              <button
+                className={styles.actionPrimary}
+                onClick={onSubmitPaste}
+                disabled={!pasteValue.trim()}
+                type="button"
+              >
+                Submit
+              </button>
+            </div>
+          </div>
+        )}
+        {error && <div className={styles.editorError}>{error}</div>}
+      </div>
+      <div className={styles.rowAside}>
+        <span className={`${styles.pill} ${connected ? styles.pill_default : styles.pill_optional}`}>
+          {connected ? 'Connected' : 'Recommended'}
+        </span>
+        {connected ? (
+          <button
+            className={styles.rowActionDanger}
+            onClick={() => void onDisconnect()}
+            disabled={disabled || busy}
+            type="button"
+          >
+            Disconnect
+          </button>
+        ) : (
+          <button
+            className={styles.rowAction}
+            onClick={() => void onConnect()}
+            disabled={disabled || busy}
+            type="button"
+          >
+            {busy ? 'Connecting…' : 'Connect'}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -309,7 +309,12 @@ async def live_debate(
 
     started_at = time.time()
     state = _DebateState()
-    await adapter.open(api_key=config.api_key)
+    # `bearer_token` works for both api_key and oauth auth shapes; the
+    # adapter's `api_key` kwarg is named for Protocol consistency but
+    # accepts any Bearer token (OpenAI's /chat/completions accepts both
+    # sk-…  API keys and OAuth access tokens via the same Authorization
+    # header).
+    await adapter.open(api_key=config.bearer_token)
 
     # try/finally guarantees adapter cleanup even when the client disconnects
     # mid-stream (FastAPI raises WebSocketDisconnect, which throws GeneratorExit
@@ -383,7 +388,8 @@ async def live_debate(
         cost = estimate_cost(config.model, state.input_tokens, state.output_tokens)
         duration = time.time() - started_at
         sys.stderr.write(
-            f"[live_debate] provider={config.provider} ticker={ticker} model={config.model} "
+            f"[live_debate] provider={config.provider} auth={config.auth_kind} "
+            f"ticker={ticker} model={config.model} "
             f"in_tokens={state.input_tokens} out_tokens={state.output_tokens} "
             f"est_cost_usd={cost:.4f} duration_s={duration:.1f}\n"
         )

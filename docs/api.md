@@ -244,14 +244,29 @@ Sent by the client immediately after `open`:
   // configured provider; when absent, it runs the canned stub debate.
   "provider_config": {
     "provider": "openai",        // openai | anthropic | openrouter | gemini
-    "api_key": "sk-…",
+    "auth": {
+      "type": "api_key",         // "api_key" | "oauth"
+      "api_key": "sk-…"
+    },
     "model": "gpt-4o-mini",      // optional, defaults to gpt-4o-mini
     "max_tokens": 400            // optional, defaults to 400, hard cap
   }
 }
 ```
 
-The server reads exactly one start frame, then becomes write-only. If `provider` is not in the allowlist, the engine falls through to the stub path rather than erroring — this lets the renderer ship UI-side support for new providers ahead of engine-side wiring.
+`auth` is a discriminated union — the engine attaches whichever Bearer token comes out of it to the upstream chat-completions call. Two shapes:
+
+```jsonc
+// API key (all providers)
+{ "type": "api_key", "api_key": "sk-…" }
+
+// OAuth (OpenAI only — Anthropic OAuth is banned by their TOS)
+{ "type": "oauth", "access": "…", "refresh": "…", "expires": 1700000000 }
+```
+
+Backwards-compat: the legacy shape `{api_key: "..."}` at the top level (no `auth` field) is still accepted and converted internally to `{type: "api_key", api_key}`. New renderer builds always send the discriminated union.
+
+The server reads exactly one start frame, then becomes write-only. If `provider` is not in the allowlist OR `auth.type` is unrecognised OR an OAuth `auth` arrives for a non-OpenAI provider, the engine falls through to the stub path rather than erroring — this lets the renderer ship UI-side support for new providers ahead of engine-side wiring.
 
 #### Server → client: event stream
 

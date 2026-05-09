@@ -5,9 +5,18 @@ export interface EngineHandshake {
 
 export type LLMProvider = 'openai' | 'anthropic' | 'openrouter' | 'gemini';
 
+/**
+ * Auth shape on the WS start frame. Discriminated union so the engine
+ * never has to guess whether `api_key` carries an API key or an OAuth
+ * access token. OAuth is OpenAI-only today.
+ */
+export type ProviderAuth =
+  | { type: 'api_key'; api_key: string }
+  | { type: 'oauth'; access: string; refresh: string; expires: number };
+
 export interface ProviderConfig {
   provider: LLMProvider;
-  api_key: string;
+  auth: ProviderAuth;
   model?: string;
   max_tokens?: number;
 }
@@ -320,6 +329,10 @@ export async function streamDebate(
     // Send the start frame. provider_config is optional — when present, the
     // engine runs a real-LLM debate; when absent, it falls back to the canned
     // stub. Either way the wire shape downstream is the same.
+    //
+    // The `auth` field is a discriminated union {type: "api_key" | "oauth"}.
+    // Engine accepts both the new shape and legacy {api_key: ...} top-level
+    // for backward compat with older renderer builds.
     ws.send(
       JSON.stringify({
         ticker: req.ticker,

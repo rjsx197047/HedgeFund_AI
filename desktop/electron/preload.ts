@@ -24,6 +24,29 @@ export interface SecretsAvailability {
 
 type MenuChannel = 'menu:navigate' | 'menu:new-analysis' | 'menu:stop-stream';
 
+export interface OAuthStartResult {
+  success: boolean;
+  email?: string;
+  error?: string;
+}
+
+export interface OAuthStatus {
+  connected: boolean;
+  email?: string;
+  expiresAt?: number;
+  needsRefresh?: boolean;
+}
+
+export interface OAuthProgressEvent { message: string }
+export interface OAuthPromptEvent { message: string; placeholder?: string }
+
+export interface OAuthCredentialsBridge {
+  access: string;
+  refresh: string;
+  expires: number;
+  email?: string;
+}
+
 contextBridge.exposeInMainWorld('tradingAgentsLab', {
   version: '0.0.1',
   platform: process.platform,
@@ -39,6 +62,30 @@ contextBridge.exposeInMainWorld('tradingAgentsLab', {
     list: (): Promise<SecretListing[]> => ipcRenderer.invoke('secrets:list'),
     delete: (key: string): Promise<boolean> =>
       ipcRenderer.invoke('secrets:delete', key),
+  },
+  oauth: {
+    openaiStart: (): Promise<OAuthStartResult> =>
+      ipcRenderer.invoke('oauth:openai:start'),
+    openaiStatus: (): Promise<OAuthStatus> =>
+      ipcRenderer.invoke('oauth:openai:status'),
+    openaiDisconnect: (): Promise<boolean> =>
+      ipcRenderer.invoke('oauth:openai:disconnect'),
+    openaiPromptResponse: (value: string): void =>
+      ipcRenderer.send('oauth:openai:prompt-response', value),
+    openaiCredentials: (): Promise<OAuthCredentialsBridge | null> =>
+      ipcRenderer.invoke('oauth:openai:credentials'),
+    onProgress: (handler: (event: OAuthProgressEvent) => void): (() => void) => {
+      const wrapped = (_evt: Electron.IpcRendererEvent, event: OAuthProgressEvent) =>
+        handler(event);
+      ipcRenderer.on('oauth:openai:progress', wrapped);
+      return () => ipcRenderer.removeListener('oauth:openai:progress', wrapped);
+    },
+    onPrompt: (handler: (event: OAuthPromptEvent) => void): (() => void) => {
+      const wrapped = (_evt: Electron.IpcRendererEvent, event: OAuthPromptEvent) =>
+        handler(event);
+      ipcRenderer.on('oauth:openai:prompt', wrapped);
+      return () => ipcRenderer.removeListener('oauth:openai:prompt', wrapped);
+    },
   },
   onMenuCommand: (
     channel: MenuChannel,

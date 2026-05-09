@@ -14,8 +14,8 @@ quarterly and this table will drift.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional, Protocol
+from dataclasses import dataclass, field
+from typing import Any, Optional, Protocol
 
 
 # ---- Cost rate tables -----------------------------------------------------
@@ -58,37 +58,110 @@ def estimate_cost(model: str, in_tokens: int, out_tokens: int) -> float:
 
 @dataclass
 class ProviderConfig:
-    """Renderer-supplied config for a single live-debate session."""
+    """Renderer-supplied config for a single live-debate session.
+
+    `auth` is a discriminated dict:
+
+    - `{"type": "api_key", "api_key": "sk-..."}`  — API-key flow (all providers)
+    - `{"type": "oauth", "access": "...", "refresh": "...", "expires": 1234}` — OAuth (OpenAI only today)
+
+    Use `bearer_token` to get the value to attach as `Authorization: Bearer ...`
+    regardless of which flow is active. Adapters never branch on auth shape.
+    """
 
     provider: str
-    api_key: str
-    model: str
-    max_tokens: int
+    auth: dict[str, Any] = field(default_factory=dict)
+    model: str = ""
+    max_tokens: int = 400
+
+    @property
+    def bearer_token(self) -> str:
+        """Token for the `Authorization: Bearer …` header.
+
+        Works for both api_key and oauth auth types. Raises ValueError on
+        an unrecognised auth type so adapter-level mistakes are loud.
+        """
+        t = self.auth.get("type")
+        if t == "api_key":
+            return str(self.auth.get("api_key") or "")
+        if t == "oauth":
+            return str(self.auth.get("access") or "")
+        raise ValueError(f"ProviderConfig.auth has unknown type: {t!r}")
+
+    @property
+    def auth_kind(self) -> str:
+        """`"api_key"` or `"oauth"` — for telemetry / logging."""
+        return str(self.auth.get("type") or "unknown")
 
     @classmethod
     def from_dict(cls, raw: Optional[dict]) -> "ProviderConfig | None":
         if not isinstance(raw, dict):
             return None
-        api_key = (raw.get("api_key") or "").strip()
-        if not api_key:
-            return None
+
         provider = (raw.get("provider") or "openai").lower()
         if provider not in _ALLOWED_PROVIDERS:
             return None
-        # Honor caller's model when supplied; otherwise the per-provider default.
+
+        # Two accepted shapes:
+        #   New (preferred): {"auth": {"type": "...", ...}, ...}
+        #   Old (back-compat): {"api_key": "sk-..."} at top level
+        # Renderers ship the new shape; we accept the old so that an
+        # outdated WS frame (e.g. dev hot-reload race) doesn't drop the
+        # session silently into the stub path.
+        raw_auth = raw.get("auth")
+        if isinstance(raw_auth, dict):
+            auth = _normalize_auth(raw_auth)
+        else:
+            api_key = (raw.get("api_key") or "").strip()
+            if not api_key:
+                return None
+            auth = {"type": "api_key", "api_key": api_key}
+
+        if auth is None:
+            return None
+
+        # Only OpenAI accepts OAuth at the moment.
+        if auth["type"] == "oauth" and provider != "openai":
+            return None
+
         model = (raw.get("model") or "").strip() or _DEFAULT_MODELS[provider]
-        # Cap at our hard ceiling regardless of caller request.
         try:
             requested_max = int(raw.get("max_tokens") or _DEFAULT_MAX_TOKENS)
         except (TypeError, ValueError):
             requested_max = _DEFAULT_MAX_TOKENS
         max_tokens = max(1, min(requested_max, _MAX_TOKENS_HARD_CAP))
+
         return cls(
             provider=provider,
-            api_key=api_key,
+            auth=auth,
             model=model,
             max_tokens=max_tokens,
         )
+
+
+def _normalize_auth(raw: dict) -> Optional[dict[str, Any]]:
+    t = (raw.get("type") or "").lower()
+    if t == "api_key":
+        api_key = (raw.get("api_key") or "").strip()
+        if not api_key:
+            return None
+        return {"type": "api_key", "api_key": api_key}
+    if t == "oauth":
+        access = (raw.get("access") or "").strip()
+        refresh = (raw.get("refresh") or "").strip()
+        if not access:
+            return None
+        try:
+            expires = int(raw.get("expires") or 0)
+        except (TypeError, ValueError):
+            expires = 0
+        return {
+            "type": "oauth",
+            "access": access,
+            "refresh": refresh,
+            "expires": expires,
+        }
+    return None
 
 
 _DEFAULT_MAX_TOKENS = 400
@@ -142,6 +215,15 @@ class OpenAIAdapter:
         self._client = None  # type: ignore[assignment]
 
     async def open(self, *, api_key: str) -> None:
+        """Open the client with a Bearer token.
+
+        The argument name `api_key` is kept for adapter-Protocol consistency,
+        but the value is whatever bearer token the caller supplies — for
+        OpenAI's `/v1/chat/completions` endpoint, both `sk-…` API keys and
+        OAuth access tokens are accepted as `Authorization: Bearer …`. The
+        caller (`live_debate.py`) reads `config.bearer_token` so this stays
+        auth-shape-agnostic.
+        """
         from openai import AsyncOpenAI
 
         kwargs: dict = {"api_key": api_key}

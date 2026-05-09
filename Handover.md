@@ -58,6 +58,8 @@ See `WORKLOG.md` for the chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
+<OAuth commit lands here>
+d8d3585  Doc sync: backfill 8a9526b hash + record Clawless Advisor OAuth deferral
 8a9526b  Multi-provider live debate: Anthropic + OpenRouter + Google Gemini
 7fcbefa  End-of-block: reconcile architecture.md §7 + refresh founder Q&A inbox
 4b88894  Watchlist page: SQLite-backed tickers + deep-link to Analyze

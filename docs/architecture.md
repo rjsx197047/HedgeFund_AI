@@ -108,6 +108,7 @@ The original sketch assumed the engine would wrap upstream's `tradingagents.grap
 - Same wire shape as the canned stub debate — the renderer doesn't know whether a session was stub or live except via the `live: true` field on `session.complete`.
 - Cost discipline lives in `live_debate.py` (NOT in adapters): `MAX_AGENTS_PER_SESSION=12` bounds the loop, `max_tokens` per call is bounded by `_MAX_TOKENS_HARD_CAP=800` enforced inside `ProviderConfig.from_dict`, estimated cost logged per session.
 - Multi-provider support is allowlist-gated via `_ALLOWED_PROVIDERS`. Today: **OpenAI, Anthropic, OpenRouter, Google Gemini**. Unsupported providers fall through to the stub rather than erroring, so the renderer can ship UI ahead of engine support.
+- Auth is a discriminated union on the WS start frame: `{type: "api_key", api_key}` or `{type: "oauth", access, refresh, expires}`. OAuth is OpenAI-only today (PKCE flow handled by `@earendil-works/pi-ai` per Clawless Advisor's reference pattern). `ProviderConfig.bearer_token` collapses both into a single accessor so adapters never branch on auth shape.
 
 Future Phase 2.1-full may revisit upstream-graph integration — for now, the simpler path is the shipping path.
 
@@ -136,7 +137,7 @@ async def live_debate(
 | `live_debate` (any allowlisted provider) | `provider_config.provider in {"openai", "anthropic", "openrouter", "gemini"}`. Real LLM calls bounded by the cost caps above; routed through `LLMAdapter`. |
 | `ClawlessGatewayClient` (Phase 6) | Optional connector. Translates LLM calls to OpenClaw RPCs over the gateway WebSocket. Schema constraints: `client.id: "cli"`, `client.mode: "ui"`. Not yet implemented in engine. |
 
-API-key-only for Anthropic — **OAuth banned** by Anthropic TOS. OpenAI OAuth (subscription-plan path) is held for a follow-up commit, gated on the Clawless Advisor's reference pattern.
+API-key-only for Anthropic — **OAuth banned** by Anthropic TOS. OpenAI OAuth shipped via `@earendil-works/pi-ai` (MIT, npm install + thin Electron wrapper at `desktop/electron/oauth-openai.ts`). Subscription-plan vs per-token-billing routing is determined by OpenAI based on the user's account configuration — TradingAgentsLab attaches the access token as `Authorization: Bearer …` and OpenAI routes accordingly. **Verify with a low-cost model first** before relying on OAuth for cost savings.
 
 ## 6. Data + broker abstraction
 

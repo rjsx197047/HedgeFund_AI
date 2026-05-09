@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { startEngine, stopEngine, type EngineHandshake } from './engine-runner';
 import { registerAppMenu } from './menu';
+import { OpenAIOAuthService } from './oauth-openai';
 import {
   deleteSecret,
   getSecret,
@@ -64,11 +65,58 @@ ipcMain.handle(
   (_evt, key: string, value: string) => setSecret(key, value),
 );
 
-ipcMain.handle('secrets:get', (_evt, key: string) => getSecret(key));
+ipcMain.handle('secrets:get', (_evt, key: string) => {
+  // OAuth tokens have a dedicated bridge (`oauth:openai:credentials`) that
+  // refreshes-on-stale and never returns the raw blob to the renderer.
+  // Block the `oauth:` prefix here so the renderer cannot accidentally
+  // (or maliciously) read the token JSON via the generic secrets channel.
+  if (typeof key === 'string' && key.startsWith('oauth:')) return null;
+  return getSecret(key);
+});
 
 ipcMain.handle('secrets:list', () => listSecrets());
 
 ipcMain.handle('secrets:delete', (_evt, key: string) => deleteSecret(key));
+
+// ---- OAuth (OpenAI Codex / ChatGPT subscription) -------------------------
+//
+// Renderer never sees the access/refresh tokens — they're decrypted in main
+// and attached as a Bearer header by `engine-client.ts` only at WS-frame
+// build time. The renderer only sees status (connected/email/expires).
+
+let openaiOAuth: OpenAIOAuthService | null = null;
+
+function ensureOAuthService(): OpenAIOAuthService {
+  if (!openaiOAuth) {
+    openaiOAuth = new OpenAIOAuthService(
+      (event) => {
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('oauth:openai:progress', event);
+        }
+      },
+      (event) => {
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('oauth:openai:prompt', event);
+        }
+      },
+    );
+  }
+  return openaiOAuth;
+}
+
+ipcMain.handle('oauth:openai:start', () => ensureOAuthService().startLogin());
+ipcMain.handle('oauth:openai:status', () => ensureOAuthService().getStatus());
+ipcMain.handle('oauth:openai:disconnect', () =>
+  ensureOAuthService().disconnect(),
+);
+ipcMain.on('oauth:openai:prompt-response', (_evt, value: string) => {
+  ensureOAuthService().handlePromptResponse(value);
+});
+// Used by `engine-client.ts` to fetch fresh credentials right before
+// building the WS start frame. Returns the credentials object (or null).
+ipcMain.handle('oauth:openai:credentials', async () => {
+  return ensureOAuthService().refreshIfNeeded();
+});
 
 app.whenReady().then(() => {
   // Start the sidecar eagerly so the handshake is ready by the time the

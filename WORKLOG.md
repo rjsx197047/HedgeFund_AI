@@ -6,6 +6,64 @@
 
 ---
 
+## 2026-05-09 (continued) — OpenAI OAuth (Codex / subscription path)
+
+**Goal:** Founder explicitly stated they prefer routing through their ChatGPT subscription rather than per-token billing. Wire OAuth alongside the API-key path that shipped in `8a9526b`. Per Clawless Advisor's pattern reply (received 01:33 — they did the code dive after founder bumped priority), the heavy lifting belongs to a third-party MIT-licensed package (`@earendil-works/pi-ai`) that handles PKCE + browser callback + token exchange internally.
+
+**Architect protocol followed:**
+- ClaudeLink consult with Clawless Advisor for OAuth pattern reference. Detailed reply with five gotchas (port 1455, silent browser callback, `shell.openExternal` quirks, token expiry timestamp units, subscription routing).
+- Pre-design advisor: required discriminated-union wire shape (not muddled `api_key`-as-Bearer-slot), single-key JSON-blob storage in `safeStorage` (not three keys), no DIY refresh loop (use pi-ai's primitive), `npm view` verification before installing, scope kept to OAuth wiring only (no test-connection bundling).
+- pi-ai package verification: `@mariozechner/pi-ai` is **deprecated** with forward-pointer to `@earendil-works/pi-ai@0.74.0` (same MIT license, fresh fork by same authors). Switched to maintained namespace before installing.
+- Code reviewer (Sonnet) on the working tree pre-commit. **Two blocking issues + three strong-recommends + four nice-to-haves** flagged. All addressed before commit.
+
+**Reviewer fixes applied:**
+
+1. **B1 — `setTimeout` orphan that wedges next login.** pi-ai calls `onManualCodeInput` unconditionally at flow start (not only on browser-callback failure). The 20s timer kept running post-success and stomped `pendingPromptResolver` after the `finally` reset, blocking subsequent login attempts until app restart. Fix: capture `timer` ID in an `activeFallbackCleanup` closure, `clearTimeout` from the outer `finally`. Reviewer's deterministic app-restart-required bug — caught + fixed before commit.
+2. **B2 — Subscription-plan routing was unverified.** Reviewer dug into pi-ai source: `loginOpenAICodex` issues against `auth.openai.com` with `client_id: "app_EMoamEEZ73f0CkXaXp7hrann"` and `offline_access` scope. Whether OpenAI routes the resulting token through ChatGPT subscription or bills per-token is account-configuration-dependent and not contractually guaranteed by either pi-ai or our integration. Documented loudly: Settings UI text now reads *"verify with a low-cost model first and check your billing dashboard before relying on this for cost savings"*; status hint dropped the "(subscription)" qualifier; architecture.md §5 calls out the verification gap; commit message reproduces the warning.
+3. **SR1 — `secrets:get` IPC could expose raw OAuth JSON.** Renderer-side convention prevented this in practice (Settings only calls `oauth.openaiStatus`), but the `secrets:get` handler accepted any key including `oauth:*`. Hardened: handler returns `null` for any `oauth:`-prefixed key. OAuth tokens flow via the dedicated `oauth:openai:credentials` bridge that auto-refreshes before returning, never via `secrets:get`.
+4. **SR2 — refresh-token race.** OpenAI may issue single-use refresh tokens; concurrent `refreshIfNeeded` calls would race and force re-login. Added module-level `refreshInFlight: Promise<...> | null` mutex so concurrent callers share one in-flight refresh. pi-ai doesn't export `refreshOAuthTokenWithLock` so we implement the lock locally.
+5. **SR3 — stale Settings copy.** OpenAI API-key row still read "OAuth lands in a follow-up commit." Updated to "OpenAI (API key fallback)" with note that OAuth wins above when both are configured.
+6. **N1 — `email` field doesn't exist on pi-ai response.** pi-ai returns `accountId` (UUID), not `email`. `toStored` updated to extract `accountId` and surface as "account abc-123…" prefix in the UI. Falls back gracefully when neither is present.
+7. **N3 — NOTICE author attribution.** Removed "Armin Ronacher" since the installed package only confirms Mario Zechner via `package.json` author field; no LICENSE file ships in the npm tarball. Wording now reflects what's verifiable.
+8. **N4 — neutral copy.** Removed "(subscription)" qualifier from the Analyze status hint.
+
+**Architecture choices:**
+
+- **Wire shape (discriminated union):** `provider_config.auth = {type: "api_key", api_key} | {type: "oauth", access, refresh, expires}`. Engine has a `bearer_token` accessor that collapses both into one string for the `Authorization: Bearer …` header; adapters never branch on auth shape. Old `{api_key: ...}` top-level is still accepted for back-compat with stale renderer builds.
+- **OAuth-only-for-OpenAI:** the engine rejects `{type: "oauth"}` for any non-openai provider at `from_dict` time, falling through to the stub. Anthropic OAuth stays banned per their TOS.
+- **Storage:** single `oauth:openai` secret key with the credential JSON inside the cipher field (not three keys per advisor's recommendation). One decrypt per check; one delete clears all OAuth state.
+- **Renderer priority:** when both OAuth tokens AND an API key are stored for OpenAI, OAuth wins (founder's stated preference). Surfaced in the LLM status hint. User-facing override is Phase 7 polish (commented in code).
+- **Token confinement:** access/refresh tokens never enter renderer React state. `getOpenAICredentialsForRequest()` is called just-before-WS, attaches the access token to the start frame, returns. Main process is the only place tokens persist.
+
+**Shipped:**
+
+- Engine: `engine/llm_providers.py` `ProviderConfig` rewritten as discriminated-union dataclass with `bearer_token` + `auth_kind` accessors. `from_dict` accepts both new + legacy shapes. `engine/live_debate.py` calls `adapter.open(api_key=config.bearer_token)` and logs `auth=auth_kind` in the per-session stderr line.
+- Renderer client: `desktop/src/lib/engine-client.ts` `ProviderConfig.auth` is a TypeScript discriminated union; `streamDebate` threads it into the start frame.
+- New: `desktop/electron/oauth-openai.ts` — `OpenAIOAuthService` wrapping pi-ai. Friendly error mapping (port 1455, network, timeout). Single-flight refresh mutex. Cancel-on-success for the manual-paste timer.
+- New: `desktop/src/lib/oauth.ts` — typed renderer wrapper for the OAuth bridge.
+- `desktop/electron/main.ts` — IPC handlers `oauth:openai:start/status/disconnect/prompt-response/credentials` + event channels `oauth:openai:progress` / `:prompt`. `secrets:get` blocks `oauth:` prefix.
+- `desktop/electron/preload.ts` — `tradingAgentsLab.oauth` bridge.
+- `desktop/src/vite-env.d.ts` — types for the new bridge surface.
+- `desktop/src/pages/Settings.tsx` — `<OpenAIOAuthRow>` above the LLM-providers list. Connect / Disconnect, status display, manual-paste fallback UI, friendly error surface. API-key row reframed as "fallback".
+- `desktop/src/pages/Analyze.tsx` — priority resolver: OAuth wins over API key for OpenAI. Just-in-time credential fetch via `getOpenAICredentialsForRequest()` (silent refresh inside 60s expiry window).
+- `engine/requirements.txt` unchanged (engine doesn't speak to pi-ai). `desktop/package.json` adds `@earendil-works/pi-ai@^0.74.0`.
+- `NOTICE` adds the pi-ai MIT attribution under a new "THIRD-PARTY DEPENDENCIES" section.
+- `docs/api.md` updates the WS start-frame documentation to reflect the new `auth` discriminator + back-compat note.
+- `docs/architecture.md` §5 updates to describe the OAuth flow and the verification caveat.
+
+**Verification:**
+- `npm run type-check`: clean
+- `npm run build`: clean (main.js bumped 8 KB → 479 KB to bundle pi-ai's transitive deps; Electron main process only — no renderer impact)
+- `bash tools/dev-smoke.sh NVDA 2026-05-08`: **17 passed, 0 failed** (back-compat shape preserved end-to-end)
+- Direct unit verification of `ProviderConfig.from_dict` for both shapes + rejection cases (oauth-on-anthropic, empty access, unknown auth type, bogus bearer_token)
+- Engine boots clean with the new module
+- **Live OAuth flow NOT smoke-tested in this autonomous session** — there's no browser, no founder paste-back, no real OpenAI account. The pi-ai integration is verified by type-check + back-compat smoke + IPC handler registration; the actual "click Connect → browser opens → paste code → token round-trips → live debate uses the OAuth bearer" flow only verifies in the founder's window.
+- **Subscription-plan routing claim is account-configuration-dependent** and unverified by either pi-ai or TradingAgentsLab. Founder must verify with a low-cost call + check OpenAI billing dashboard.
+
+**Commit:** TBD.
+
+---
+
 ## 2026-05-09 (continued) — Multi-provider live debate (Anthropic, OpenRouter, Gemini)
 
 **Goal:** Founder confirmed they have keys for OpenAI, Anthropic, OpenRouter, Google Gemini (no DeepSeek). Wire all four through one shared `LLMAdapter` abstraction so the live debate path isn't OpenAI-only. Reviewer required this be ONE commit (not three) so the abstraction itself is the review surface.

@@ -35,6 +35,39 @@ interface SecretsBridge {
   delete: (key: string) => Promise<boolean>;
 }
 
+interface OAuthStartResultBridge {
+  success: boolean;
+  email?: string;
+  error?: string;
+}
+
+interface OAuthStatusBridge {
+  connected: boolean;
+  email?: string;
+  expiresAt?: number;
+  needsRefresh?: boolean;
+}
+
+interface OAuthProgressEventBridge { message: string }
+interface OAuthPromptEventBridge { message: string; placeholder?: string }
+
+interface OAuthCredentialsBridge {
+  access: string;
+  refresh: string;
+  expires: number;
+  email?: string;
+}
+
+interface OAuthBridge {
+  openaiStart: () => Promise<OAuthStartResultBridge>;
+  openaiStatus: () => Promise<OAuthStatusBridge>;
+  openaiDisconnect: () => Promise<boolean>;
+  openaiPromptResponse: (value: string) => void;
+  openaiCredentials: () => Promise<OAuthCredentialsBridge | null>;
+  onProgress: (handler: (event: OAuthProgressEventBridge) => void) => () => void;
+  onPrompt: (handler: (event: OAuthPromptEventBridge) => void) => () => void;
+}
+
 type MenuChannel = 'menu:navigate' | 'menu:new-analysis' | 'menu:stop-stream';
 
 interface TradingAgentsLabBridge {
@@ -42,6 +75,7 @@ interface TradingAgentsLabBridge {
   platform: NodeJS.Platform;
   getEngineHandshake: () => Promise<EngineHandshakeBridge>;
   secrets: SecretsBridge;
+  oauth: OAuthBridge;
   onMenuCommand: (
     channel: MenuChannel,
     handler: (...args: unknown[]) => void,
