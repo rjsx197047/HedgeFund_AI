@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Iterator, Optional
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 _SCHEMA_DDL = """
@@ -50,13 +50,14 @@ CREATE TABLE IF NOT EXISTS sessions (
     input_tokens INTEGER,
     output_tokens INTEGER,
     estimated_cost_usd REAL,
+    auth_kind TEXT,
     created_at TEXT NOT NULL,
     events_json TEXT NOT NULL
 );
 
--- Older databases predate the `provider` column; add it if missing. We
--- intentionally do NOT bump SCHEMA_VERSION because the column is nullable
--- and additive — older readers ignore it; older writers leave it NULL.
+-- `provider` and `auth_kind` were added in v2. Older databases get
+-- in-place ALTER TABLE adds below — both columns are nullable and additive
+-- so older readers/writers stay forward-compatible.
 
 
 CREATE INDEX IF NOT EXISTS sessions_ticker_idx ON sessions(ticker);
@@ -114,15 +115,31 @@ def _ensure_initialized() -> None:
                     f"sessions.db schema version {stored} newer than this "
                     f"engine supports ({SCHEMA_VERSION}); refusing to write."
                 )
-        # In-place additive migration: add `provider` column to existing
-        # databases that predate it. Idempotent — PRAGMA reports the column
-        # set, we add only if missing.
+        # In-place additive migrations for older databases. Both columns are
+        # nullable — older readers ignore them, older writers leave NULL.
         cur = conn.execute("PRAGMA table_info(sessions)")
         cols = {row["name"] for row in cur.fetchall()}
         if "provider" not in cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN provider TEXT")
+        if "auth_kind" not in cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN auth_kind TEXT")
+        # Bump the stored version forward if we just migrated up. Never
+        # downgrade — a v2 db running on a v1 engine is rejected above.
+        conn.execute(
+            "UPDATE schema_version SET version = ? WHERE version < ?",
+            (SCHEMA_VERSION, SCHEMA_VERSION),
+        )
         conn.commit()
+    # Mark initialized BEFORE the cost_guard call so that if cost_guard
+    # re-enters storage._ensure_initialized() (it does — it calls back to
+    # ensure the sessions table exists for its aggregator) we don't recurse.
     _initialized = True
+    # Initialize CostGuard tables + seed config row. Imported lazily to
+    # avoid the cost_guard → live_debate → llm_providers chain at import
+    # time (storage.py is imported by server.py very early).
+    from . import cost_guard as _cost_guard
+
+    _cost_guard.initialize()
 
 
 @contextmanager
@@ -191,6 +208,7 @@ def write_session(
     input_tokens: Optional[int] = None,
     output_tokens: Optional[int] = None,
     estimated_cost_usd: Optional[float] = None,
+    auth_kind: Optional[str] = None,
 ) -> Optional[str]:
     """Persist a completed session. Returns the new id, or None on failure.
 
@@ -214,9 +232,9 @@ def write_session(
                     id, ticker, trade_date,
                     decision_action, decision_confidence, decision_reasoning,
                     live, provider, model, input_tokens, output_tokens,
-                    estimated_cost_usd, created_at, events_json
+                    estimated_cost_usd, auth_kind, created_at, events_json
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -232,6 +250,7 @@ def write_session(
                     input_tokens,
                     output_tokens,
                     estimated_cost_usd,
+                    auth_kind,
                     created_at,
                     json.dumps(events, separators=(",", ":")),
                 ),
