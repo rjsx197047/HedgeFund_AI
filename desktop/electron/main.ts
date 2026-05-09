@@ -202,14 +202,15 @@ ipcMain.handle('app:restart', async (): Promise<void> => {
   stopEngine();
   await sweepOrphanEngines();
   if (IS_DEV) {
-    // Dev mode quirk: app.relaunch() respawns Electron, but the npm
-    // script that owns Vite dies with the old Electron — the new
-    // Electron then loads from a dead localhost:5173. Spawn a detached
-    // `npm run dev` BEFORE quitting so Vite + Electron come up cleanly
-    // in a new shell. Production builds use the simple relaunch path
-    // since they don't depend on Vite.
+    // Dev mode quirk: app.relaunch() respawns Electron but the npm
+    // script that owns Vite dies with the old Electron, leaving the new
+    // Electron loading from a dead localhost:5173. Delegate to a
+    // detached helper script that waits for our quit, kills any
+    // leftovers, then spawns a fresh `npm run dev`. See tools/dev-restart.sh
+    // for the full dance. Production builds use the simple relaunch.
     const repoRoot = path.resolve(app.getAppPath(), '..');
-    const devProcess = spawn('npm', ['--prefix', 'desktop', 'run', 'dev'], {
+    const restartScript = path.join(repoRoot, 'tools', 'dev-restart.sh');
+    const devProcess = spawn(restartScript, [], {
       cwd: repoRoot,
       detached: true,
       stdio: 'ignore',
