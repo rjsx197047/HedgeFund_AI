@@ -403,6 +403,12 @@ class OpenAICodexAdapter:
         # the SSE response and accumulate text chunks into a complete
         # message, matching the `LLMAdapter` Protocol's "complete message"
         # return contract.
+        #
+        # NOTE on `temperature`: GPT-5 family models on the Codex backend
+        # reject it as an unsupported parameter (the new reasoning-tuned
+        # models don't expose temperature control — pi-ai only sends it
+        # when explicitly supplied via options, never by default). We
+        # follow the same pattern: omit it entirely so the model decides.
         body = {
             "model": model,
             "store": False,
@@ -418,7 +424,6 @@ class OpenAICodexAdapter:
             "include": ["reasoning.encrypted_content"],
             "tool_choice": "auto",
             "parallel_tool_calls": True,
-            "temperature": 0.7,
             # `max_tokens` is unsupported on the Responses API; the
             # equivalent budget control is `max_output_tokens`.
             "max_output_tokens": max_tokens,
