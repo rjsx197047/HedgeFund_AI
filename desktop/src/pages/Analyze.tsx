@@ -11,6 +11,7 @@ import {
 } from '../lib/engine-client';
 import { buildTranscriptMarkdown } from '../lib/transcript';
 import { getSecret, listSecrets } from '../lib/secrets';
+import { consumePendingTicker } from '../lib/handoff';
 
 type EngineStatus = 'pending' | 'running' | 'error';
 
@@ -20,7 +21,11 @@ interface AnalyzeProps {
 }
 
 function Analyze({ resetSignal = 0 }: AnalyzeProps) {
-  const [ticker, setTicker] = useState('NVDA');
+  // Honor a watchlist hand-off if one is queued in sessionStorage. Falls
+  // back to the default NVDA when there isn't one. App.tsx renders Analyze
+  // conditionally with `&&`, so navigating to Analyze always re-runs this
+  // initializer and consumes any freshly queued hand-off ticker.
+  const [ticker, setTicker] = useState(() => consumePendingTicker() ?? 'NVDA');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [engineStatus, setEngineStatus] = useState<EngineStatus>('pending');
   const [engineError, setEngineError] = useState<string | null>(null);
@@ -209,7 +214,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
               value={ticker}
               onChange={(e) => setTicker(e.target.value.toUpperCase())}
               placeholder="NVDA"
-              maxLength={6}
+              maxLength={8}
               disabled={isStreaming}
             />
           </div>

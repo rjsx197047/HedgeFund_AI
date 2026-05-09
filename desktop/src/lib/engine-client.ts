@@ -186,6 +186,63 @@ export async function deleteSession(id: string): Promise<void> {
   }
 }
 
+export interface WatchlistEntry {
+  ticker: string;
+  added_at: string;
+  note: string | null;
+}
+
+export async function listWatchlist(): Promise<WatchlistEntry[]> {
+  const { port, token } = await handshake();
+  const res = await fetch(`http://127.0.0.1:${port}/watchlist`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw new Error(`listWatchlist failed: ${res.status} ${res.statusText}`);
+  }
+  const body = (await res.json()) as { watchlist: WatchlistEntry[] };
+  return body.watchlist;
+}
+
+export async function addWatchlist(input: {
+  ticker: string;
+  note?: string;
+}): Promise<WatchlistEntry> {
+  const { port, token } = await handshake();
+  const res = await fetch(`http://127.0.0.1:${port}/watchlist`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ ticker: input.ticker, note: input.note ?? null }),
+  });
+  if (!res.ok) {
+    if (res.status === 409) {
+      throw new Error(`${input.ticker} is already on the watchlist`);
+    }
+    if (res.status === 400 || res.status === 422) {
+      throw new Error(`Invalid ticker: ${input.ticker}`);
+    }
+    throw new Error(`addWatchlist failed: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as WatchlistEntry;
+}
+
+export async function removeWatchlist(ticker: string): Promise<void> {
+  const { port, token } = await handshake();
+  const res = await fetch(
+    `http://127.0.0.1:${port}/watchlist/${encodeURIComponent(ticker)}`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`removeWatchlist failed: ${res.status} ${res.statusText}`);
+  }
+}
+
 export async function analyze(req: AnalyzeRequest): Promise<AnalyzeResponse> {
   const { port, token } = await handshake();
   const res = await fetch(`http://127.0.0.1:${port}/analyze`, {

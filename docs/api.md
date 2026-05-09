@@ -171,6 +171,52 @@ Persistence is **strictly post-stream**: the engine captures the WS event sequen
 
 Storage backend: SQLite at `<repo>/data/sessions.db` with WAL mode + `PRAGMA synchronous=NORMAL`. Override the path with the `TAL_SESSIONS_DB` env var. The DB file is gitignored. Schema version 1; older schemas are upgraded in place by `_ensure_initialized()`, newer schemas refuse to write (the engine will refuse to clobber a file from a future version).
 
+### `GET /watchlist`
+
+Lists the user's saved watchlist tickers, newest-first by `added_at`. Same SQLite file as sessions; same schema-version contract.
+
+```jsonc
+{
+  "watchlist": [
+    {
+      "ticker": "NVDA",
+      "added_at": "2026-05-09T00:19:31Z",
+      "note": "watch earnings on the 23rd"   // nullable
+    }
+  ]
+}
+```
+
+### `POST /watchlist`
+
+```jsonc
+// Request
+{ "ticker": "NVDA", "note": "..." }      // note is optional, max 200 chars
+
+// 200 response — newly created entry
+{ "ticker": "NVDA", "added_at": "...", "note": "..." }
+```
+
+| Status | Meaning |
+|---|---|
+| 200 | Created |
+| 400 | Empty or whitespace-only ticker (after `.strip()`). |
+| 409 | Ticker already on the watchlist. |
+| 422 | Ticker fails Pydantic validation (length, type). |
+
+### `DELETE /watchlist/{ticker}`
+
+```jsonc
+{ "removed": true, "ticker": "NVDA" }
+```
+
+| Status | Meaning |
+|---|---|
+| 200 | Removed |
+| 404 | Ticker not on the watchlist |
+
+CORS-allowed for the renderer origin (`DELETE` is in `Access-Control-Allow-Methods`).
+
 ## WebSocket endpoint
 
 ### `WS /stream?token=<token>`

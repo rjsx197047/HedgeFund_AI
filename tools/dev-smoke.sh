@@ -164,6 +164,40 @@ else
   echo "    ws.err: $(cat "$TMPDIR_SMOKE/ws.err")"
 fi
 
+# Watchlist round-trip: clean state, add, duplicate-409, delete, missing-404.
+echo "── /watchlist"
+WL_TICKER="WLSMOKE"
+# Best-effort cleanup in case the previous run left state behind.
+curl -s -o /dev/null -X DELETE -H "Authorization: Bearer $TOKEN" "$BASE/watchlist/$WL_TICKER"
+
+status="$(curl -s -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST -d "{\"ticker\":\"$WL_TICKER\"}" "$BASE/watchlist")"
+[[ "$status" == "200" ]]
+check "POST /watchlist accepts a new ticker" $?
+
+status="$(curl -s -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST -d "{\"ticker\":\"$WL_TICKER\"}" "$BASE/watchlist")"
+[[ "$status" == "409" ]]
+check "POST /watchlist returns 409 on duplicate" $?
+
+body="$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/watchlist")"
+echo "$body" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); rows=d['watchlist']; assert any(r['ticker']=='$WL_TICKER' for r in rows)" >/dev/null
+check "GET /watchlist contains the ticker we added" $?
+
+status="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+  -H "Authorization: Bearer $TOKEN" "$BASE/watchlist/$WL_TICKER")"
+[[ "$status" == "200" ]]
+check "DELETE /watchlist/{ticker} returns 200" $?
+
+status="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+  -H "Authorization: Bearer $TOKEN" "$BASE/watchlist/$WL_TICKER")"
+[[ "$status" == "404" ]]
+check "second DELETE returns 404" $?
+
 # Sessions endpoints — exercised after the WS stream above wrote a row.
 echo "── /sessions"
 body="$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/sessions")"

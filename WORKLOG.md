@@ -6,6 +6,40 @@
 
 ---
 
+## 2026-05-09 (continued) — Watchlist page + dead-code cleanup
+
+**Goal:** Replace the ComingSoon Watchlist placeholder with a real, SQLite-backed page that lets the founder track tickers and one-click into Analyze. Per advisor, this is a separate commit from History.
+
+**Architect protocol followed:**
+- Skipped pre-design advisor (constrained shape: add/list/remove + a deep-link).
+- Reviewer agent (Sonnet) on the working tree pre-commit. Verdict: "Ready to commit, with follow-ups." 3 strong-recommends + 1 cosmetic — all four addressed in the same commit.
+
+**Shipped:**
+
+- Engine: `engine/storage.py` adds `watchlist` table to the schema DDL (additive — schema_version stays 1, `IF NOT EXISTS` covers in-place upgrades), `WatchlistEntry` dataclass, `list_watchlist`, `add_watchlist` (raises `WatchlistConflict` on duplicate via narrow `IntegrityError` mapping), `remove_watchlist`. `engine/server.py` adds `GET /watchlist`, `POST /watchlist` (409 on duplicate, 400 on empty-after-strip, 422 on Pydantic length violation), `DELETE /watchlist/{ticker}` (404 on missing). `WatchlistAddRequest` Pydantic model with `max_length=8` ticker + `max_length=200` note.
+- Renderer: `desktop/src/lib/engine-client.ts` adds `WatchlistEntry` type + `listWatchlist`, `addWatchlist`, `removeWatchlist` typed wrappers. 409 surfaces as a friendly "already on the watchlist" error.
+- Renderer: `desktop/src/pages/Watchlist.tsx` + `Watchlist.module.css` — add-ticker form (auto-focus on mount + refocus after success), card-style row list with ticker + relative timestamp + optional note, primary "Analyze" button per row, secondary "Remove" with confirm. Empty state guides user to add a ticker.
+- Renderer: `desktop/src/lib/handoff.ts` (NEW) — exports `PENDING_TICKER_KEY`, `setPendingTicker`, `consumePendingTicker`. Both Watchlist and Analyze import from here so the constant doesn't drift.
+- Renderer: `desktop/src/pages/Analyze.tsx` — uses `consumePendingTicker()` in the initial-state initializer to honor a watchlist hand-off. Aligned `maxLength` from 6 to 8 to match the engine's accepted range.
+- Renderer: `desktop/src/App.tsx` — `<Watchlist />` replaces `ComingSoon` on the `'watchlist'` route. Removed the `ComingSoon` import (now unused).
+- Cleanup: deleted `desktop/src/pages/ComingSoon.tsx` and `ComingSoon.module.css` — no remaining usages now that all four routes have real pages.
+
+**Reviewer fixes applied:**
+
+1. `docs/api.md` — added full documentation for the three new watchlist endpoints (request/response shapes, status codes, CORS note).
+2. `tools/dev-smoke.sh` — extended from 12 to 17 assertions. Added `POST /watchlist` accept, 409 on duplicate, GET shows the ticker, DELETE returns 200, second DELETE returns 404.
+3. `desktop/src/lib/handoff.ts` — extracted to remove the cross-file constant duplication between Watchlist and Analyze.
+4. `Analyze.tsx` ticker `maxLength` aligned 6 → 8.
+
+**Verification:**
+- `npm run type-check`: clean
+- `npm run build`: clean
+- `bash tools/dev-smoke.sh NVDA 2026-05-08`: **17 passed, 0 failed**
+
+**Commit:** TBD.
+
+---
+
 ## 2026-05-09 (continued) — History page
 
 **Goal:** Replace the ComingSoon placeholder with a real History page that reads from the SQLite session storage shipped in `7dbbeff`. Per advisor, this is its own commit + reviewer pass — separate from the engine layer and the Watchlist that comes next.
@@ -31,7 +65,7 @@
 - `npm run build`: clean
 - Engine smoke (12/12) preserved (no engine changes in this commit)
 
-**Commit:** TBD.
+**Commit:** `d736e6e`.
 
 ---
 

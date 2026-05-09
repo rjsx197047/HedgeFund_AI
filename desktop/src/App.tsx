@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Analyze from './pages/Analyze';
 import Settings from './pages/Settings';
 import History from './pages/History';
-import ComingSoon from './pages/ComingSoon';
+import Watchlist from './pages/Watchlist';
 import styles from './App.module.css';
 
 type Route = 'analyze' | 'watchlist' | 'history' | 'settings';
@@ -79,12 +79,7 @@ function App() {
 
       <main className={`${styles.main} app-no-drag`}>
         {route === 'analyze' && <Analyze resetSignal={newAnalysisTick} />}
-        {route === 'watchlist' && (
-          <ComingSoon
-            title="Watchlist"
-            description="Track multiple tickers and re-run analyses on a daily cadence. Phase 7."
-          />
-        )}
+        {route === 'watchlist' && <Watchlist />}
         {route === 'history' && <History />}
         {route === 'settings' && <Settings />}
       </main>

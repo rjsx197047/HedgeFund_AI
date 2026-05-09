@@ -78,7 +78,8 @@
 
 ## Phase 7 — Real product surface
 
-- ⚪ Watchlist page — multiple tickers, daily re-analyze.
+- 🟢 **Watchlist page** — replaces the ComingSoon placeholder. SQLite-backed. Add ticker (with optional note) form, list view with relative timestamp, "Analyze" deep-link that hands the ticker off to the Analyze page via sessionStorage, "Remove" with confirm. New endpoints: `GET /watchlist`, `POST /watchlist` (409 on duplicate, 422 on bad input), `DELETE /watchlist/{ticker}` (404 on missing).
+- ⚪ Watchlist daily re-analyze cadence — Phase 7 follow-up.
 - 🟢 **History page** — replaces the ComingSoon placeholder. List view of saved debates (newest first), click into a detail view that replays the persisted DebateStream, delete with confirmation, copy transcript markdown. Reads `GET /sessions` + `GET /sessions/{id}` + `DELETE /sessions/{id}`. Race-guarded against rapid row clicks via generation counter.
 - ⚪ Paper-trade P&L integration into History — depends on broker abstraction (Phase 5 part 2).
 - ⚪ Detail-fetch timeout — getSession has no timeout; if the engine hangs the user is stuck on "Loading session…" until they click Back. Add an AbortController-based 5-10s timeout in `engine-client.getSession`. Low priority (engine doesn't currently hang).

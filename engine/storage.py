@@ -55,6 +55,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS sessions_ticker_idx ON sessions(ticker);
 CREATE INDEX IF NOT EXISTS sessions_created_at_idx ON sessions(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS watchlist (
+    ticker TEXT PRIMARY KEY,
+    added_at TEXT NOT NULL,
+    note TEXT
+);
 """
 
 
@@ -340,3 +346,81 @@ def summary_to_dict(s: SessionSummary) -> dict[str, Any]:
 
 def detail_to_dict(d: SessionDetail) -> dict[str, Any]:
     return asdict(d)
+
+
+# ---- Watchlist -------------------------------------------------------------
+
+
+@dataclass
+class WatchlistEntry:
+    ticker: str
+    added_at: str
+    note: Optional[str]
+
+
+class WatchlistConflict(RuntimeError):
+    """Ticker already exists on the watchlist."""
+
+
+def list_watchlist() -> list[WatchlistEntry]:
+    """Return watchlist entries, newest first. Best-effort."""
+    try:
+        _ensure_initialized()
+        with _connect() as conn:
+            cur = conn.execute(
+                "SELECT ticker, added_at, note FROM watchlist ORDER BY added_at DESC"
+            )
+            rows = cur.fetchall()
+        return [
+            WatchlistEntry(
+                ticker=row["ticker"],
+                added_at=row["added_at"],
+                note=row["note"],
+            )
+            for row in rows
+        ]
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(f"[storage] watchlist list failed: {type(exc).__name__}: {exc}\n")
+        return []
+
+
+def add_watchlist(*, ticker: str, note: Optional[str] = None) -> WatchlistEntry:
+    """Add a ticker to the watchlist. Raises WatchlistConflict if already present."""
+    _ensure_initialized()
+    cleaned = (ticker or "").strip().upper()
+    if not cleaned:
+        raise ValueError("ticker required")
+    if not (1 <= len(cleaned) <= 8):
+        raise ValueError("ticker must be 1-8 characters")
+    cleaned_note = (note or "").strip() or None
+    added_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time()))
+    try:
+        with _connect() as conn:
+            conn.execute(
+                "INSERT INTO watchlist (ticker, added_at, note) VALUES (?, ?, ?)",
+                (cleaned, added_at, cleaned_note),
+            )
+            conn.commit()
+    except sqlite3.IntegrityError as exc:
+        raise WatchlistConflict(f"{cleaned} is already on the watchlist") from exc
+    return WatchlistEntry(ticker=cleaned, added_at=added_at, note=cleaned_note)
+
+
+def remove_watchlist(ticker: str) -> bool:
+    """Remove a ticker. Returns True on actual deletion."""
+    try:
+        _ensure_initialized()
+        cleaned = (ticker or "").strip().upper()
+        if not cleaned:
+            return False
+        with _connect() as conn:
+            cur = conn.execute("DELETE FROM watchlist WHERE ticker = ?", (cleaned,))
+            conn.commit()
+            return cur.rowcount > 0
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(f"[storage] watchlist remove failed: {type(exc).__name__}: {exc}\n")
+        return False
+
+
+def watchlist_to_dict(entry: WatchlistEntry) -> dict[str, Any]:
+    return asdict(entry)

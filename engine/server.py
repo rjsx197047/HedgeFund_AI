@@ -155,6 +155,37 @@ def build_app(*, token: str) -> FastAPI:
             )
         return {"deleted": True, "id": session_id}
 
+    @app.get("/watchlist", dependencies=bearer)
+    async def list_watchlist_endpoint() -> dict[str, Any]:
+        rows = storage.list_watchlist()
+        return {"watchlist": [storage.watchlist_to_dict(r) for r in rows]}
+
+    @app.post("/watchlist", dependencies=bearer)
+    async def add_watchlist_endpoint(req: WatchlistAddRequest) -> dict[str, Any]:
+        try:
+            entry = storage.add_watchlist(ticker=req.ticker, note=req.note)
+        except storage.WatchlistConflict as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            )
+        return storage.watchlist_to_dict(entry)
+
+    @app.delete("/watchlist/{ticker}", dependencies=bearer)
+    async def remove_watchlist_endpoint(ticker: str) -> dict[str, Any]:
+        removed = storage.remove_watchlist(ticker)
+        if not removed:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"{ticker.upper()!r} not on the watchlist",
+            )
+        return {"removed": True, "ticker": ticker.upper()}
+
     @app.post("/analyze", dependencies=bearer)
     async def analyze(req: AnalyzeRequest) -> dict[str, Any]:
         # Phase 2 stub — Phase 3+ wires this to the real tradingagents core.
@@ -341,3 +372,8 @@ def _summary_to_dict(summary: QuoteSummary) -> dict[str, Any]:
 class AnalyzeRequest(BaseModel):
     ticker: str = Field(min_length=1, max_length=8)
     trade_date: str = Field(min_length=8, max_length=10, description="YYYY-MM-DD")
+
+
+class WatchlistAddRequest(BaseModel):
+    ticker: str = Field(min_length=1, max_length=8)
+    note: str | None = Field(default=None, max_length=200)

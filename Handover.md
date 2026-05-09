@@ -49,7 +49,8 @@ See `WORKLOG.md` for the chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
-<History page commit lands here>
+<Watchlist commit lands here>
+d736e6e  History page: list + detail of persisted debates
 7dbbeff  SQLite session storage + user-facing knowledge base
 75d020e  Phase 2.1-light: real-LLM debate via sequential OpenAI calls
 be6d12d  Tooling + docs: backend smoke script, engine API contract, date cap
