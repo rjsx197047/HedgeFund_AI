@@ -63,6 +63,12 @@ Why: sidesteps the SEC / financial-advisor regulatory surface entirely. Avoids t
 - **As you work:** update `backlog.md` when items move (pending → in progress → done) and add new items as you discover them.
 - **At end:** update `Handover.md` (current state, blockers, where to pick up) AND prepend a fresh entry to `WORKLOG.md` (date header, what shipped today, commit hashes, next-session-opens-with). Future-you (or a fresh Claude) will thank you.
 
+### Periodic upstream check
+
+- **Run `bash tools/upstream-check.sh` weekly** (or at the start of any session that's been more than a few days since the last). It fetches `upstream/main`, reports whether we're behind on tagged releases or unreleased commits, and exits non-zero when there's a merge to consider.
+- **Don't auto-merge.** Upstream changes can touch agent prompts, decision parser shape, or role definitions wrapped by `engine/live_debate.py`. Surface the diff to the founder, propose a merge plan, run the smoke + tests after merging.
+- **Smoke after merge:** `bash tools/dev-smoke.sh` (engine HTTP/WS contract) + `engine/.venv/bin/python -m pytest engine/tests/` (CostGuard + storage). Spot-check the multi-agent debate end-to-end before pushing.
+
 ### Commits
 
 - Confirm with founder before pushing to `origin/main`. The repo is public.
