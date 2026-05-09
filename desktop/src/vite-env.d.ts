@@ -46,6 +46,8 @@ interface OAuthStatusBridge {
   email?: string;
   expiresAt?: number;
   needsRefresh?: boolean;
+  planType?: string;
+  isFreeTier?: boolean;
 }
 
 interface OAuthProgressEventBridge { message: string }

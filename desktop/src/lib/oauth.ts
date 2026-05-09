@@ -18,6 +18,12 @@ export interface OAuthStatus {
   email?: string;
   expiresAt?: number;
   needsRefresh?: boolean;
+  /** ChatGPT plan tier from the OAuth JWT — `"free"`, `"plus"`, `"pro"`,
+   * `"team"`, `"enterprise"`, etc. `undefined` when JWT decode failed. */
+  planType?: string;
+  /** True when `planType === "free"`. Codex routing is unreliable on
+   * free-tier accounts; UI surfaces a banner. */
+  isFreeTier?: boolean;
 }
 
 export interface OAuthProgressEvent { message: string }

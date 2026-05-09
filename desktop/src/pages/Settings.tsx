@@ -572,7 +572,15 @@ function OpenAIOAuthRow({ disabled }: OpenAIOAuthRowProps) {
         {connected && (
           <div className={styles.rowMeta}>
             Connected{status?.email ? ` as ${status.email}` : ''}
+            {status?.planType && ` · ${status.planType} plan`}
             {status?.needsRefresh && ' · token will refresh on next use'}
+          </div>
+        )}
+        {connected && status?.isFreeTier && (
+          <div className={styles.editorError} role="alert">
+            ⚠ Free-tier ChatGPT accounts have unreliable Codex routing —
+            many models hang or return errors. Configure an OpenAI API key
+            below as a fallback if debates fail to start.
           </div>
         )}
         {progress && !error && (

@@ -54,6 +54,13 @@ export interface StoredOAuthCredentials {
    * pi-ai returns this as `accountId` on OAuthCredentials. Without it,
    * Codex requests 401. */
   accountId?: string;
+  /** ChatGPT plan tier extracted from the OAuth JWT
+   * (`https://api.openai.com/auth.chatgpt_plan_type`). Examples:
+   * `"free"`, `"plus"`, `"pro"`, `"team"`, `"enterprise"`. Codex routing
+   * is unreliable on free-tier accounts (Clawless Advisor B34); we
+   * surface a banner if this comes back as `"free"`. Unset when JWT
+   * decode fails — treat that as "unknown, proceed normally." */
+  planType?: string;
 }
 
 export interface OAuthStartResult {
@@ -67,6 +74,11 @@ export interface OAuthStatus {
   email?: string;
   expiresAt?: number;  // ms since epoch, normalized
   needsRefresh?: boolean;
+  planType?: string;
+  /** True when the OAuth JWT decoded `chatgpt_plan_type` to "free".
+   * The Settings UI uses this to show a "Codex routing is unreliable
+   * on free-tier accounts" banner. */
+  isFreeTier?: boolean;
 }
 
 /** Renderer-facing event payloads (matches the preload bridge surface). */
@@ -79,6 +91,40 @@ type PromptHandler = (event: OAuthPromptEvent) => void;
 function normalizeExpiresMs(raw: number): number {
   // Heuristic: anything in seconds (1e9..1e12) → multiply; anything else → as-is.
   return raw >= 1e12 ? raw : raw * 1000;
+}
+
+/**
+ * Decode an OAuth JWT and extract the ChatGPT plan tier from the
+ * `https://api.openai.com/auth.chatgpt_plan_type` claim.
+ *
+ * Pattern from Clawless Advisor (B34): free-tier ChatGPT accounts hit
+ * silent failures when issuing Codex requests with newer model variants.
+ * Storing the plan tier alongside the credentials lets the UI surface a
+ * "Codex routing is unreliable on free-tier accounts" warning before the
+ * user wastes a session waiting for a hang.
+ *
+ * Defensive: returns `undefined` on any parse failure (malformed JWT,
+ * missing claim, encoding error). The caller treats `undefined` as
+ * "unknown plan tier, proceed normally" — never blocks login on this.
+ */
+function extractPlanType(accessToken: string): string | undefined {
+  try {
+    const parts = accessToken.split('.');
+    if (parts.length !== 3) return undefined;
+    // Base64URL → base64 (replace - with +, _ with /, pad to multiple of 4).
+    let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const payload = JSON.parse(Buffer.from(b64, 'base64').toString('utf8')) as {
+      [key: string]: unknown;
+    };
+    const auth = payload['https://api.openai.com/auth'] as
+      | { chatgpt_plan_type?: unknown }
+      | undefined;
+    const planType = auth?.chatgpt_plan_type;
+    return typeof planType === 'string' ? planType : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function loadStored(): StoredOAuthCredentials | null {
@@ -248,6 +294,8 @@ export class OpenAIOAuthService {
       email: stored.email,
       expiresAt: expiresMs,
       needsRefresh,
+      planType: stored.planType,
+      isFreeTier: stored.planType === 'free',
     };
   }
 
@@ -320,12 +368,16 @@ export class OpenAIOAuthService {
         : accountId
           ? `account ${accountId.slice(0, 8)}…`
           : fallbackEmail;
+    // Decode plan tier from the JWT — best-effort, undefined on any parse
+    // failure (we never block login on this).
+    const planType = extractPlanType(credentials.access);
     return {
       access: credentials.access,
       refresh: credentials.refresh,
       expires: credentials.expires,
       email,
       accountId,
+      planType,
     };
   }
 }
