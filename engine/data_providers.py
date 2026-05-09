@@ -500,6 +500,19 @@ class AlpacaProvider:
         self, *, ticker: str, limit: int = 5
     ) -> list[Headline]:
         spec = normalize_ticker(ticker)
+        headlines = await self._alpaca_news(spec, limit)
+        # Alpaca news is bias toward US equities + major crypto (BTC/ETH).
+        # For other crypto we frequently get 0 headlines — fall through to
+        # yfinance's crypto-news scrape, which pulls from Yahoo Finance's
+        # crypto section (CoinDesk, Decrypt, Bloomberg, etc.) and has
+        # broader coverage for mid- and small-cap tokens.
+        if not headlines and spec.asset_class == "crypto":
+            headlines = await self._yfinance_crypto_news_fallback(spec, limit)
+        return headlines
+
+    async def _alpaca_news(
+        self, spec: TickerSpec, limit: int
+    ) -> list[Headline]:
         # Alpaca's news endpoint accepts both equity tickers ("NVDA") and
         # crypto base symbols ("BTC") — use the base for crypto so we get
         # broader bitcoin coverage rather than just BTC/USD trade-pair news.
@@ -553,6 +566,37 @@ class AlpacaProvider:
             )
         sys.stderr.write(
             f"[alpaca] news OK {spec.display} → {len(headlines)} headlines in {elapsed_ms}ms\n"
+        )
+        return headlines
+
+    async def _yfinance_crypto_news_fallback(
+        self, spec: TickerSpec, limit: int
+    ) -> list[Headline]:
+        """When Alpaca returns 0 crypto headlines, scrape Yahoo Finance via
+        yfinance. Same library + call pattern as `YFinanceProvider`, just
+        invoked here as a tertiary news source. News failures degrade
+        silently to empty list (matches the rest of the news-fetch error
+        contract — news is supplementary, not load-bearing)."""
+        import asyncio
+
+        sys.stderr.write(
+            f"[alpaca] news EMPTY {spec.display} (crypto) → falling back to yfinance\n"
+        )
+        t0 = datetime.now(timezone.utc)
+        try:
+            headlines = await asyncio.to_thread(
+                _yfinance_news_headlines, spec.yfinance_symbol, limit
+            )
+        except Exception as exc:  # noqa: BLE001
+            sys.stderr.write(
+                f"[yfinance fallback] news FAILED {spec.display} "
+                f"({type(exc).__name__}: {exc})\n"
+            )
+            return []
+        elapsed_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
+        sys.stderr.write(
+            f"[yfinance fallback] news OK {spec.display} (yf={spec.yfinance_symbol}) → "
+            f"{len(headlines)} headlines in {elapsed_ms}ms\n"
         )
         return headlines
 

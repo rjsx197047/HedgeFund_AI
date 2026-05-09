@@ -292,6 +292,100 @@ async def test_alpaca_crypto_quote_summary_uses_v1beta3_endpoint():
 
 
 @pytest.mark.asyncio
+async def test_alpaca_crypto_news_falls_back_to_yfinance_when_empty(monkeypatch):
+    """When Alpaca returns 0 headlines for a crypto symbol, AlpacaProvider
+    silently falls through to yfinance (which has broader coverage of mid-
+    and small-cap crypto via Yahoo's CoinDesk/Decrypt/etc. aggregation)."""
+    # Mock Alpaca news to return empty array (200 OK with no items)
+    def alpaca_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"news": []})
+
+    transport = httpx.MockTransport(alpaca_handler)
+    real_client = httpx.AsyncClient
+
+    def patched_client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    import httpx as httpx_mod
+    httpx_mod.AsyncClient = patched_client  # type: ignore[assignment]
+
+    # Mock the yfinance fallback function to return 2 headlines
+    def fake_yfinance_news(ticker: str, limit: int):
+        from engine.data_providers import Headline
+        return [
+            Headline(
+                title="Cardano launches new staking feature",
+                publisher="Decrypt",
+                pub_date="2026-05-08T15:00:00Z",
+                url="https://decrypt.co/ada-staking",
+                summary="Network upgrade brings improved staking rewards",
+            ),
+            Headline(
+                title="ADA technical analysis: bullish breakout",
+                publisher="CoinDesk",
+                pub_date="2026-05-08T12:00:00Z",
+                url="https://coindesk.com/ada-ta",
+                summary="Chartists see breakout above $0.30",
+            ),
+        ]
+
+    monkeypatch.setattr(
+        "engine.data_providers._yfinance_news_headlines", fake_yfinance_news
+    )
+
+    try:
+        p = AlpacaProvider(key_id="PK_TEST", secret="secret_test")
+        out = await p.news_headlines(ticker="ADA", limit=5)
+    finally:
+        httpx_mod.AsyncClient = real_client  # type: ignore[assignment]
+
+    # Fallback delivered the headlines
+    assert len(out) == 2
+    assert out[0].title == "Cardano launches new staking feature"
+    assert out[0].publisher == "Decrypt"
+
+
+@pytest.mark.asyncio
+async def test_alpaca_equity_news_does_NOT_fall_back_to_yfinance(monkeypatch):
+    """Equity tickers that return 0 from Alpaca should NOT fall through
+    to yfinance — fallback is crypto-only (Alpaca is fine for equity news,
+    we only need backup for crypto coverage gaps)."""
+    def alpaca_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"news": []})
+
+    transport = httpx.MockTransport(alpaca_handler)
+    real_client = httpx.AsyncClient
+
+    def patched_client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    import httpx as httpx_mod
+    httpx_mod.AsyncClient = patched_client  # type: ignore[assignment]
+
+    fallback_called = {"count": 0}
+
+    def fake_yfinance_news(ticker: str, limit: int):
+        fallback_called["count"] += 1
+        return []
+
+    monkeypatch.setattr(
+        "engine.data_providers._yfinance_news_headlines", fake_yfinance_news
+    )
+
+    try:
+        p = AlpacaProvider(key_id="PK_TEST", secret="secret_test")
+        out = await p.news_headlines(ticker="NVDA", limit=5)
+    finally:
+        httpx_mod.AsyncClient = real_client  # type: ignore[assignment]
+
+    assert out == []
+    # yfinance fallback NOT called for equity
+    assert fallback_called["count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_alpaca_crypto_news_uses_base_symbol_not_pair():
     """News endpoint takes the base ('BTC') for crypto, not the pair ('BTC/USD'),
     for broader headline coverage."""
