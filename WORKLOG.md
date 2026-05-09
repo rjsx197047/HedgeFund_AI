@@ -93,6 +93,100 @@ Vite HMR picked up the CSS change with no restart needed — verified by founder
 
 ---
 
+## 2026-05-09 (end-of-day) — OAuth empirical fixes + per-provider model picker
+
+**Founder back from sleep, smoke-tested live OAuth, hit a series of empirical issues with the Codex backend. Fixed each iteratively in tight commits.**
+
+### What founder caught that I didn't anticipate
+
+Reviewer's B2 concern (subscription routing not contractually guaranteed) was the headline gap. Standing it up against the founder's actual ChatGPT account exposed several layered issues nobody had verified:
+
+1. **`/v1/chat/completions` doesn't subscription-route OAuth tokens.** First debate hit `429 insufficient_quota` against the founder's exhausted API tier — not the subscription. Per pi-ai source: subscription routing requires `chatgpt.com/backend-api/codex/responses` (a totally different endpoint family using OpenAI's Responses API shape, not Chat Completions). Built `OpenAICodexAdapter` (`9a09d08`).
+
+2. **Codex backend rejects `gpt-4o-mini`** for ChatGPT-account auth ("not supported when using Codex with a ChatGPT account"). Switched OAuth default to `gpt-5.1-codex-mini` (`6b6a187`).
+
+3. **Codex backend ALSO rejects `gpt-5.1-codex-mini`** with the same error. Switched OAuth default to `gpt-5.4` per Clawless Advisor's recommendation — general flagship variants work reliably, codex-tuned ones are hit-or-miss across plan tiers (`7986ae2`, `bb2d19a`).
+
+4. **Codex rejects `temperature`** as unsupported parameter (GPT-5 family is reasoning-tuned, doesn't expose temperature control). Removed from body — pi-ai also only sends temperature conditionally (`4dbbd25`).
+
+5. **Codex rejects `max_output_tokens`** too. I'd added it as the Responses API equivalent of `max_tokens`; pi-ai's source confirms they DON'T send any token limit field on the Codex body. Removed (`abe37f9`). Output length now bounded by system prompts ("3-5 sentences" / "2-3 sentences") instead of an enforced cap.
+
+6. **`gpt-5.4` finally worked end-to-end.** First successful subscription-routed debate, ~60-90s total session.
+
+### Per-provider model picker
+
+Founder asked for it after step 5: "Why don't we just give users a full list of models available once they sign up… mark recommended… 3-4 latest, no legacy." Built (`c81b1d0`):
+
+- Two side-by-side dropdowns in page header: Provider + Model
+- Per-provider curated lists with `recommended: true` flag for default
+- OpenAI Codex (OAuth) gets its OWN model list distinct from API-key OpenAI
+- Per-(provider, auth) localStorage memory — switching between providers remembers each one's last manual choice
+- Race-guarded via `activeModelRef` mirror like `activeProviderRef` / `openaiAuthKindRef`
+- Reset clears BOTH provider AND model overrides + per-provider model memories
+
+### Codex model list aligned to founder's actual picker (`2cfa560`)
+
+Founder caught that my list included `gpt-5.4-pro` and `gpt-5.4-nano` — which appear in pi-ai's general OpenAI registry but NOT in the founder's actual ChatGPT Codex picker. Replaced with the 6 models from their picker (verbatim labels + descriptions), excluding the one we'd already confirmed broken.
+
+### Layout fix (`c2a87c7`)
+
+Founder spotted a layout inconsistency: short model descriptions (Anthropic) let the provider row fit beside the title and squeezed the subtitle into a narrow column; long descriptions (OpenAI) wrapped below cleanly. Forced `flex-direction: column` on the page header so layout is deterministic regardless of model description length — title → subtitle → provider row, always stacked.
+
+### Clawless Advisor delivered both pinged questions
+
+Got back at 07:10 with two detailed answers (~600 lines of design surface):
+
+**OAuth model availability:** plan-tier-dependent. Codex-tuned variants require additional authorization scopes beyond standard OAuth + chatgpt-account-id. Free-tier accounts hit silent failures. Their fix: decode the OAuth JWT at receive-time, store `chatgpt_plan_type`, demote Codex provider in priority order for free tiers. Filed for tomorrow.
+
+**CostGuard pattern:** full design handed over. SQLite-backed config + state at `costguard_config_v1` / `costguard_state_v1`. TOCTOU reservation pattern for race safety (5-min TTL). IPC surface: `getState/updateConfig/recompute/check/complete`. Modal override UX with anti-tamper. **Global budget**, not per-provider. **OAuth naturally skips** because subscription `usage.cost === 0`. Suggested extension: stacked daily/weekly/monthly caps + rate-cap dimension for OAuth (rate-cap because cost-cap doesn't apply). Fully scoped — ~3h chunk.
+
+### Verification
+
+- `npm run type-check`: clean across every commit
+- `bash tools/dev-smoke.sh NVDA 2026-05-08`: 17 passed throughout
+- **First end-to-end live OAuth debate succeeded** with `gpt-5.4` (founder confirmed)
+- Subscription routing claim awaiting OpenAI billing dashboard confirmation by founder
+
+### Tomorrow's queue (founder authorized unsupervised work)
+
+Founder explicitly said *"do not worry about tokens, I have enough tokens for this week"* and queued:
+
+1. **CostGuard + budget caps** (Clawless Advisor pattern, with stacked daily/weekly/monthly + OAuth rate-cap)
+2. **Playwright testing** — set up Electron Playwright driver, add UI smoke tests, finally close the "UI not click-tested autonomously" gap
+3. **JWT plan-tier detection** in OAuth handler (small, defensive)
+4. **Reviewer pass on the model picker** (skipped earlier in the rush)
+
+Founder's policy directive on cost calculation — important: *"When user is using OAuth, you do not want to calculate cost. It's going to be zero. When user is using API, if model selection is via API, then you collect token cost."* Aligns with Advisor's pattern (`usage.cost === 0` for subscription paths means cap naturally skips).
+
+**Commits today (in chronological order):**
+
+```
+75d020e  Phase 2.1-light: real-LLM debate via sequential OpenAI calls
+7dbbeff  SQLite session storage + user-facing knowledge base
+d736e6e  History page: list + detail of persisted debates
+4b88894  Watchlist page: SQLite-backed tickers + deep-link
+7fcbefa  End-of-block: reconcile architecture.md §7 + refresh inbox
+8a9526b  Multi-provider: Anthropic + OpenRouter + Gemini
+d8d3585  Doc sync: backfill 8a9526b hash + Advisor OAuth deferral
+ed35277  OpenAI OAuth (Codex) via @earendil-works/pi-ai
+8053245  Doc sync: backfill ed35277 hash
+bdc1716  UX: green pill for active connections
+27f138e  "Run with" provider dropdown + localStorage persistence
+6b6a187  OAuth default model + dropdown moved to header
+9a09d08  Codex adapter: route OAuth via chatgpt.com/backend-api
+4dbbd25  Codex: drop temperature
+c81b1d0  Per-provider model picker
+7986ae2  Switch default Codex model to gpt-5.4 (unblock)
+bb2d19a  Codex models: drop codex-tuned variants (Advisor)
+abe37f9  Codex: drop max_output_tokens
+2cfa560  Codex models: align with founder's actual picker
+c2a87c7  Analyze: stack header vertically
+```
+
+**20 feature commits today.** All type-check + smoke clean. **First end-to-end live LLM debate succeeded** — biggest milestone.
+
+---
+
 ## 2026-05-09 (continued) — OpenAI OAuth (Codex / subscription path)
 
 **Goal:** Founder explicitly stated they prefer routing through their ChatGPT subscription rather than per-token billing. Wire OAuth alongside the API-key path that shipped in `8a9526b`. Per Clawless Advisor's pattern reply (received 01:33 — they did the code dive after founder bumped priority), the heavy lifting belongs to a third-party MIT-licensed package (`@earendil-works/pi-ai`) that handles PKCE + browser callback + token exchange internally.

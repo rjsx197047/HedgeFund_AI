@@ -107,6 +107,15 @@
 
 ---
 
+## Tomorrow's queue (autonomous, founder pre-authorized)
+
+- ⚪ **CostGuard + budget caps** — Clawless Advisor pattern: SQLite-backed config + state, TOCTOU reservation, IPC `check`/`complete`, modal override UX with anti-tamper, global (not per-provider). Extension for stacked daily/weekly/monthly + rate-cap dimension for OAuth. Per founder's directive: OAuth path returns `cost === 0` and naturally skips; API-key path collects per-token cost.
+- ⚪ **Playwright + Electron testing** — set up Playwright with Electron driver, smoke tests for provider dropdown / model dropdown / OAuth Connect / debate stream rendering. Closes the "UI not click-tested autonomously" gap.
+- ⚪ **JWT plan-tier detection** in `oauth-openai.ts` — decode OAuth access token, extract `chatgpt_plan_type`, surface banner for free-tier accounts (Codex unreliable on free per Clawless Advisor B34).
+- ⚪ **Reviewer pass on model picker** (`c81b1d0`) — skipped in the rush.
+
+---
+
 ## Cross-cutting / deferred
 
 - 🟣 OpenClaw upstream PR to register `client.id: "tradingagentslab"` constant (non-blocking — `"cli"` works).

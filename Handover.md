@@ -58,6 +58,18 @@ See `WORKLOG.md` for the chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
+c2a87c7  Analyze: stack header vertically (always-below provider row)
+2cfa560  Codex models: align dropdown with founder's actual picker
+abe37f9  Codex: drop max_output_tokens from body
+bb2d19a  Codex models: drop codex-tuned variants (Advisor)
+4dbbd25  Codex: drop temperature
+c81b1d0  Per-provider model picker on Analyze
+7986ae2  OAuth: switch default Codex model to gpt-5.4
+6b6a187  OAuth: model + dropdown moved to header
+9a09d08  Codex adapter: route OAuth via chatgpt.com/backend-api
+27f138e  "Run with" provider dropdown + localStorage persistence
+bdc1716  UX: green pill for active connections
+8053245  Doc sync: backfill ed35277 hash
 ed35277  OpenAI OAuth (Codex) via @earendil-works/pi-ai
 d8d3585  Doc sync: backfill 8a9526b hash + record Clawless Advisor OAuth deferral
 8a9526b  Multi-provider live debate: Anthropic + OpenRouter + Google Gemini
@@ -82,6 +94,15 @@ a44b935  Phase 2: Python sidecar with FastAPI + stub canned debate
 f0125b8  Phase 0: scaffold orchestration docs and gateway probe
 ```
 
+### Tomorrow's autonomous block (founder pre-authorized — token budget for the week)
+
+Founder explicitly gave runway for the next session: *"do not worry about tokens, I have enough tokens for this week. You can wrap up cost analysis and budget, do testing, do some testing with playwright."* Queue, in priority order:
+
+1. **CostGuard + budget caps.** Full Clawless Advisor pattern in hand (~600 LoC service shape, TOCTOU reservation pattern, IPC surface, modal override UX, global-not-per-provider budgeting). Extension for stacked daily/weekly/monthly caps + rate-cap dimension for OAuth (since OAuth `usage.cost === 0` means cost-cap is meaningless — rate cap on session count is what matters there). **Founder's directive:** *"When user is using OAuth, you do not want to calculate cost. It's going to be zero. When user is using API, if model selection is via API, then you collect token cost."* — `OpenAICodexAdapter` already returns `(content, in_tokens, out_tokens)` with subscription-routed sessions naturally producing `cost === 0`, so the policy slots in cleanly.
+2. **Playwright + Electron testing.** Set up `playwright/test` with Electron driver. Add UI smoke tests covering: provider dropdown switches, model dropdown updates per provider, manual override persists across reloads, OAuth Connect-row state changes correctly, debate stream renders. Closes the "UI not click-tested autonomously" gap that's been a footnote on every commit this run.
+3. **JWT plan-tier detection** in `oauth-openai.ts`. Decode the OAuth access JWT at receive time, extract `https://api.openai.com/auth.chatgpt_plan_type`, store alongside credentials. Surface a banner if free-tier (Codex routing is unreliable on free per Clawless Advisor's B34 incident). Small, defensive, ~30 min.
+4. **Reviewer pass on the model picker** (commit `c81b1d0`) — skipped in the rush; queue for follow-up cleanup of any caught issues.
+
 ### Open questions queued for founder (answer when back, then I unblock)
 
 Decisions I deferred during this run. The three from the previous block that I *did* act on (your blanket authorization covered them) are noted at the bottom. None are blocking what shipped; they're blocking *what comes next*.
@@ -93,16 +114,18 @@ Decisions I deferred during this run. The three from the previous block that I *
 5. **Phase 5 part 2: Alpaca data + broker.** Needs your Alpaca paper-trading key + a decision on whether the broker abstraction goes in the engine (Python) or the renderer (Electron main, since Alpaca's broker SDK has a JS variant too). Engine is consistent with the rest of the architecture; renderer would let the broker live closer to the secrets keychain.
 6. **Phase 6: Clawless gateway tap.** Probe (`tools/clawless-probe.mjs`) is the working reference. Worth wiring before or after multi-provider? It changes the LLM transport, so logically belongs in the same area as Phase 2.1.
 
-**Acted on with blanket authorization:**
+**Acted on with blanket authorization (today's run):**
 
-- Q1 (first LLM provider) — chose **OpenAI / gpt-4o-mini** as the default. Cheapest reasonable model + most established SDK. Easy to swap.
-- Q3 (storage) — **SQLite at `<repo>/data/sessions.db`** per architecture. Sessions + watchlist both live there; gitignored.
-- Multi-provider — all four wired (`8a9526b`): OpenAI, Anthropic, OpenRouter, Google Gemini. DeepSeek removed from Settings (no key, no engine wiring planned).
-- Q5 from previous block (Alpaca data) — still held; needs your key.
+- All four API-key providers wired (`8a9526b`): OpenAI, Anthropic, OpenRouter, Google Gemini.
+- **OpenAI OAuth shipped** (`ed35277` + `9a09d08`) via `@earendil-works/pi-ai`. Subscription-routed via `chatgpt.com/backend-api/codex/responses` (Codex backend), not `/v1/chat/completions`. Verified end-to-end with founder's account: first successful live debate using OAuth + gpt-5.4.
+- Per-provider model picker (`c81b1d0` + `2cfa560`): two dropdowns in header, per-(provider, auth) localStorage memory, recommended pre-selection. Codex model list mirrors founder's actual ChatGPT picker.
+- DeepSeek removed from Settings.
 
-**Externally blocked:**
+**Still externally blocked:**
 
-- **OpenAI OAuth** — Clawless Advisor acknowledged ping (2026-05-09 01:21) but deferred substance to your morning audit. They'll need you to pick whether the OpenClaw-engine OAuth path or a Clawless-wrapper OAuth path is the one to mirror. Won't pull clawless-developer off Clawless v5 launch work for it. Until you pick, the path is queued.
+- **Phase 5 part 2 (Alpaca data + paper broker)** — needs your Alpaca key.
+- **Phase 6 (Clawless tap)** — could start anytime; deferred behind cost-guard + playwright per founder priority.
+- **Subscription-routing verification** — first OAuth debate succeeded; you should check your OpenAI billing dashboard to confirm the run did NOT add to your API tier (i.e., that the Codex/subscription path is actually billing through your ChatGPT plan, not per-token).
 
 ### What founder should do first when they return
 
