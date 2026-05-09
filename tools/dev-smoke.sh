@@ -164,6 +164,30 @@ else
   echo "    ws.err: $(cat "$TMPDIR_SMOKE/ws.err")"
 fi
 
+# Sessions endpoints — exercised after the WS stream above wrote a row.
+echo "── /sessions"
+body="$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/sessions")"
+echo "$body" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); assert isinstance(d.get("sessions"), list) and len(d["sessions"]) >= 1' >/dev/null
+check "/sessions list returns at least the session we just wrote" $?
+
+# Round-trip: get id, fetch detail, delete, verify 404.
+SID="$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/sessions" | python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["sessions"][0]["id"])' 2>/dev/null || true)"
+if [[ -n "$SID" ]]; then
+  body="$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/sessions/$SID")"
+  echo "$body" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); assert isinstance(d.get("events"), list) and len(d["events"]) >= 1' >/dev/null
+  check "/sessions/{id} returns full detail with events list" $?
+
+  status="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer $TOKEN" "$BASE/sessions/$SID")"
+  [[ "$status" == "200" ]]
+  check "DELETE /sessions/{id} returns 200" $?
+
+  status="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/sessions/$SID")"
+  [[ "$status" == "404" ]]
+  check "deleted session returns 404 on subsequent fetch" $?
+else
+  check "/sessions/{id} round-trip" 1
+fi
+
 echo ""
 echo "── Result: $PASS passed, $FAIL failed"
 exit $((FAIL > 0))

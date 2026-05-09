@@ -27,11 +27,12 @@ CORS is configured for renderer origin `http://localhost:5173` (and `http://127.
   "engine_state": "ready",
   "data_provider": "yfinance",
   "live_supported": true,
-  "live_default_model": "gpt-4o-mini"
+  "live_default_model": "gpt-4o-mini",
+  "storage_path": "/Users/jay/Projects/TradingAgents/data/sessions.db"
 }
 ```
 
-`engine_state` describes engine *capability*, not the most recent session: it is `"ready"` whenever the server is up. Whether a given session ran a stub or a live debate is reported per-session in the `session.complete` event (see WS contract below). `data_provider` reports the active `BaseDataProvider.name`. `live_supported` indicates the engine can run real-LLM debates when given a `provider_config`. `live_default_model` is the cost-cheap default the engine assumes when a `provider_config` arrives without an explicit `model` field.
+`engine_state` describes engine *capability*, not the most recent session: it is `"ready"` whenever the server is up. Whether a given session ran a stub or a live debate is reported per-session in the `session.complete` event (see WS contract below). `data_provider` reports the active `BaseDataProvider.name`. `live_supported` indicates the engine can run real-LLM debates when given a `provider_config`. `live_default_model` is the cost-cheap default the engine assumes when a `provider_config` arrives without an explicit `model` field. `storage_path` reports where the engine writes persisted sessions — `<repo>/data/sessions.db` by default, overridable via the `TAL_SESSIONS_DB` env var.
 
 ### `GET /data/summary?ticker=<X>&trade_date=<YYYY-MM-DD>`
 
@@ -102,6 +103,73 @@ Phase 2/3 stub — returns a deterministic HOLD decision regardless of input.
 ```
 
 Live-LLM `POST /analyze` is intentionally not wired today: the streaming WS path is the canonical entrypoint for real debates, and supports `provider_config`. A one-shot `POST /analyze` that ran an OpenAI session would burn ~$0.005 per request without giving the user the streaming UX. When/if a non-streaming caller appears, this endpoint will accept the same `provider_config` shape as the WS start frame.
+
+### `GET /sessions?limit=<N>&ticker=<X>`
+
+Lists recently-completed debates, newest first. `limit` defaults to 50 (max 500). `ticker` is optional and case-insensitive. Returns a list of *summaries* — no event payload, no transcript. Use `GET /sessions/{id}` to inflate one.
+
+```jsonc
+{
+  "sessions": [
+    {
+      "id": "019e0a0e95c1-8403736e",     // ULID-like, lexicographically sortable
+      "ticker": "NVDA",
+      "trade_date": "2026-05-08",
+      "decision_action": "HOLD",
+      "decision_confidence": 0.55,
+      "decision_reasoning": "...",
+      "live": false,                     // false for stub, true for real-LLM
+      "model": null,                     // populated when live
+      "input_tokens": null,
+      "output_tokens": null,
+      "estimated_cost_usd": null,
+      "created_at": "2026-05-09T00:06:28Z"
+    }
+  ]
+}
+```
+
+### `GET /sessions/{id}`
+
+Returns the full detail for a single session, including the inflated `events` array (every WS event the renderer received during the original stream). Used by the History detail view to replay a past debate.
+
+```jsonc
+{
+  "id": "019e0a0e95c1-8403736e",
+  "ticker": "NVDA",
+  "trade_date": "2026-05-08",
+  "decision_action": "HOLD",
+  "decision_confidence": 0.55,
+  "decision_reasoning": "...",
+  "live": true,
+  "model": "gpt-4o-mini",
+  "input_tokens": 7401,
+  "output_tokens": 2384,
+  "estimated_cost_usd": 0.0025,
+  "created_at": "2026-05-09T00:06:28Z",
+  "events": [
+    { "type": "session.start", "ticker": "NVDA", "trade_date": "2026-05-08" },
+    { "type": "data.summary", "...": "..." },
+    { "type": "agent.message", "agent": "technical_analyst", "...": "..." },
+    "..."
+  ]
+}
+```
+
+| Status | Meaning |
+|---|---|
+| 200 | Session found |
+| 404 | No session with that id |
+
+### `DELETE /sessions/{id}`
+
+Deletes a single session row. Returns `{"deleted": true, "id": "..."}` on success, 404 if the id doesn't exist. CORS-allowed for the renderer origin (`DELETE` is in the `Access-Control-Allow-Methods` list).
+
+### Session persistence model
+
+Persistence is **strictly post-stream**: the engine captures the WS event sequence in memory while it streams, and writes a single SQLite row only after `session.complete` is sent (and only when one is sent — aborted streams via the renderer's Stop button do *not* persist). Failures to write are logged to stderr and silently ignored — the user already saw the debate, so persistence is best-effort, not contract.
+
+Storage backend: SQLite at `<repo>/data/sessions.db` with WAL mode + `PRAGMA synchronous=NORMAL`. Override the path with the `TAL_SESSIONS_DB` env var. The DB file is gitignored. Schema version 1; older schemas are upgraded in place by `_ensure_initialized()`, newer schemas refuse to write (the engine will refuse to clobber a file from a future version).
 
 ## WebSocket endpoint
 
@@ -239,7 +307,7 @@ The Electron main process awaits `child.stdout.once('data')`, parses it once, an
 
 - Multi-provider live debates — only OpenAI is wired today (`provider: "openai"`). Anthropic / DeepSeek / OpenRouter land when their wiring is added; the renderer can ship UI ahead of engine support because unsupported providers fall through to the stub.
 - Token-level streaming — each agent's full response is sent as a single `agent.message` event. Token-by-token streaming is a future protocol upgrade and would gate on a `agent.message.delta` event variant.
-- Multi-session orchestration — engine is per-session. A session manager + persistence is Phase 7.
+- Cross-session search / export / sharing — persistence is per-row only. Future.
 - Authentication beyond bearer — sidecar is `127.0.0.1`-bound; no remote callers.
 - Rate limiting / quotas — `max_tokens` and `MAX_AGENTS_PER_SESSION` are the only hard caps. The engine logs estimated cost per session to stderr, and the renderer surfaces it on the decision card; there is no enforced spend ceiling beyond the per-call cap.
 - Versioned protocol — single canonical version today. When it changes, the start frame will gain a `protocol_version` field and the server will reject mismatches with close code `1008`.

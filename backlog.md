@@ -95,8 +95,10 @@
 
 ## Tooling + docs
 
-- 🟢 **`tools/dev-smoke.sh`** — backend smoke runner (8 assertions covering auth + CORS + every HTTP endpoint + WS contract). Run when the UI isn't streaming to rule the backend out, or as a fresh-session sanity check.
+- 🟢 **`tools/dev-smoke.sh`** — backend smoke runner (12 assertions covering auth + CORS + every HTTP endpoint + WS contract + sessions round-trip). Run when the UI isn't streaming to rule the backend out, or as a fresh-session sanity check.
 - 🟢 **`docs/api.md`** — engine API contract documentation. Every endpoint shape, the WS event types + order, agent name canon per phase, process model, intentional out-of-scope list. Indexed in `CLAUDE.md` doc graph.
+- 🟢 **`docs/kb/`** — user-facing knowledge base (11 files): README index, getting-started, how-it-works, configuring-llm-providers, data-providers, clawless-connector, reading-the-debate, keyboard-shortcuts, security-and-storage, troubleshooting, faq. Cross-linked, posture-locked ("educational + paper trading"), single-source for end-user-facing language. Built by parallel sub-agent.
+- 🟢 **Engine SQLite session storage** — `engine/storage.py` with versioned schema, write-on-stream-end, list/get/delete endpoints. WAL mode, atomic file create, best-effort error handling. DB lives at `<repo>/data/sessions.db` (gitignored), overridable via `TAL_SESSIONS_DB`.
 
 ---
 

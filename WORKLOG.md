@@ -6,6 +6,36 @@
 
 ---
 
+## 2026-05-09 (continued, third autonomous block) — SQLite session storage + parallel KB
+
+**Goal (storage chunk):** Persist completed debates so the History page (next chunk) and any future analytics have something to read. Per advisor, ship the engine layer alone first; History UI is a separate commit.
+
+**Architect protocol followed (advisor before, write, reviewer after):**
+- Pre-design advisor consult: said skip the design call ("paved path"), specified schema, file location (`<repo>/data/sessions.db`), env override (`TAL_SESSIONS_DB`), and the must-include endpoints (list / get / delete). Followed verbatim.
+- Implementation: `engine/storage.py` (220 LoC) + 3 endpoints in `server.py` + best-effort write-on-stream-end + extended `tools/dev-smoke.sh` from 8 → 12 assertions.
+- Code reviewer (Sonnet) caught 1 blocking issue (missing `DELETE` in CORS allowlist) + 3 strong-recommends (decision dict guard, docs/api.md drift, style consistency). All 4 fixed before commit.
+
+**Shipped:**
+
+- New: `engine/storage.py` — versioned-schema SQLite layer. WAL mode, atomic file create, hard-fail on schema-version-newer-than-supported. Public surface: `write_session`, `list_sessions(limit, ticker)`, `get_session(id)`, `delete_session(id)`, plus `db_path()` for `/health` to surface. ULID-style ids (millisecond epoch + 8 random bytes hex). Best-effort everywhere — every public function returns gracefully on errors and logs to stderr; the WS handler treats persistence as non-blocking.
+- Updated: `engine/server.py` — captures the WS event sequence in memory while streaming, calls `_persist_session_safe` after `session.complete` (skips write entirely on aborted streams). New endpoints: `GET /sessions?limit&ticker`, `GET /sessions/{id}`, `DELETE /sessions/{id}`. CORS `allow_methods` now includes `DELETE`. `/health` gains `storage_path` field.
+- Updated: `.gitignore` — adds `data/` so user session data never gets committed.
+- Updated: `tools/dev-smoke.sh` — extended from 8 to 12 assertions covering the full sessions round-trip (list → get-by-id → delete → 404 verification).
+- Updated: `docs/api.md` — full documentation of the three new endpoints + `/health.storage_path` + persistence model section. Removed the stale "session manager + persistence is Phase 7" line.
+
+**Parallel knowledge base (`docs/kb/`):**
+
+A documentation specialist sub-agent (Sonnet) built 11 user-facing KB files in parallel while this storage chunk was implemented. Files are cross-linked, voice is educational/calm, posture is locked ("educational + paper trading"). The agent caught one bug — the original `reading-the-debate.md` referenced a fabricated "Analyzing…" button label state; corrected against the real `Analyze.tsx` ternary. Also flagged that `docs/architecture.md` §7 lists Gemini/xAI/Qwen/GLM as LLM providers but `Settings.tsx` only ships OpenAI / Anthropic / DeepSeek / OpenRouter — needs reconciliation in a follow-up.
+
+**Verification:**
+- `npm run type-check`: clean
+- `bash tools/dev-smoke.sh NVDA 2026-05-08`: **12 passed, 0 failed** (was 8/8 — added 4 new assertions for sessions round-trip)
+- KB files manually inventoried; all 11 present and linked
+
+**Commits:** TBD (one for storage + KB combined since they're independent surfaces both ready to ship).
+
+---
+
 ## 2026-05-08 (continued, third autonomous block) — Phase 2.1-light real-LLM debate
 
 **Goal:** Replace the canned stub debate with real OpenAI calls when a key is configured. Keep the stub path as the default so the demo still works without one. Per advisor design review, ship the *minimal own-prompts* implementation rather than a full upstream-graph wrapper — smaller blast radius, controllable cost, debuggable.
@@ -43,7 +73,7 @@
 - `bash tools/dev-smoke.sh NVDA 2026-05-08`: 8 passed, 0 failed (stub path preserved end-to-end)
 - **Live path: NOT smoke-tested in autonomous block** — the autonomous session has no OpenAI key (it lives in the founder's OS keychain). The `provider_config` plumbing is verified by the type-checker + the from_dict allowlist + the reviewer; the actual OpenAI call path is verified when the founder pastes a key and clicks Analyze.
 
-**Commit:** TBD.
+**Commit:** `75d020e`.
 
 ---
 

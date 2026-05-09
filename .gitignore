@@ -228,6 +228,10 @@ desktop/.vite/
 engine/.venv/
 engine/__pycache__/
 
+# Local-only persisted state — never commit user session data.
+data/
+
+
 # The Python `lib/` rule above (line ~17) was inherited from upstream
 # TradingAgents and shadows desktop application source under desktop/src/lib/.
 # Re-include it explicitly.

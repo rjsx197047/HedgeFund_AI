@@ -35,6 +35,7 @@ from .data_providers import (
     default_provider,
 )
 from .live_debate import ProviderConfig, live_debate
+from . import storage
 from .stub_debate import canned_debate
 
 
@@ -57,7 +58,7 @@ def build_app(*, token: str) -> FastAPI:
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
 
@@ -89,6 +90,7 @@ def build_app(*, token: str) -> FastAPI:
             "data_provider": default_provider.name,
             "live_supported": True,
             "live_default_model": "gpt-4o-mini",
+            "storage_path": storage.db_path(),
         }
 
     @app.get("/data/summary", dependencies=bearer)
@@ -126,6 +128,33 @@ def build_app(*, token: str) -> FastAPI:
             "headlines": [_headline_to_dict(h) for h in headlines],
         }
 
+    @app.get("/sessions", dependencies=bearer)
+    async def list_sessions_endpoint(
+        limit: int = 50, ticker: str | None = None
+    ) -> dict[str, Any]:
+        rows = storage.list_sessions(limit=limit, ticker=ticker)
+        return {"sessions": [storage.summary_to_dict(r) for r in rows]}
+
+    @app.get("/sessions/{session_id}", dependencies=bearer)
+    async def get_session_endpoint(session_id: str) -> dict[str, Any]:
+        detail = storage.get_session(session_id)
+        if detail is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"session {session_id!r} not found",
+            )
+        return storage.detail_to_dict(detail)
+
+    @app.delete("/sessions/{session_id}", dependencies=bearer)
+    async def delete_session_endpoint(session_id: str) -> dict[str, Any]:
+        deleted = storage.delete_session(session_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"session {session_id!r} not found",
+            )
+        return {"deleted": True, "id": session_id}
+
     @app.post("/analyze", dependencies=bearer)
     async def analyze(req: AnalyzeRequest) -> dict[str, Any]:
         # Phase 2 stub — Phase 3+ wires this to the real tradingagents core.
@@ -152,6 +181,7 @@ def build_app(*, token: str) -> FastAPI:
             return
         await ws.accept()
 
+        captured_events: list[dict] = []
         try:
             # Wait for the client's start frame:
             #   {
@@ -172,18 +202,20 @@ def build_app(*, token: str) -> FastAPI:
             # Best-effort data fetch; debate degrades gracefully if it fails.
             summary = await _fetch_summary_safe(ticker=ticker, trade_date=trade_date)
             if summary is not None:
-                await ws.send_json(
-                    {"type": "data.summary", **_summary_to_dict(summary)}
-                )
+                evt = {"type": "data.summary", **_summary_to_dict(summary)}
+                await ws.send_json(evt)
+                captured_events.append(evt)
 
             headlines = await _fetch_news_safe(ticker=ticker, limit=4)
             if headlines:
-                await ws.send_json({
+                evt = {
                     "type": "news.headlines",
                     "ticker": ticker,
                     "source": default_provider.name,
                     "headlines": [_headline_to_dict(h) for h in headlines],
-                })
+                }
+                await ws.send_json(evt)
+                captured_events.append(evt)
 
             if config is not None:
                 # Live debate path. Each agent.message arrives as the LLM
@@ -197,6 +229,7 @@ def build_app(*, token: str) -> FastAPI:
                     config=config,
                 ):
                     await ws.send_json(event)
+                    captured_events.append(event)
                     await asyncio.sleep(0.15)
             else:
                 # Stub debate path — same UX, deterministic content.
@@ -206,13 +239,57 @@ def build_app(*, token: str) -> FastAPI:
                     summary=summary,
                     headlines=headlines,
                 ):
+                    delay = event.pop("_delay", 0.4)
                     await ws.send_json(event)
-                    await asyncio.sleep(event.pop("_delay", 0.4))
+                    captured_events.append(event)
+                    await asyncio.sleep(delay)
+
+            # Persist the completed session — best-effort, never fails the
+            # stream. The user already saw the debate; persistence is bonus.
+            _persist_session_safe(
+                ticker=ticker,
+                trade_date=trade_date,
+                events=captured_events,
+            )
+
             await ws.close(code=1000)
         except WebSocketDisconnect:
             return
 
     return app
+
+
+def _persist_session_safe(
+    *, ticker: str, trade_date: str, events: list[dict]
+) -> None:
+    """Find session.complete in the captured events and write a row."""
+    if not events:
+        return
+    complete: dict | None = None
+    for ev in events:
+        if isinstance(ev, dict) and ev.get("type") == "session.complete":
+            complete = ev
+            break
+    if complete is None:
+        # Stream was aborted (Stop button) — don't persist a partial session.
+        return
+    raw_decision = complete.get("decision")
+    decision = raw_decision if isinstance(raw_decision, dict) else {
+        "action": "HOLD",
+        "confidence": 0.0,
+        "reasoning": "Session ended without a well-formed decision payload.",
+    }
+    storage.write_session(
+        ticker=ticker,
+        trade_date=trade_date,
+        events=events,
+        decision=decision,
+        live=bool(complete.get("live", False)),
+        model=complete.get("model"),
+        input_tokens=complete.get("input_tokens"),
+        output_tokens=complete.get("output_tokens"),
+        estimated_cost_usd=complete.get("estimated_cost_usd"),
+    )
 
 
 async def _fetch_summary_safe(*, ticker: str, trade_date: str) -> QuoteSummary | None:
