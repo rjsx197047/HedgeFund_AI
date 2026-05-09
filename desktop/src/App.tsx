@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Analyze from './pages/Analyze';
 import Settings from './pages/Settings';
+import History from './pages/History';
 import ComingSoon from './pages/ComingSoon';
 import styles from './App.module.css';
 
@@ -84,12 +85,7 @@ function App() {
             description="Track multiple tickers and re-run analyses on a daily cadence. Phase 7."
           />
         )}
-        {route === 'history' && (
-          <ComingSoon
-            title="History"
-            description="Past decisions, paper-trade P&L, and the full multi-agent debate log for each session. Phase 7."
-          />
-        )}
+        {route === 'history' && <History />}
         {route === 'settings' && <Settings />}
       </main>
 

@@ -49,7 +49,8 @@ See `WORKLOG.md` for the chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
-<storage + KB commit lands here>
+<History page commit lands here>
+7dbbeff  SQLite session storage + user-facing knowledge base
 75d020e  Phase 2.1-light: real-LLM debate via sequential OpenAI calls
 be6d12d  Tooling + docs: backend smoke script, engine API contract, date cap
 0de893a  Stretch: keyboard shortcuts + Electron app menu

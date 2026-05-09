@@ -79,7 +79,9 @@
 ## Phase 7 — Real product surface
 
 - ⚪ Watchlist page — multiple tickers, daily re-analyze.
-- ⚪ History page — past decisions, paper-trade P&L, decision-log integration.
+- 🟢 **History page** — replaces the ComingSoon placeholder. List view of saved debates (newest first), click into a detail view that replays the persisted DebateStream, delete with confirmation, copy transcript markdown. Reads `GET /sessions` + `GET /sessions/{id}` + `DELETE /sessions/{id}`. Race-guarded against rapid row clicks via generation counter.
+- ⚪ Paper-trade P&L integration into History — depends on broker abstraction (Phase 5 part 2).
+- ⚪ Detail-fetch timeout — getSession has no timeout; if the engine hangs the user is stuck on "Loading session…" until they click Back. Add an AbortController-based 5-10s timeout in `engine-client.getSession`. Low priority (engine doesn't currently hang).
 - ⚪ Settings persistence (window size, theme mode, etc.).
 - ⚪ Distribution: signed macOS DMG, Windows installer (deferred decision on auto-update mechanism).
 - ⚪ Acceptance: founder uses the app daily for paper-trading research without relying on the dev shell.

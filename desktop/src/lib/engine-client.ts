@@ -108,6 +108,28 @@ export interface HealthInfo {
   uptime_seconds: number;
   engine_state: string;
   data_provider?: string;
+  live_supported?: boolean;
+  live_default_model?: string;
+  storage_path?: string;
+}
+
+export interface SessionSummary {
+  id: string;
+  ticker: string;
+  trade_date: string;
+  decision_action: string;
+  decision_confidence: number;
+  decision_reasoning: string;
+  live: boolean;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  estimated_cost_usd: number | null;
+  created_at: string;
+}
+
+export interface SessionDetail extends SessionSummary {
+  events: DebateEvent[];
 }
 
 export async function getHealth(): Promise<HealthInfo> {
@@ -119,6 +141,49 @@ export async function getHealth(): Promise<HealthInfo> {
     throw new Error(`/health failed: ${res.status} ${res.statusText}`);
   }
   return (await res.json()) as HealthInfo;
+}
+
+export async function listSessions(opts: { limit?: number; ticker?: string } = {}): Promise<SessionSummary[]> {
+  const { port, token } = await handshake();
+  const params = new URLSearchParams();
+  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.ticker) params.set('ticker', opts.ticker);
+  const qs = params.toString();
+  const url = `http://127.0.0.1:${port}/sessions${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw new Error(`listSessions failed: ${res.status} ${res.statusText}`);
+  }
+  const body = (await res.json()) as { sessions: SessionSummary[] };
+  return body.sessions;
+}
+
+export async function getSession(id: string): Promise<SessionDetail> {
+  const { port, token } = await handshake();
+  const res = await fetch(
+    `http://127.0.0.1:${port}/sessions/${encodeURIComponent(id)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`getSession failed: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as SessionDetail;
+}
+
+export async function deleteSession(id: string): Promise<void> {
+  const { port, token } = await handshake();
+  const res = await fetch(
+    `http://127.0.0.1:${port}/sessions/${encodeURIComponent(id)}`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`deleteSession failed: ${res.status} ${res.statusText}`);
+  }
 }
 
 export async function analyze(req: AnalyzeRequest): Promise<AnalyzeResponse> {

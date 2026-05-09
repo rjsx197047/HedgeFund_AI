@@ -6,6 +6,35 @@
 
 ---
 
+## 2026-05-09 (continued) — History page
+
+**Goal:** Replace the ComingSoon placeholder with a real History page that reads from the SQLite session storage shipped in `7dbbeff`. Per advisor, this is its own commit + reviewer pass — separate from the engine layer and the Watchlist that comes next.
+
+**Architect protocol followed:**
+- Skipped pre-design advisor (paved path: list view + detail view + delete, types are dictated by `docs/api.md`).
+- Reviewer agent (Sonnet) on the working tree pre-commit. Verdict: "Ready to commit" with one race condition (rapid row clicks) and one backlog note (no fetch timeout).
+- Race condition fixed via generation counter; timeout queued in backlog as Phase 7 follow-up.
+
+**Shipped:**
+
+- New: `desktop/src/pages/History.tsx` (~250 LoC). Two-view state machine: `'list'` and `'detail'`. List shows newest-first session rows with ticker, action pill (BUY/SELL/HOLD color-coded), confidence %, live/stub badge, relative timestamp, est cost, two-line clamped reasoning. Empty state guides the user to the Analyze page. Stat strip across the top: total sessions, live count, stub count, total live cost. Detail view: header with Back + Copy transcript + Delete buttons, ticker/date summary block with live/stub pill + cost meta, and the full debate replayed via the existing `DebateStream` component (with `isStreaming={false}`).
+- New: `desktop/src/pages/History.module.css` (~330 LoC). All styles use the existing token system. Action pill variants for buy/sell/hold. Row hover lifts border-color to amber.
+- Updated: `desktop/src/lib/engine-client.ts` — added `SessionSummary`, `SessionDetail` types matching `engine/storage.py` field-for-field; new `listSessions`, `getSession`, `deleteSession` typed wrappers; expanded `HealthInfo` to include `live_supported`, `live_default_model`, `storage_path`.
+- Updated: `desktop/src/App.tsx` — swapped `<ComingSoon ...>` for `<History />` on the `'history'` route.
+
+**Reviewer fixes applied:**
+
+- Race condition: rapid row clicks could let a slow earlier fetch land after a faster later one, stomping the UI with the wrong session. Added a `detailGenRef` generation counter; `onOpen` increments and only commits the result when its generation matches the latest. Same guard on the error path.
+
+**Verification:**
+- `npm run type-check`: clean
+- `npm run build`: clean
+- Engine smoke (12/12) preserved (no engine changes in this commit)
+
+**Commit:** TBD.
+
+---
+
 ## 2026-05-09 (continued, third autonomous block) — SQLite session storage + parallel KB
 
 **Goal (storage chunk):** Persist completed debates so the History page (next chunk) and any future analytics have something to read. Per advisor, ship the engine layer alone first; History UI is a separate commit.
@@ -32,7 +61,7 @@ A documentation specialist sub-agent (Sonnet) built 11 user-facing KB files in p
 - `bash tools/dev-smoke.sh NVDA 2026-05-08`: **12 passed, 0 failed** (was 8/8 — added 4 new assertions for sessions round-trip)
 - KB files manually inventoried; all 11 present and linked
 
-**Commits:** TBD (one for storage + KB combined since they're independent surfaces both ready to ship).
+**Commits:** `7dbbeff` (storage + KB combined).
 
 ---
 
