@@ -60,7 +60,7 @@
 - **Live OAuth flow NOT smoke-tested in this autonomous session** — there's no browser, no founder paste-back, no real OpenAI account. The pi-ai integration is verified by type-check + back-compat smoke + IPC handler registration; the actual "click Connect → browser opens → paste code → token round-trips → live debate uses the OAuth bearer" flow only verifies in the founder's window.
 - **Subscription-plan routing claim is account-configuration-dependent** and unverified by either pi-ai or TradingAgentsLab. Founder must verify with a low-cost call + check OpenAI billing dashboard.
 
-**Commit:** TBD.
+**Commit:** `ed35277`.
 
 ---
 

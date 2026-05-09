@@ -58,7 +58,7 @@ See `WORKLOG.md` for the chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
-<OAuth commit lands here>
+ed35277  OpenAI OAuth (Codex) via @earendil-works/pi-ai
 d8d3585  Doc sync: backfill 8a9526b hash + record Clawless Advisor OAuth deferral
 8a9526b  Multi-provider live debate: Anthropic + OpenRouter + Google Gemini
 7fcbefa  End-of-block: reconcile architecture.md §7 + refresh founder Q&A inbox
