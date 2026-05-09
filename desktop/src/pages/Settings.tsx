@@ -24,7 +24,7 @@ import {
   type SpendState,
 } from '../lib/cost-guard';
 
-type Tab = 'llm' | 'data' | 'broker' | 'clawless' | 'costguard' | 'about';
+type Tab = 'llm' | 'data' | 'clawless' | 'costguard' | 'about';
 
 interface TabDef {
   id: Tab;
@@ -43,13 +43,7 @@ const TABS: TabDef[] = [
     id: 'data',
     label: 'Data Providers',
     description:
-      'Where market data comes from. yfinance is the free default — no key required.',
-  },
-  {
-    id: 'broker',
-    label: 'Broker',
-    description:
-      'Where paper-trade orders are placed. Live trading is gated behind explicit confirmation.',
+      'Where market data comes from. yfinance is the free default — no key required. Optionally connect Alpaca Markets for higher-quality real-time data.',
   },
   {
     id: 'clawless',
@@ -121,54 +115,34 @@ const LLM_PROVIDERS: SecretRow[] = [
   },
 ];
 
-const DATA_PROVIDERS: SecretRow[] = [
-  {
-    secretKey: 'data:alpaca',
-    name: 'Alpaca Markets',
-    note: 'IEX/SIP feed for power users. The same key powers the Alpaca broker.',
-    pillLabel: 'Optional',
-    pillVariant: 'optional',
-    placeholder: 'PK…',
-  },
-];
-
 // Alpaca auth requires TWO values — Key ID (sent as APCA-API-KEY-ID) and
 // Secret Key (sent as APCA-API-SECRET-KEY). Both are minted together on the
 // Alpaca dashboard; the Secret is shown only once at generation time.
-// Endpoints are constants in the engine (paper-api.alpaca.markets for paper,
-// api.alpaca.markets for live), so no URL field is needed here.
-const BROKERS: SecretRow[] = [
+//
+// Per project positioning (locked 2026-05-09 — see CLAUDE.md §3 + memory):
+// TradingAgentsLab is an analysis tool, not an execution platform. Alpaca
+// is integrated for HIGH-QUALITY MARKET DATA only — not order execution.
+// The engine's URL constants point to data.alpaca.markets and (read-only)
+// paper-api.alpaca.markets. Live keys (api.alpaca.markets) have nowhere
+// to go in our code: pasting a live key here will store it but the system
+// will error out at request time. Defense-in-depth via endpoint constants,
+// not a guard flag.
+const DATA_PROVIDERS: SecretRow[] = [
   {
-    secretKey: 'broker:alpaca-paper-key-id',
-    name: 'Alpaca Paper Trading — Key ID',
-    note: 'Paper trading public key (APCA-API-KEY-ID). Looks like PKxxxxxxxxxxxxxxxx. Paste alongside the Secret below.',
+    secretKey: 'data:alpaca-key-id',
+    name: 'Alpaca Markets — Key ID',
+    note: 'Public key for high-quality market data (APCA-API-KEY-ID). Looks like PKxxxxxxxxxxxxxxxx. Paste alongside the Secret below. Use a paper-trading key — TradingAgentsLab connects only to data + paper-read endpoints; live keys will not function.',
     pillLabel: 'Key ID',
     pillVariant: 'default',
     placeholder: 'PKxxxxxxxxxxxxxxxx',
   },
   {
-    secretKey: 'broker:alpaca-paper-secret',
-    name: 'Alpaca Paper Trading — Secret',
-    note: 'Paper trading secret (APCA-API-SECRET-KEY). Shown once at key generation on the Alpaca dashboard — regenerate the pair if you missed it.',
+    secretKey: 'data:alpaca-secret',
+    name: 'Alpaca Markets — Secret',
+    note: 'Data secret (APCA-API-SECRET-KEY). Shown once at key generation on the Alpaca dashboard — regenerate the pair if you missed it.',
     pillLabel: 'Secret',
     pillVariant: 'default',
-    placeholder: 'paper secret key',
-  },
-  {
-    secretKey: 'broker:alpaca-live-key-id',
-    name: 'Alpaca Live — Key ID',
-    note: 'Real-money key. Restricted in this distribution; configuration stored but intentionally inert.',
-    pillLabel: 'Restricted',
-    pillVariant: 'planned',
-    placeholder: 'live key ID (disabled)',
-  },
-  {
-    secretKey: 'broker:alpaca-live-secret',
-    name: 'Alpaca Live — Secret',
-    note: 'Real-money secret. Restricted in this distribution; configuration stored but intentionally inert.',
-    pillLabel: 'Restricted',
-    pillVariant: 'planned',
-    placeholder: 'live secret (disabled)',
+    placeholder: 'data secret key',
   },
 ];
 
@@ -307,14 +281,6 @@ function Settings() {
                 onChange={refresh}
               />
             </>
-          )}
-          {active === 'broker' && (
-            <SecretRowList
-              rows={BROKERS}
-              listingByKey={listingByKey}
-              disabled={!availability?.available}
-              onChange={refresh}
-            />
           )}
           {active === 'clawless' && (
             <SecretRowList

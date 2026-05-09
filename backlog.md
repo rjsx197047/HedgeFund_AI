@@ -60,14 +60,15 @@
 - ⚪ Engine consumption: thread provider config from renderer into `/analyze` + WS `/stream` start frame. **Held for Phase 2.1** — wiring shape depends on which provider founder picks first.
 - ⚪ Acceptance: founder pastes his real OpenAI key, runs analysis, key persists across restarts.
 
-## Phase 5 — Data + broker
+## Phase 5 — Data only (broker work removed per locked positioning 2026-05-09)
+
+> **Positioning lock (2026-05-09):** TradingAgentsLab is an analysis tool, not an execution platform. Original Phase 5 part 2 ("AlpacaBroker paper-trading") is OUT — see CLAUDE.md §3 + memory `project_positioning_analysis_only.md`. Replaced with Phase 5b (data-only Alpaca) and Phase 8 (webhooks for external broker handoff).
 
 - 🟢 **Phase 5 part 1 (yfinance default data)** — `engine/data_providers.py` ships `BaseDataProvider` Protocol + `QuoteSummary` dataclass + `YFinanceProvider` impl. New `GET /data/summary` endpoint with 404 on unknown tickers. WS `/stream` emits a `data.summary` event before the canned debate, and analyst/researcher/trader messages inject real numbers (last close, period change, volume, range). Renderer surfaces a compact summary strip (last close · period change · range · avg volume · source) above the debate. yfinance added to `engine/requirements.txt`.
-- ⚪ `AlpacaProvider` data — needs Alpaca API key + keychain plumbing (gated on Phase 4 keychain commit).
-- ⚪ Data Providers settings tab — wire beyond placeholder.
-- ⚪ `BaseBroker` abstraction; `AlpacaBroker` paper-trading.
-- ⚪ Broker settings tab — live-trading gated behind "I understand this is my decision" affordance.
-- ⚪ Acceptance: founder runs analysis with Alpaca data, places paper-trade order from the recommendation.
+- ⚪ **Phase 5b: AlpacaDataProvider** — engine adapter for `data.alpaca.markets` (and read-only paper endpoints if needed for the analysis context). Hard-coded URL constants — no live endpoint anywhere in the adapter, so a pasted live key structurally cannot execute orders. Settings UI for the Alpaca Markets Key ID + Secret already shipped (`Settings.tsx` Data Providers tab). Renderer's "Data" status card flips to "Alpaca · live" when configured, falls back to "yfinance · live" when not.
+- 🚫 ~~`BaseBroker` abstraction; `AlpacaBroker` paper-trading~~ — REMOVED. Adding broker-execution code shifts product identity from analysis lab to trading app and is rejected per locked positioning.
+- 🚫 ~~Broker settings tab~~ — REMOVED from UI (commit `<this commit>`). Encrypted secrets file may have orphan `broker:alpaca-paper-*` entries from earlier today; harmless, never read.
+- ⚪ Acceptance: founder runs analysis with Alpaca data, sees the "Data" status card flip to "Alpaca · live", and the analysis context block uses Alpaca's data instead of yfinance's.
 
 ## Phase 6 — Optional Clawless tap
 
@@ -83,11 +84,21 @@
 - 🟢 **Watchlist page** — replaces the ComingSoon placeholder. SQLite-backed. Add ticker (with optional note) form, list view with relative timestamp, "Analyze" deep-link that hands the ticker off to the Analyze page via sessionStorage, "Remove" with confirm. New endpoints: `GET /watchlist`, `POST /watchlist` (409 on duplicate, 422 on bad input), `DELETE /watchlist/{ticker}` (404 on missing).
 - ⚪ Watchlist daily re-analyze cadence — Phase 7 follow-up.
 - 🟢 **History page** — replaces the ComingSoon placeholder. List view of saved debates (newest first), click into a detail view that replays the persisted DebateStream, delete with confirmation, copy transcript markdown. Reads `GET /sessions` + `GET /sessions/{id}` + `DELETE /sessions/{id}`. Race-guarded against rapid row clicks via generation counter.
-- ⚪ Paper-trade P&L integration into History — depends on broker abstraction (Phase 5 part 2).
+- 🚫 ~~Paper-trade P&L integration into History~~ — REMOVED with the broker abstraction. Manual paper-trade tracking via webhooks (Phase 8) replaces this if needed.
 - ⚪ Detail-fetch timeout — getSession has no timeout; if the engine hangs the user is stuck on "Loading session…" until they click Back. Add an AbortController-based 5-10s timeout in `engine-client.getSession`. Low priority (engine doesn't currently hang).
 - ⚪ Settings persistence (window size, theme mode, etc.).
 - ⚪ Distribution: signed macOS DMG, Windows installer (deferred decision on auto-update mechanism).
 - ⚪ Acceptance: founder uses the app daily for paper-trading research without relying on the dev shell.
+
+## Phase 8 — Webhooks for external broker handoff (replaces broker integration)
+
+> **Replaces** the original Phase 5 broker work per locked positioning 2026-05-09. Users connect their analysis output to *their own* authorized brokerage account (Interactive Brokers, Alpaca live, etc.) — execution happens on the regulated platform, not in our app.
+
+- ⚪ Settings → Webhooks tab — outbound webhook URL configuration. Per-webhook: name, URL, optional bearer token, event filter (e.g. only fire on BUY decisions, only above a confidence threshold).
+- ⚪ Engine: outbound POST emitted on `session.complete` to each configured webhook. Body includes ticker, decision, confidence, reasoning, full transcript URL (locally addressable session id), and a HMAC signature for receiver verification.
+- ⚪ Renderer: per-debate "Sent to webhooks" indicator with success / failure / retry state per endpoint.
+- ⚪ Documentation: webhook payload schema in `docs/api.md`. Example receiver scripts (Node + Python) in `docs/kb/webhooks.md` showing how to wire to IB / Alpaca / a custom Slack bot.
+- ⚪ Acceptance: founder configures a webhook pointing to a local script that logs the payload; runs an analysis; sees the webhook fired with the correct payload + signature.
 
 ---
 

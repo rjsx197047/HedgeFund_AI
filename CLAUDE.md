@@ -20,10 +20,23 @@ It uses multi-agent LLM analysis (analyst → researcher → trader → risk-man
 
 ## 3. Posture (non-negotiable)
 
+### Product positioning (locked 2026-05-09)
+
+**Analysis tool, not an execution platform.** TradingAgentsLab empowers users with multi-agent LLM analysis to make their own trading decisions. We do NOT execute trades on their behalf — even via paper-trading suites that look like real trading apps. This is a regulatory firewall, not a temporary scope cut.
+
+- **No live trading execution code, ever.** Not in the engine, not in the UI, not as a hidden flag. The system MUST refuse to place real-money orders.
+- **No full trading suite.** No stop-loss management, no sell-order workflow, no order routing. Adding any of these shifts product identity from analysis lab to trading app and is rejected.
+- **Defense in depth via endpoint hard-coding.** When a user pastes live API keys, the engine adapter MUST connect only to paper / data endpoints (e.g. `paper-api.alpaca.markets`, `data.alpaca.markets`). Live keys for `api.alpaca.markets` simply have nowhere to go in our code — the system errors out structurally, not by guard-flag.
+- **Webhooks are the integration path for execution.** Like Clawless, users can configure outbound webhooks that push the analysis result to their own authorized broker (Interactive Brokers, Alpaca live, etc.). The actual trade execution happens on the regulated platform, never in our app. We expose the webhook surface; we do not own the trade.
+
+Why: sidesteps the SEC / financial-advisor regulatory surface entirely. Avoids the legal complexity of being an execution platform. Keeps scope manageable and risk low. Full background in memory: `project_positioning_analysis_only.md`.
+
 ### Marketing / legal
 
-- **Educational lab + paper trading only.** Never recommend real-money trading in code, copy, or chat with the user.
+- **Educational lab + paper-trade simulation only.** Never recommend, market, promote, or train on real-money trading in code, copy, or chat with the user.
 - **Disclaimer language** in any user-facing text: *"For educational research and paper trading. This is not investment advice."*
+- **Banned phrasing in user-facing copy:** "trading app," "execute trades," "broker integration," "live trading," "order management."
+- **Approved phrasing:** "analysis platform," "research tool," "paper-trade simulation," "multi-agent LLM analysis."
 - **Locked phrasing for Clawless relationship:**
   - ✅ "Standalone trading companion for Clawless"
   - ❌ NOT "Clawless extension / plugin / add-on / integration"

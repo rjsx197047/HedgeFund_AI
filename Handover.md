@@ -111,7 +111,7 @@ Decisions I deferred during this run. The three from the previous block that I *
 2. **"Test connection" button.** Still holding. Now that real-LLM lands, this is a meaningful UX win (don't burn quota on a typo'd key) — but it still costs ~1 cheap request per test. Add it now with explicit-trigger + warning, or after multi-provider so each provider's test path is wired in one go?
 3. **OpenAI OAuth flow.** Same gating as before. Scaffold now or wait until you've used the API key path enough to know if OAuth is worth the complexity?
 4. **Secrets export / import.** Speculative without your machine-migration story. Do you want a Settings → About "Export encrypted secrets" / "Import on new machine" pair? If yes, what's the threat model — same machine recovery, or actual cross-machine portability?
-5. **Phase 5 part 2: Alpaca data + broker.** Needs your Alpaca paper-trading key + a decision on whether the broker abstraction goes in the engine (Python) or the renderer (Electron main, since Alpaca's broker SDK has a JS variant too). Engine is consistent with the rest of the architecture; renderer would let the broker live closer to the secrets keychain.
+5. ~~**Phase 5 part 2: Alpaca data + broker.**~~ **RESOLVED 2026-05-09:** locked positioning (CLAUDE.md §3 + memory `project_positioning_analysis_only.md`) removes the broker work entirely. Replaced by Phase 5b (data-only Alpaca, see backlog) and Phase 8 (webhooks for external broker handoff, see backlog). Alpaca Markets keys now live under Settings → Data Providers, configured for `data.alpaca.markets` only.
 6. **Phase 6: Clawless gateway tap.** Probe (`tools/clawless-probe.mjs`) is the working reference. Worth wiring before or after multi-provider? It changes the LLM transport, so logically belongs in the same area as Phase 2.1.
 
 **Acted on with blanket authorization (today's run):**
@@ -123,7 +123,7 @@ Decisions I deferred during this run. The three from the previous block that I *
 
 **Still externally blocked:**
 
-- **Phase 5 part 2 (Alpaca data + paper broker)** — needs your Alpaca key.
+- **Phase 5b (Alpaca data adapter)** — Alpaca Markets keys now stored in Settings → Data Providers; engine adapter for `data.alpaca.markets` is the next discrete unit. Broker work removed per locked positioning 2026-05-09.
 - **Phase 6 (Clawless tap)** — could start anytime; deferred behind cost-guard + playwright per founder priority.
 - **Subscription-routing verification** — first OAuth debate succeeded; you should check your OpenAI billing dashboard to confirm the run did NOT add to your API tier (i.e., that the Codex/subscription path is actually billing through your ChatGPT plan, not per-token).
 
@@ -157,7 +157,7 @@ Decisions I deferred during this run. The three from the previous block that I *
 - **LLM:** BYO keys default. Optional Clawless gateway tap routes through `ws://127.0.0.1:18789` (validated). Anthropic API key only — **no Anthropic OAuth** (TOS-banned).
 - **Protocol source of truth:** OpenClaw npm package TypeScript types (MIT, public). Do NOT reverse-engineer Clawless's gateway-client.ts.
 - **Data:** yfinance default (free), Alpaca optional (paid, founder's choice). Massive.com deferred.
-- **Broker:** Alpaca paper trading default. Live trading gated behind explicit user confirmation per marketing posture.
+- **Broker:** ~~Alpaca paper trading default.~~ **REMOVED 2026-05-09 per locked positioning.** TradingAgentsLab is an analysis tool, not an execution platform. External broker integration via outbound webhooks (Phase 8) — users execute on their own authorized brokerage account.
 - **Storage:** SQLite + OS keychain for secrets.
 - **Marketing:** "Standalone trading companion for Clawless." Never "extension/plugin/add-on."
 
