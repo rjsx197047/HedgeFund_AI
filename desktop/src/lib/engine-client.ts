@@ -55,13 +55,18 @@ export const PROVIDER_DEFAULT_MODEL: Record<LLMProvider, string> = {
 };
 
 /**
- * Default model when the OpenAI auth flow is OAuth (Codex). The Codex
- * backend rejects `gpt-4o-mini` ("not supported when using Codex with a
- * ChatGPT account") and only accepts the GPT-5 family for ChatGPT-account
- * routing. We pick `gpt-5.1-codex-mini` as the cheapest reasoning-capable
- * default — listed in pi-ai's `openai-codex` provider model registry.
+ * Default model when the OpenAI auth flow is OAuth (Codex). Subscription-
+ * routed model availability differs from the API-tier list and even from
+ * pi-ai's registry — both `gpt-4o-mini` AND `gpt-5.1-codex-mini` got
+ * rejected with "not supported when using Codex with a ChatGPT account"
+ * during founder smoke tests. `gpt-5.4` ("strong model for everyday
+ * coding" per the official Codex model list) is the first entry on
+ * Codex's own picker and should be reliably available across tiers.
+ *
+ * For the per-provider model picker (next chunk), this becomes the
+ * "recommended" pre-selection rather than a hard default.
  */
-export const OPENAI_CODEX_DEFAULT_MODEL = 'gpt-5.1-codex-mini';
+export const OPENAI_CODEX_DEFAULT_MODEL = 'gpt-5.4';
 
 /**
  * Priority order when multiple keys are configured. First match wins.
