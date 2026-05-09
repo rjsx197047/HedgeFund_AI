@@ -22,7 +22,7 @@
 - ✅ **Compact StatusStrip** at app shell (28px row, visible on every page, replaces 4 bulky cards on Analyze) — frees prime real estate for the debate output. (`fbf226a`)
 - ✅ **SEC-aware disclaimer tightening** — three-tier system (footer / inline below decision card / page-level full text). Memory: `project_disclaimer_language.md`. (`b8e395c`)
 - ✅ **Locked positioning** — analysis only, no execution code in public repo, ever. Removed Settings → Broker tab. Memory: `project_positioning_analysis_only.md`. (`5d73d7c`)
-- ✅ **Strategic posture (this commit)** — free OSS, zero data collection, Claudomy.org integration, public-repo-never-includes-broker-code, launch-prep gating items. Memory: `project_risk_profile_and_education.md`. README + CLAUDE.md updated.
+- ✅ **Strategic posture (this commit)** — free OSS, zero data collection, Clawdemy.org integration, public-repo-never-includes-broker-code, launch-prep gating items. Memory: `project_risk_profile_and_education.md`. README + CLAUDE.md updated.
 - ✅ **App display name** "Trading Agents Lab" (3 words) on user-facing surfaces — macOS app menu, window title, header, footer, brand. (`e96bb30`, `b8e395c`)
 - ✅ **Engine logging upgrade** — `[ws] OPEN/CLOSE`, `[alpaca]`, `[yfinance]`, `[yfinance fallback]` log lines for live-tail visibility during testing.
 - ✅ **Upstream-check tool** — `tools/upstream-check.sh` + weekly cadence rule in CLAUDE.md. We're at upstream/main HEAD (2 commits past v0.2.4 already in tree).
@@ -32,7 +32,7 @@
 ### Strategic posture lock-ins (memory; load-bearing)
 
 - `project_positioning_analysis_only.md` — analysis-only, no execution code in public repo, webhooks for external broker handoff
-- `project_risk_profile_and_education.md` — free OSS, no monetization, Claudomy.org case study, zero data collection, launch-prep gating items
+- `project_risk_profile_and_education.md` — free OSS, no monetization, Clawdemy.org case study, zero data collection, launch-prep gating items
 - `project_disclaimer_language.md` — three-tier disclaimer copy locked, banned/approved phrasing for AI-washing risk
 - `project_alpaca_data_tier.md` — free Basic tier sufficient; never ship features requiring Algo Trader Plus
 - `feedback_handle_restarts_yourself.md` — engine kill / dev-server cycle done autonomously; founder has no spare terminals

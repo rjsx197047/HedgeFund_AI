@@ -97,7 +97,7 @@
 - ⚪ **Terms of Service** — covers AGPL-3.0 distribution, no warranty, user assumes all risk, jurisdiction. Plain language, no legalese-soup. Cross-link to AGPL-3.0 license file.
 - ⚪ **Privacy Policy** — explicit zero-data-collection statement. List every external network call (yfinance, Alpaca data, LLM providers when user keys configured, OpenRouter courtesy headers). Disclaim what we never see (browsing, analytics, identifiers, install pings, error reports).
 - ⚪ **Cookie Policy** — likely "no cookies; localStorage only" if we keep the brochure static and the app uses localStorage for preferences.
-- ⚪ **Brochure marketing site** at tradingagentslab.com (canonical) + tradingagentslab.ai (redirect). Static site. **No analytics, no tracking pixels, no Cloudflare/Vercel Analytics.** Calls-to-action: GitHub repo + DMG download. Cross-link to Claudomy.org as the educational parent.
+- ⚪ **Brochure marketing site** at tradingagentslab.com (canonical) + tradingagentslab.ai (redirect). Static site. **No analytics, no tracking pixels, no Cloudflare/Vercel Analytics.** Calls-to-action: GitHub repo + DMG download. Cross-link to Clawdemy.org as the educational parent.
 - ⚪ **DMG distribution build** — signed macOS .dmg via `electron-builder`. Notarized. Auto-update mechanism (Squirrel.Mac or electron-updater) — defer or implement, founder's call.
 - ⚪ **Pre-launch regulatory review** — engage a securities lawyer to review the locked disclaimer language (`project_disclaimer_language.md`) for jurisdiction-specific surface area (CA, NY, etc.). Run BEFORE launch, not after.
 - ⚪ **Settings → About** could surface "Legal & Disclaimers" section linking to the three-tier disclaimer + ToS + Privacy.

@@ -17,7 +17,7 @@ It is **not** a trading bot, brokerage, or signal service. It is a lab for *unde
 
 > *Trading Agents Lab provides a high-quality, professional-grade tool purely for educational purposes. We do not force user adoption and we do not provide trading tools — we provide a free resource for analysis and learning.*
 
-The project also serves as a practical case study for **[Claudomy.org](https://claudomy.org)**, an AI education platform — a working example of how multi-agent LLM systems can be designed, prompted, and orchestrated end-to-end. Read the source to learn; fork it to build something new.
+The project also serves as a practical case study for **[Clawdemy.org](https://clawdemy.org)**, an AI education platform — a working example of how multi-agent LLM systems can be designed, prompted, and orchestrated end-to-end. Read the source to learn; fork it to build something new.
 
 ---
 

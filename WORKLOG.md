@@ -28,7 +28,7 @@
 - `517d99d` — **yfinance crypto news fallback:** when Alpaca returns 0 headlines for crypto (sparse outside BTC/ETH), silently fall through to yfinance. Equity path unchanged.
 - `fbf226a` — **Compact StatusStrip at app shell.** Founder feedback: 4 bulky cards on Analyze were taking the prime real estate above the debate output. Lifted to 28px row between titleBar and main grid — visible on every page. CustomEvent (`tal:data-provider`) lets per-stream Data routing flow through.
 - `b8e395c` — **Disclaimer tightening (SEC AI-washing aware):** three-tier system locked. Tier 1 footer, Tier 2 inline below decision card, Tier 3 page bottom. Memory: `project_disclaimer_language.md` with banned/approved phrasing.
-- (this commit) — **Strategic posture + README refresh + wrap-up.** Memory: `project_risk_profile_and_education.md` covering free-OSS, Claudomy.org integration, zero-data-collection, public-repo-never-includes-broker-code, launch-prep gating items. README updated with crypto, Alpaca, Cost Guard, mission, privacy section, Tier 3 disclaimer. Backlog Phase 7b (launch prep) added. CLAUDE.md §3 expanded with business model + privacy + educational integration.
+- (this commit) — **Strategic posture + README refresh + wrap-up.** Memory: `project_risk_profile_and_education.md` covering free-OSS, Clawdemy.org integration, zero-data-collection, public-repo-never-includes-broker-code, launch-prep gating items. README updated with crypto, Alpaca, Cost Guard, mission, privacy section, Tier 3 disclaimer. Backlog Phase 7b (launch prep) added. CLAUDE.md §3 expanded with business model + privacy + educational integration.
 
 **Engine logging mid-day:** Added `[ws] OPEN/CLOSE`, `[alpaca] bars/news OK/FAILED/AUTH-FAIL/NON-200/EMPTY`, `[yfinance] bars/news OK/FAILED`, `[yfinance fallback] news OK` log lines for live-monitor visibility. Founder requested per-step progress visibility; we live-tailed engine stderr via Monitor tool through testing.
 
@@ -40,7 +40,7 @@
 
 **Founder strategic statements captured to memory:**
 1. **Locked positioning** — analysis only, no execution code in public repo, even feature-flagged. Webhooks for external broker handoff is the integration model.
-2. **Risk profile + education** — free OSS, no monetization (legal counsel before any change), Claudomy.org case-study integration, zero data collection, brochure-only marketing site, polish to professional standard before public DMG.
+2. **Risk profile + education** — free OSS, no monetization (legal counsel before any change), Clawdemy.org case-study integration, zero data collection, brochure-only marketing site, polish to professional standard before public DMG.
 
 **Verification at end-of-day:**
 - 100 engine tests pass (cost_guard 36 + cost_guard_api 15 + ticker 17 + alpaca_provider 15 + others)

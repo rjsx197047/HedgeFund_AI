@@ -52,7 +52,7 @@ Why: sidesteps the SEC / financial-advisor regulatory surface entirely. Avoids t
 
 ### Educational integration
 
-- Trading Agents Lab is a **practical case study for Claudomy.org** (founder's AI education platform). Students read the source to learn multi-agent LLM design.
+- Trading Agents Lab is a **practical case study for Clawdemy.org** (founder's AI education platform). Students read the source to learn multi-agent LLM design.
 - **How to apply:** keep code readable and well-commented; documentation should explain the *why* of choices, not just the *what*. Avoid clever code that's hard to learn from. The codebase is a teaching artifact.
 
 ### Code / license
