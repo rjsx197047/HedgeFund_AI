@@ -23,17 +23,12 @@ The project also serves as a practical case study for **[Clawdemy.org](https://c
 
 ## Screenshots
 
-> 📸 *Screenshots are added as the UI matures. Drop new captures into [`assets/screenshots/`](assets/screenshots/) and reference them here.*
+> 📸 **Screenshots coming soon.** The four pages below are functional in the running app today — captures will land here as the UI hits v0.1. See [`assets/screenshots/README.md`](assets/screenshots/README.md) for the capture spec if you want to contribute screenshots.
 
-| Analyze — live debate stream | Settings — provider keys & OAuth |
-|:---:|:---:|
-| ![Analyze page](assets/screenshots/analyze.png) | ![Settings page](assets/screenshots/settings.png) |
-| Pick a ticker, pick an LLM provider, watch 12 agents debate live with cost displayed per session. | Bring-your-own keys for OpenAI, Anthropic, OpenRouter, and Google Gemini, or sign in to ChatGPT with OAuth (Codex routing). |
-
-| History — every debate persisted | Watchlist — track tickers locally |
-|:---:|:---:|
-| ![History page](assets/screenshots/history.png) | ![Watchlist page](assets/screenshots/watchlist.png) |
-| Browse past sessions, replay the full transcript, copy as Markdown. SQLite-backed at `data/sessions.db`. | Add tickers, deep-link straight into Analyze. No server, no telemetry. |
+- **Analyze** — pick a ticker (stocks or crypto), pick an LLM provider, watch 12 agents debate live in real time with token usage and cost shown per session.
+- **Settings** — bring-your-own keys for OpenAI (API key or ChatGPT OAuth), Anthropic, OpenRouter, Google Gemini. Optional Alpaca data + Cost Guard caps configurable here.
+- **History** — every debate persisted to local SQLite. Browse past sessions, replay the full transcript, copy as Markdown.
+- **Watchlist** — track tickers locally, deep-link straight into Analyze. No server, no telemetry.
 
 ---
 
