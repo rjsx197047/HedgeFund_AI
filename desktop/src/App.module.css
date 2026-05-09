@@ -106,6 +106,103 @@
   border-color: rgba(248, 81, 73, 0.4);
 }
 
+.titleBarButtonActive,
+.titleBarButtonActive:hover {
+  background: var(--tal-bg-overlay);
+  color: var(--tal-accent, #f0a830);
+  border-color: var(--tal-accent, #f0a830);
+}
+
+/* App-actions dropdown anchored to the titleBar trigger button */
+.appMenuWrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.appMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: appMenuFadeIn 0.12s ease-out;
+}
+
+.appMenuItem {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--tal-text-primary);
+  transition: background 0.1s ease;
+}
+
+.appMenuItem:hover {
+  background: var(--tal-bg-overlay);
+}
+
+.appMenuIcon {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  font-size: 16px;
+  color: var(--tal-text-muted);
+  line-height: 1;
+  text-align: center;
+}
+
+.appMenuLabel {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.appMenuHint {
+  grid-column: 2;
+  grid-row: 2;
+  font-size: 11px;
+  color: var(--tal-text-muted);
+}
+
+.appMenuItemDanger:hover {
+  background: rgba(248, 81, 73, 0.08);
+}
+
+.appMenuItemDanger:hover .appMenuIcon {
+  color: var(--tal-negative, #f85149);
+}
+
+.appMenuItemDanger:hover .appMenuLabel {
+  color: var(--tal-negative, #f85149);
+}
+
+@keyframes appMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .sidebar {
   grid-area: side;
   background: var(--tal-bg-elevated);

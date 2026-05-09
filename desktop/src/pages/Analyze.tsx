@@ -194,27 +194,47 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   const engineReadyRef = useRef(false);
 
   useEffect(() => {
+    // Engine startup is racy — Vite renders the React app before the
+    // Python sidecar has emitted its handshake JSON. Retry the
+    // handshake + health check with backoff for up to ~10s before
+    // surfacing 'error'. Without this, every fresh app launch shows
+    // "Engine error" for a beat before flipping to 'running' — visually
+    // alarming for a non-error state. Stays in 'pending' during retries.
     let cancelled = false;
-    getHandshake()
-      .then(() => getHealth())
-      .then((health) => {
+    const ATTEMPTS = [0, 500, 1000, 1500, 2000, 3000, 3000]; // ~11s total
+    const tryOnce = async (): Promise<void> => {
+      await getHandshake();
+      const health = await getHealth();
+      if (cancelled) return;
+      setEngineStatus('running');
+      engineReadyRef.current = true;
+      setEngineError(null);
+      // Seed from /health (the engine's default — usually yfinance).
+      // The data.summary event handler below overrides this per-debate
+      // when the user has Alpaca configured.
+      setDataProvider(health.data_provider ?? null);
+    };
+
+    (async () => {
+      let lastErr: unknown = null;
+      for (const delay of ATTEMPTS) {
         if (cancelled) return;
-        setEngineStatus('running');
-        engineReadyRef.current = true;
-        setEngineError(null);
-        // Seed from /health (the engine's default — usually yfinance). The
-        // data.summary event handler below overrides this per-debate when
-        // the user has Alpaca configured (engine reports actual source on
-        // each fetch).
-        setDataProvider(health.data_provider ?? null);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setEngineStatus('error');
-          engineReadyRef.current = false;
-          setEngineError(err instanceof Error ? err.message : String(err));
+        if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+        try {
+          await tryOnce();
+          return; // success — done
+        } catch (err) {
+          lastErr = err;
         }
-      });
+      }
+      if (!cancelled) {
+        setEngineStatus('error');
+        engineReadyRef.current = false;
+        setEngineError(
+          lastErr instanceof Error ? lastErr.message : String(lastErr ?? 'unknown'),
+        );
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -753,7 +773,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         </div>
         <div className={styles.cardFooter}>
           <p className={styles.helper}>
-            {engineStatus === 'pending' && 'Engine starting — sidecar handshake pending.'}
+            {engineStatus === 'pending' && 'Engine starting, please wait — Python sidecar is coming online.'}
             {engineStatus === 'running' && !isStreaming && activeProvider && activeModel &&
               `Live debate — ${PROVIDER_LABEL[activeProvider]}${openaiAuthKind === 'oauth' && activeProvider === 'openai' ? ' (OAuth)' : ''} · ${activeModel}, capped per agent.`}
             {engineStatus === 'running' && !isStreaming && !activeProvider &&
@@ -761,7 +781,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
             {engineStatus === 'running' && isStreaming &&
               'Streaming agent debate from sidecar — Stop to abort.'}
             {engineStatus === 'error' &&
-              `Engine failed to start: ${engineError ?? 'unknown error'}`}
+              `Engine could not start after several retries: ${engineError ?? 'unknown error'}. Use the app menu (⏻ top right) to Restart.`}
           </p>
           {transcriptReady && !isStreaming && (
             <button

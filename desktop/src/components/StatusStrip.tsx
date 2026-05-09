@@ -17,7 +17,7 @@
  *             Phase 6 work so we just show "configured" or "disconnected"
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   PROVIDER_LABEL,
@@ -73,25 +73,55 @@ function StatusStrip() {
   const [clawlessConfigured, setClawlessConfigured] = useState(false);
 
   // ---- Engine health polling ---------------------------------------------
+  //
+  // Engine startup is racy — Vite renders the React app before the Python
+  // sidecar has emitted its handshake JSON. We don't want to flash a red
+  // "Engine error" pill for the 1-3s it takes the engine to come up. So:
+  //   1. Stay in 'pending' (pulsing dot) on every failure UNTIL we've
+  //      seen at least one success OR the grace window has elapsed
+  //   2. After grace window: show 'error'
+  //   3. After first success: subsequent failures DO show 'error' fast
+  //      (we know engine was alive — failure now is a real signal)
+  const STARTUP_GRACE_MS = 12_000;
+  const everSucceededRef = useRef(false);
+  const mountedAtRef = useRef<number>(Date.now());
 
   const pollHealth = useCallback(async () => {
     try {
       const h = await getHealth();
+      everSucceededRef.current = true;
       setEngineState('ok');
       setEngineError(null);
       // Initial seed only — per-stream Alpaca/crypto routing comes via
       // the CustomEvent below. Don't override an event-set source.
       setDataSource((cur) => cur ?? h.data_provider ?? null);
     } catch (err) {
-      setEngineState('error');
+      const elapsed = Date.now() - mountedAtRef.current;
+      const stillStarting = !everSucceededRef.current && elapsed < STARTUP_GRACE_MS;
+      setEngineState(stillStarting ? 'pending' : 'error');
       setEngineError(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
   useEffect(() => {
+    // Tight retry cadence during the startup grace window so we transition
+    // pending→ok within 1-2s of the engine becoming ready, not 10s+.
     void pollHealth();
-    const id = setInterval(() => void pollHealth(), HEALTH_POLL_MS);
-    return () => clearInterval(id);
+    const fastInterval = setInterval(() => {
+      if (everSucceededRef.current) return;
+      void pollHealth();
+    }, 1000);
+    const slowInterval = setInterval(() => void pollHealth(), HEALTH_POLL_MS);
+    // Stop the fast retry once we've succeeded once (or grace expires).
+    const stopFastTimeout = setTimeout(
+      () => clearInterval(fastInterval),
+      STARTUP_GRACE_MS,
+    );
+    return () => {
+      clearInterval(fastInterval);
+      clearInterval(slowInterval);
+      clearTimeout(stopFastTimeout);
+    };
   }, [pollHealth]);
 
   // ---- Data-provider per-stream override (Analyze dispatches) ------------
@@ -154,16 +184,19 @@ function StatusStrip() {
 
   // ---- Render ------------------------------------------------------------
 
-  // Engine pill
+  // Engine pill — during startup grace window, pending reads as "starting"
+  // (with a short detail label visible) so the user has positive context
+  // rather than a silent dot. Once running, the dot alone communicates state.
   const enginePill = (
     <Pill
       label="Engine"
+      detail={engineState === 'pending' ? 'starting…' : undefined}
       state={engineState}
       title={
         engineState === 'error'
           ? `Engine error: ${engineError ?? 'unknown'}`
           : engineState === 'pending'
-            ? 'Connecting to Python sidecar…'
+            ? 'Engine starting — waiting for Python sidecar handshake'
             : 'Python sidecar running'
       }
     />

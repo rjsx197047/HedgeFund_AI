@@ -20,6 +20,7 @@ function parseHash(hash: string): Route {
 function App() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
   const [newAnalysisTick, setNewAnalysisTick] = useState(0);
+  const [appMenuOpen, setAppMenuOpen] = useState(false);
   /** Upstream-check modal state. null = closed; "checking" = in flight;
    * UpstreamCheckResult once the IPC round-trip returns. */
   const [upstreamModal, setUpstreamModal] = useState<
@@ -87,6 +88,26 @@ function App() {
     };
   }, [runUpstreamCheck]);
 
+  // Close the app menu on Escape or click outside.
+  useEffect(() => {
+    if (!appMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAppMenuOpen(false);
+    };
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest(`.${styles.appMenuWrapper}`)) {
+        setAppMenuOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onClick);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onClick);
+    };
+  }, [appMenuOpen]);
+
   const navItem = (target: Route, label: string) => {
     const active = route === target;
     return (
@@ -110,28 +131,49 @@ function App() {
           </span>
           <div className={styles.titleBarRight}>
             <span className={styles.connectionPill}>Standalone</span>
-            <button
-              type="button"
-              className={`${styles.titleBarButton} app-no-drag`}
-              onClick={() => {
-                window.tradingAgentsLab?.restart?.();
-              }}
-              title="Restart — kills the engine sidecar and relaunches the app"
-              aria-label="Restart app"
-            >
-              ↻
-            </button>
-            <button
-              type="button"
-              className={`${styles.titleBarButton} ${styles.titleBarButtonDanger} app-no-drag`}
-              onClick={() => {
-                window.tradingAgentsLab?.shutdown?.();
-              }}
-              title="Shut down — kills the engine sidecar and quits the app"
-              aria-label="Shut down app"
-            >
-              ⏻
-            </button>
+            <div className={`${styles.appMenuWrapper} app-no-drag`}>
+              <button
+                type="button"
+                className={`${styles.titleBarButton} ${appMenuOpen ? styles.titleBarButtonActive : ''}`}
+                onClick={() => setAppMenuOpen((open) => !open)}
+                title="App actions — Restart or Shut down"
+                aria-label="App actions"
+                aria-haspopup="menu"
+                aria-expanded={appMenuOpen}
+              >
+                ⏻
+              </button>
+              {appMenuOpen && (
+                <div className={styles.appMenu} role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={styles.appMenuItem}
+                    onClick={() => {
+                      setAppMenuOpen(false);
+                      window.tradingAgentsLab?.restart?.();
+                    }}
+                  >
+                    <span className={styles.appMenuIcon}>↻</span>
+                    <span className={styles.appMenuLabel}>Restart</span>
+                    <span className={styles.appMenuHint}>Relaunch with a fresh engine</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={`${styles.appMenuItem} ${styles.appMenuItemDanger}`}
+                    onClick={() => {
+                      setAppMenuOpen(false);
+                      window.tradingAgentsLab?.shutdown?.();
+                    }}
+                  >
+                    <span className={styles.appMenuIcon}>⏻</span>
+                    <span className={styles.appMenuLabel}>Shut down</span>
+                    <span className={styles.appMenuHint}>Stop engine and quit</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
