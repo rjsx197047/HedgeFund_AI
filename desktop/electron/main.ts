@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { startEngine, stopEngine, type EngineHandshake } from './engine-runner';
@@ -201,7 +201,24 @@ ipcMain.handle('app:restart', async (): Promise<void> => {
   if (!ok) return;
   stopEngine();
   await sweepOrphanEngines();
-  app.relaunch();
+  if (IS_DEV) {
+    // Dev mode quirk: app.relaunch() respawns Electron, but the npm
+    // script that owns Vite dies with the old Electron — the new
+    // Electron then loads from a dead localhost:5173. Spawn a detached
+    // `npm run dev` BEFORE quitting so Vite + Electron come up cleanly
+    // in a new shell. Production builds use the simple relaunch path
+    // since they don't depend on Vite.
+    const repoRoot = path.resolve(app.getAppPath(), '..');
+    const devProcess = spawn('npm', ['--prefix', 'desktop', 'run', 'dev'], {
+      cwd: repoRoot,
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env },
+    });
+    devProcess.unref();
+  } else {
+    app.relaunch();
+  }
   app.quit();
 });
 
