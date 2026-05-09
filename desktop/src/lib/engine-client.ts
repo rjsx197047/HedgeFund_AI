@@ -104,29 +104,31 @@ export const PROVIDER_MODELS: Record<LLMProvider, ModelChoice[]> = {
   ],
 };
 
-/** OpenAI Codex (OAuth path) — distinct list from the API-key models.
- * Per Clawless Advisor (2026-05-09 code-dive on their model-curation
- * service): codex-tuned variants like `gpt-5.x-codex`, `gpt-5.x-codex-max`,
- * `gpt-5.x-codex-mini` are HIT-OR-MISS on ChatGPT-account-authenticated
- * Codex requests — they appear to require additional authorization scopes
- * beyond standard OAuth + chatgpt-account-id. The `originator: pi` header
- * doesn't unlock them.
+/** OpenAI Codex (OAuth path) — list mirrors what the user's ChatGPT
+ * Codex picker actually shows.
  *
- * Clawless intentionally excludes codex-tuned variants from their curated
- * default list and only ships general-flagship variants of the GPT-5.x
- * family. We mirror that decision: gpt-5.4 family only.
+ * Source: founder's own Codex picker (2026-05-09). Descriptions are
+ * verbatim from the picker. Order matches founder's UI.
  *
- * If a user wants to opt into a codex-tuned variant explicitly, they can
- * configure the API-key path (which CAN access the full model registry
- * via the standard /v1/chat/completions endpoint). For OAuth, only the
- * reliably-working set is exposed.
+ * Excluded: `gpt-5.4-pro` and `gpt-5.4-nano` (not on the picker — they
+ * appear in pi-ai's general registry but Codex backend rejects them for
+ * ChatGPT-account auth). Also excluded: `gpt-5.1-codex-mini` — picker
+ * lists it but Codex returns 400 "not supported when using Codex with
+ * a ChatGPT account" (verified 2026-05-09).
+ *
+ * Clawless Advisor flagged that codex-tuned variants (the *-codex,
+ * *-codex-max, *-codex-mini family) are hit-or-miss across ChatGPT plan
+ * tiers — they may work for the founder's plan but fail for free-tier
+ * users. If any of these throws a 400, we demote/remove on a case-by-
+ * case basis as the empirical data comes in.
  */
 export const OPENAI_CODEX_MODELS: ModelChoice[] = [
-  { id: 'gpt-5.4',      label: 'gpt-5.4',      note: 'Strong everyday', recommended: true },
-  { id: 'gpt-5.4-pro',  label: 'gpt-5.4-pro',  note: 'Most capable' },
-  { id: 'gpt-5.2',      label: 'gpt-5.2',      note: 'Long-running agents' },
-  { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini', note: 'Cheaper / faster' },
-  { id: 'gpt-5.4-nano', label: 'gpt-5.4-nano', note: 'Cheapest' },
+  { id: 'gpt-5.4',           label: 'gpt-5.4',           note: 'Strong model for everyday coding', recommended: true },
+  { id: 'gpt-5.2-codex',     label: 'gpt-5.2-codex',     note: 'Frontier agentic coding model' },
+  { id: 'gpt-5.1-codex-max', label: 'gpt-5.1-codex-max', note: 'Codex-optimized flagship for deep and fast reasoning' },
+  { id: 'gpt-5.4-mini',      label: 'gpt-5.4-mini',      note: 'Small, fast, and cost-efficient model for simpler coding tasks' },
+  { id: 'gpt-5.3-codex',     label: 'gpt-5.3-codex',     note: 'Coding-optimized model' },
+  { id: 'gpt-5.2',           label: 'gpt-5.2',           note: 'Optimized for professional work and long-running agents' },
 ];
 
 /** Returns the model list to show in the picker for a given provider +
