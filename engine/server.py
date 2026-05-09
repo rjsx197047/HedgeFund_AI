@@ -35,7 +35,7 @@ from .data_providers import (
     default_provider,
 )
 from .live_debate import ProviderConfig, live_debate
-from . import storage
+from . import cost_guard, storage
 from .stub_debate import canned_debate
 
 
@@ -193,6 +193,59 @@ def build_app(*, token: str) -> FastAPI:
             )
         return {"removed": True, "ticker": ticker.upper()}
 
+    @app.get("/cost-guard/state", dependencies=bearer)
+    async def cost_guard_state() -> dict[str, Any]:
+        spend, config = cost_guard.get_state()
+        return {
+            "spend": cost_guard.spend_to_dict(spend),
+            "config": cost_guard.config_to_dict(config),
+        }
+
+    @app.put("/cost-guard/config", dependencies=bearer)
+    async def cost_guard_update(req: CostGuardConfigRequest) -> dict[str, Any]:
+        new_config = cost_guard.update_config(
+            enabled=req.enabled,
+            cap_daily_usd=req.cap_daily_usd,
+            cap_weekly_usd=req.cap_weekly_usd,
+            cap_monthly_usd=req.cap_monthly_usd,
+            cap_sessions_per_day=req.cap_sessions_per_day,
+        )
+        return cost_guard.config_to_dict(new_config)
+
+    @app.post("/cost-guard/check", dependencies=bearer)
+    async def cost_guard_check(req: CostGuardCheckRequest) -> dict[str, Any]:
+        result = cost_guard.check(
+            model=req.model,
+            auth_kind=req.auth_kind,
+            max_tokens=req.max_tokens,
+        )
+        return cost_guard.check_result_to_dict(result)
+
+    @app.post("/cost-guard/reserve", dependencies=bearer)
+    async def cost_guard_reserve(req: CostGuardReserveRequest) -> dict[str, Any]:
+        try:
+            result = cost_guard.reserve(
+                model=req.model,
+                auth_kind=req.auth_kind,
+                max_tokens=req.max_tokens,
+                override=req.override,
+            )
+        except cost_guard.CostGuardBlocked as exc:
+            # 402 Payment Required — semantic match for "you can't afford
+            # this without overriding"; pair with a JSON body the renderer
+            # uses to populate the override modal.
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "cost_guard_blocked",
+                    "over_dimension": exc.over_dimension,
+                    "spend": cost_guard.spend_to_dict(exc.spend),
+                    "config": cost_guard.config_to_dict(exc.config),
+                    "est_cost_usd": round(exc.est_cost, 6),
+                },
+            )
+        return cost_guard.reserve_result_to_dict(result)
+
     @app.post("/analyze", dependencies=bearer)
     async def analyze(req: AnalyzeRequest) -> dict[str, Any]:
         # Phase 2 stub — Phase 3+ wires this to the real tradingagents core.
@@ -236,6 +289,10 @@ def build_app(*, token: str) -> FastAPI:
             ticker = (start.get("ticker") or "").upper()
             trade_date = start.get("trade_date") or ""
             config = ProviderConfig.from_dict(start.get("provider_config"))
+            # Optional. Set by Analyze.tsx after a renderer-side cost-guard
+            # check. If absent on a live debate, the WS handler auto-reserves
+            # below for backward compatibility.
+            reservation_id = start.get("reservation_id") or None
 
             # Best-effort data fetch; debate degrades gracefully if it fails.
             summary = await _fetch_summary_safe(ticker=ticker, trade_date=trade_date)
@@ -256,6 +313,37 @@ def build_app(*, token: str) -> FastAPI:
                 captured_events.append(evt)
 
             if config is not None:
+                # CostGuard auto-reserve when the renderer didn't pre-reserve.
+                # Older renderer versions don't send reservation_id; rather
+                # than reject them, we reserve server-side with override=False.
+                # If the cap is exceeded, we send a structured error event
+                # and close — renderer can surface this as a "configure caps
+                # in Settings" hint.
+                if not reservation_id:
+                    try:
+                        auto = cost_guard.reserve(
+                            model=config.model,
+                            auth_kind=config.auth_kind,
+                            max_tokens=config.max_tokens,
+                            override=False,
+                        )
+                        reservation_id = auto.reservation_id
+                    except cost_guard.CostGuardBlocked as exc:
+                        evt = {
+                            "type": "cost.blocked",
+                            "over_dimension": exc.over_dimension,
+                            "spend": cost_guard.spend_to_dict(exc.spend),
+                            "config": cost_guard.config_to_dict(exc.config),
+                            "est_cost_usd": round(exc.est_cost, 6),
+                            "message": (
+                                f"Live debate blocked: would exceed {exc.over_dimension} "
+                                f"cap. Configure higher caps in Settings or use override."
+                            ),
+                        }
+                        await ws.send_json(evt)
+                        captured_events.append(evt)
+                        await ws.close(code=1008, reason="cost_guard_blocked")
+                        return
                 # Live debate path. Each agent.message arrives as the LLM
                 # response completes — we throttle a little between events
                 # so the UI's transition animations are still visible.
@@ -265,6 +353,7 @@ def build_app(*, token: str) -> FastAPI:
                     summary=summary,
                     headlines=headlines,
                     config=config,
+                    reservation_id=reservation_id,
                 ):
                     await ws.send_json(event)
                     captured_events.append(event)
@@ -328,6 +417,7 @@ def _persist_session_safe(
         input_tokens=complete.get("input_tokens"),
         output_tokens=complete.get("output_tokens"),
         estimated_cost_usd=complete.get("estimated_cost_usd"),
+        auth_kind=complete.get("auth_kind"),
     )
 
 
@@ -385,3 +475,24 @@ class AnalyzeRequest(BaseModel):
 class WatchlistAddRequest(BaseModel):
     ticker: str = Field(min_length=1, max_length=8)
     note: str | None = Field(default=None, max_length=200)
+
+
+class CostGuardConfigRequest(BaseModel):
+    """All fields optional — only provided fields are updated (PATCH semantics
+    on a PUT for simplicity)."""
+
+    enabled: bool | None = None
+    cap_daily_usd: float | None = Field(default=None, ge=0)
+    cap_weekly_usd: float | None = Field(default=None, ge=0)
+    cap_monthly_usd: float | None = Field(default=None, ge=0)
+    cap_sessions_per_day: int | None = Field(default=None, ge=0)
+
+
+class CostGuardCheckRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=120)
+    auth_kind: str = Field(pattern=r"^(api_key|oauth)$")
+    max_tokens: int = Field(default=400, ge=1, le=8000)
+
+
+class CostGuardReserveRequest(CostGuardCheckRequest):
+    override: bool = False

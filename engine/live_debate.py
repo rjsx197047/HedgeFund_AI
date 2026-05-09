@@ -265,6 +265,10 @@ def _parse_decision(content: str) -> dict:
     return {"action": action, "confidence": confidence, "reasoning": reasoning}
 
 
+# Imported lazily inside finalize so cost_guard's import chain (which pulls
+# in this module's symbols) doesn't fight at module-load time.
+
+
 async def live_debate(
     *,
     ticker: str,
@@ -272,6 +276,7 @@ async def live_debate(
     summary: Optional[QuoteSummary],
     headlines: Optional[list[Headline]],
     config: ProviderConfig,
+    reservation_id: Optional[str] = None,
 ) -> AsyncIterator[dict]:
     """Real-LLM debate. Yields the same event shapes as `canned_debate`.
 
@@ -418,10 +423,14 @@ async def live_debate(
             "decision": final_decision,
             "live": True,
             "provider": config.provider,
+            "auth_kind": config.auth_kind,
             "model": config.model,
             "input_tokens": state.input_tokens,
             "output_tokens": state.output_tokens,
-            "estimated_cost_usd": round(cost, 4),
+            # OAuth sessions bill via subscription — record 0 so the cost
+            # ledger only reflects per-token API spend. Tokens still recorded
+            # above for telemetry.
+            "estimated_cost_usd": 0.0 if config.auth_kind == "oauth" else round(cost, 4),
         }
         yielded_complete = True
     finally:
@@ -433,6 +442,30 @@ async def live_debate(
             await adapter.close()
         except Exception:  # noqa: BLE001 — cleanup is best-effort
             pass
+        # Finalize the CostGuard reservation regardless of how we exited.
+        # Imported lazily so test setups that don't hit cost_guard don't
+        # pay the import cost.
+        if reservation_id:
+            try:
+                from . import cost_guard as _cost_guard
+
+                # Bill the actual partial cost on early exit; full cost on
+                # normal completion. OAuth always finalizes at 0.0.
+                final_cost = (
+                    0.0
+                    if config.auth_kind == "oauth"
+                    else estimate_cost(
+                        config.model, state.input_tokens, state.output_tokens
+                    )
+                )
+                _cost_guard.finalize_reservation(
+                    reservation_id, actual_cost_usd=final_cost
+                )
+            except Exception as exc:  # noqa: BLE001 — finalize is best-effort
+                sys.stderr.write(
+                    f"[live_debate] cost_guard finalize failed: "
+                    f"{type(exc).__name__}: {exc}\n"
+                )
         if not yielded_complete:
             sys.stderr.write(
                 f"[live_debate] disconnected mid-stream provider={config.provider} "
