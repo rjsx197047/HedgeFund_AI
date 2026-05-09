@@ -115,7 +115,7 @@ export function buildMenu(getWin: () => BrowserWindow | null): Menu {
     label: 'Help',
     submenu: [
       {
-        label: 'TradingAgentsLab on GitHub',
+        label: 'Trading Agents Lab on GitHub',
         click: () => shell.openExternal(REPO_URL),
       },
       {

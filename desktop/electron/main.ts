@@ -17,6 +17,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 process.env.APP_ROOT = path.join(__dirname, '..');
 
+// Display name for the macOS menu bar, dock tooltip, and the first menu
+// item next to the Apple logo. Must be called before `app.whenReady()`
+// resolves and before the menu template references `app.name`.
+// Repo / package names stay one word ("TradingAgentsLab") — only the
+// user-facing display surface is three words.
+app.setName('Trading Agents Lab');
+
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
 
@@ -30,7 +37,7 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: '#0d1117',
     titleBarStyle: 'hiddenInset',
-    title: 'TradingAgentsLab',
+    title: 'Trading Agents Lab',
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       contextIsolation: true,
