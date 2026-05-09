@@ -51,6 +51,10 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   const [engineStatus, setEngineStatus] = useState<EngineStatus>('pending');
   const [engineError, setEngineError] = useState<string | null>(null);
   const [dataProvider, setDataProvider] = useState<string | null>(null);
+  /** Per-stream asset class set from the latest data.summary event. Used to
+   * surface a "crypto" badge on the Data card so users can confirm the
+   * engine routed to the crypto endpoint, not the equities one. */
+  const [assetClass, setAssetClass] = useState<'equity' | 'crypto' | null>(null);
   const [events, setEvents] = useState<DebateEvent[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -216,22 +220,23 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     };
   }, []);
 
-  // Reflect the actual data provider used per stream. The engine emits the
-  // source on every data.summary event ("yfinance" | "alpaca" | ...). The
-  // /health seed only knows the engine's default; per-stream Alpaca routing
-  // shows up here.
+  // Reflect the actual data provider + asset class used per stream. The
+  // engine emits source ("yfinance" | "alpaca") and asset_class ("equity"
+  // | "crypto") on every data.summary event. The /health seed only knows
+  // the engine's default provider; per-stream routing + asset class show up
+  // here once the first data.summary arrives.
   useEffect(() => {
     for (let i = events.length - 1; i >= 0; i--) {
       const evt = events[i];
       if (evt.type === 'data.summary') {
         const src = (evt as { source?: string }).source;
-        if (src && src !== dataProvider) {
-          setDataProvider(src);
-        }
+        const ac = (evt as { asset_class?: 'equity' | 'crypto' }).asset_class;
+        if (src && src !== dataProvider) setDataProvider(src);
+        if (ac && ac !== assetClass) setAssetClass(ac);
         break;
       }
     }
-  }, [events, dataProvider]);
+  }, [events, dataProvider, assetClass]);
 
   // Reset state when the menu fires "New analysis".
   useEffect(() => {
@@ -368,6 +373,11 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     setEvents([]);
     setStreamError(null);
     setCopied(false);
+    // Reset asset class so the previous run's "crypto" badge doesn't bleed
+    // into a new equity analysis (or vice versa) before the first
+    // data.summary event arrives. dataProvider stays as-is — it's the
+    // engine default until overridden.
+    setAssetClass(null);
     isStreamingRef.current = true;
     setIsStreaming(true);
     try {
@@ -786,13 +796,19 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
                 dataProvider ? styles.statusDotOk : styles.statusDotPending
               }
             />
-            {dataProvider ? `${dataProvider} · live` : 'Pending…'}
+            {dataProvider
+              ? `${dataProvider}${assetClass === 'crypto' ? ' · crypto' : ''} · live`
+              : 'Pending…'}
           </div>
           <div className={styles.statusHint}>
             {dataProvider === 'alpaca'
-              ? 'Alpaca Markets · SIP feed (15-min delayed)'
+              ? assetClass === 'crypto'
+                ? 'Alpaca crypto feed · v1beta3'
+                : 'Alpaca Markets · SIP feed (15-min delayed)'
               : dataProvider === 'yfinance'
-                ? 'Yahoo Finance · free · default'
+                ? assetClass === 'crypto'
+                  ? 'Yahoo Finance · crypto pair'
+                  : 'Yahoo Finance · free · default'
                 : 'yfinance default · Alpaca optional'}
           </div>
         </div>

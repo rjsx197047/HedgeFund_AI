@@ -230,3 +230,108 @@ def test_default_provider_remains_yfinance():
     from engine.data_providers import default_provider
     assert isinstance(default_provider, YFinanceProvider)
     assert default_provider.name == "yfinance"
+
+
+# ---- Crypto branch — separate endpoint + response shape -------------------
+
+
+@pytest.mark.asyncio
+async def test_alpaca_crypto_quote_summary_uses_v1beta3_endpoint():
+    """BTC routes to /v1beta3/crypto/us/bars with symbols=BTC/USD,
+    NOT /v2/stocks/BTC/bars (which would 404 or return wrong asset)."""
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        # Crypto response shape: bars keyed by symbol
+        return httpx.Response(
+            200,
+            json={
+                "bars": {
+                    "BTC/USD": [
+                        {"t": "2026-05-06T00:00:00Z", "o": 60000.0, "h": 61000.0, "l": 59500.0, "c": 60500.0, "v": 1500.5},
+                        {"t": "2026-05-07T00:00:00Z", "o": 60500.0, "h": 62000.0, "l": 60000.0, "c": 61800.0, "v": 1800.2},
+                        {"t": "2026-05-08T00:00:00Z", "o": 61800.0, "h": 63500.0, "l": 61500.0, "c": 63000.0, "v": 2100.7},
+                    ]
+                }
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+
+    def patched_client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    import httpx as httpx_mod
+    httpx_mod.AsyncClient = patched_client  # type: ignore[assignment]
+    try:
+        p = AlpacaProvider(key_id="PK_TEST", secret="secret_test")
+        # Pass bare "BTC" — normalization should detect crypto + route correctly.
+        summary = await p.quote_summary(ticker="BTC", trade_date="2026-05-09", lookback_days=24)
+    finally:
+        httpx_mod.AsyncClient = real_client  # type: ignore[assignment]
+
+    assert len(captured) == 1
+    req = captured[0]
+    # MUST hit /v1beta3/crypto/us/bars, not /v2/stocks/BTC/bars
+    assert "/v1beta3/crypto/us/bars" in str(req.url)
+    assert "/v2/stocks" not in str(req.url)
+    qp = dict(req.url.params)
+    assert qp["symbols"] == "BTC/USD"
+    assert qp["timeframe"] == "1Day"
+    # Crypto requests do NOT include the SIP feed param
+    assert "feed" not in qp
+    # Result mapping
+    assert summary.source == "alpaca"
+    assert summary.asset_class == "crypto"
+    assert summary.ticker == "BTC/USD"  # display form
+    assert summary.last_close == 63000.00
+    assert summary.sessions == 3
+
+
+@pytest.mark.asyncio
+async def test_alpaca_crypto_news_uses_base_symbol_not_pair():
+    """News endpoint takes the base ('BTC') for crypto, not the pair ('BTC/USD'),
+    for broader headline coverage."""
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "news": [
+                    {
+                        "headline": "Bitcoin breaks $63k",
+                        "summary": "BTC rallies on ETF inflows",
+                        "created_at": "2026-05-08T12:00:00Z",
+                        "source": "test_source",
+                        "url": "https://example.com/btc",
+                    }
+                ]
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+
+    def patched_client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    import httpx as httpx_mod
+    httpx_mod.AsyncClient = patched_client  # type: ignore[assignment]
+    try:
+        p = AlpacaProvider(key_id="PK_TEST", secret="secret_test")
+        out = await p.news_headlines(ticker="BTC/USD", limit=5)
+    finally:
+        httpx_mod.AsyncClient = real_client  # type: ignore[assignment]
+
+    assert len(captured) == 1
+    req = captured[0]
+    # News endpoint takes the BASE ("BTC"), not the pair ("BTC/USD")
+    assert dict(req.url.params)["symbols"] == "BTC"
+    assert len(out) == 1
+    assert out[0].title == "Bitcoin breaks $63k"

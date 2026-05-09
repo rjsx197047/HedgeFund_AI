@@ -240,8 +240,10 @@ export interface SessionCompleteEvent {
   estimated_cost_usd?: number;
 }
 
+export type AssetClass = 'equity' | 'crypto';
+
 export interface QuoteSummary {
-  ticker: string;
+  ticker: string;          // canonical display form (e.g. "NVDA" or "BTC/USD")
   trade_date: string;
   as_of: string;
   last_close: number;
@@ -252,6 +254,8 @@ export interface QuoteSummary {
   avg_volume: number;
   sessions: number;
   source: string;
+  /** "equity" or "crypto" — set by the engine based on ticker normalization. */
+  asset_class?: AssetClass;
 }
 
 export interface Headline {

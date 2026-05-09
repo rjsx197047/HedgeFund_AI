@@ -28,6 +28,8 @@ from typing import Optional, Protocol
 
 import httpx
 
+from .ticker import AssetClass, TickerSpec, normalize_ticker
+
 
 @dataclass
 class QuoteSummary:
@@ -38,7 +40,7 @@ class QuoteSummary:
     they need detail, they call a tool.
     """
 
-    ticker: str
+    ticker: str                # canonical display form (e.g. "NVDA" or "BTC/USD")
     trade_date: str            # YYYY-MM-DD the analysis is anchored on
     as_of: str                 # YYYY-MM-DD of the latest bar actually used
     last_close: float
@@ -49,6 +51,7 @@ class QuoteSummary:
     avg_volume: float          # mean daily volume across the lookback window
     sessions: int              # number of trading days in the lookback
     source: str                # "yfinance" | "alpaca" | ...
+    asset_class: AssetClass = "equity"  # "equity" | "crypto"
 
 
 @dataclass
@@ -67,6 +70,10 @@ class BaseDataProvider(Protocol):
     or returns no data, raise `DataUnavailable` rather than silently returning
     a partial summary. The engine surfaces `DataUnavailable` to the renderer
     as a graceful "data offline" state.
+
+    Both methods take `ticker: str` for backward compatibility — implementations
+    call `normalize_ticker(ticker)` internally to get the asset-class-aware
+    `TickerSpec` and route to equity vs crypto endpoints as needed.
     """
 
     name: str
@@ -101,32 +108,64 @@ class YFinanceProvider:
         # cost until a provider that needs it is actually instantiated.
         import asyncio
 
-        return await asyncio.to_thread(
-            _yfinance_quote_summary, ticker, trade_date, lookback_days
+        spec = normalize_ticker(ticker)
+        t0 = datetime.now(timezone.utc)
+        try:
+            summary = await asyncio.to_thread(
+                _yfinance_quote_summary, spec, trade_date, lookback_days
+            )
+        except DataUnavailable as exc:
+            sys.stderr.write(f"[yfinance] bars FAILED {spec.display} ({exc})\n")
+            raise
+        elapsed_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
+        sys.stderr.write(
+            f"[yfinance] bars OK {summary.ticker} ({spec.asset_class}) → "
+            f"{summary.sessions} bars · close=${summary.last_close} "
+            f"change={summary.period_change_pct:+.2f}% in {elapsed_ms}ms\n"
         )
+        return summary
 
     async def news_headlines(
         self, *, ticker: str, limit: int = 5
     ) -> list[Headline]:
         import asyncio
 
-        return await asyncio.to_thread(_yfinance_news_headlines, ticker, limit)
+        spec = normalize_ticker(ticker)
+        t0 = datetime.now(timezone.utc)
+        try:
+            headlines = await asyncio.to_thread(
+                _yfinance_news_headlines, spec.yfinance_symbol, limit
+            )
+        except Exception as exc:  # noqa: BLE001
+            sys.stderr.write(
+                f"[yfinance] news FAILED {spec.display} ({type(exc).__name__}: {exc})\n"
+            )
+            return []
+        elapsed_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
+        sys.stderr.write(
+            f"[yfinance] news OK {spec.display} → {len(headlines)} headlines in {elapsed_ms}ms\n"
+        )
+        return headlines
 
 
 def _yfinance_quote_summary(
-    ticker: str, trade_date: str, lookback_days: int
+    spec: TickerSpec, trade_date: str, lookback_days: int
 ) -> QuoteSummary:
     import yfinance as yf
 
     end = _parse_date(trade_date) + timedelta(days=1)  # yfinance end is exclusive
-    start = end - timedelta(days=lookback_days + 5)    # +5 cushion for weekends/holidays
+    # Crypto trades 24/7 — no need for weekend cushion. Equities need ~5d
+    # cushion for weekends + holidays inside the lookback window.
+    cushion = 0 if spec.asset_class == "crypto" else 5
+    start = end - timedelta(days=lookback_days + cushion)
 
-    yt = yf.Ticker(ticker.upper())
+    yt = yf.Ticker(spec.yfinance_symbol)
     hist = yt.history(start=start.isoformat(), end=end.isoformat())
     if hist is None or hist.empty:
         raise DataUnavailable(
-            f"yfinance returned no data for {ticker} between "
-            f"{start.isoformat()} and {end.isoformat()}"
+            f"yfinance returned no data for {spec.display} (yf symbol "
+            f"{spec.yfinance_symbol}) between {start.isoformat()} and "
+            f"{end.isoformat()}"
         )
 
     # Drop timezone for cleaner display + ensure we use only complete bars.
@@ -138,8 +177,11 @@ def _yfinance_quote_summary(
     first = hist.iloc[0]
     as_of = hist.index[-1].date().isoformat()
 
-    last_close = float(round(last["Close"], 2))
-    first_open = float(round(first["Open"], 2))
+    # Crypto prices can be fractional — round to 4 dp instead of 2 for
+    # sub-dollar tokens, otherwise 2 dp like equities.
+    price_dp = 4 if spec.asset_class == "crypto" and float(last["Close"]) < 10 else 2
+    last_close = float(round(last["Close"], price_dp))
+    first_open = float(round(first["Open"], price_dp))
     period_change_pct = (
         round((last_close - first_open) / first_open * 100, 2)
         if first_open
@@ -147,17 +189,18 @@ def _yfinance_quote_summary(
     )
 
     return QuoteSummary(
-        ticker=ticker.upper(),
+        ticker=spec.display,
         trade_date=trade_date,
         as_of=as_of,
         last_close=last_close,
         period_open=first_open,
-        period_high=float(round(hist["High"].max(), 2)),
-        period_low=float(round(hist["Low"].min(), 2)),
+        period_high=float(round(hist["High"].max(), price_dp)),
+        period_low=float(round(hist["Low"].min(), price_dp)),
         period_change_pct=period_change_pct,
         avg_volume=float(round(hist["Volume"].mean(), 0)),
         sessions=int(len(hist)),
         source="yfinance",
+        asset_class=spec.asset_class,
     )
 
 
@@ -244,9 +287,16 @@ class AlpacaProvider:
     async def quote_summary(
         self, *, ticker: str, trade_date: str, lookback_days: int = 30
     ) -> QuoteSummary:
-        symbol = ticker.upper()
+        spec = normalize_ticker(ticker)
+        if spec.asset_class == "crypto":
+            return await self._crypto_quote_summary(spec, trade_date, lookback_days)
+        return await self._equity_quote_summary(spec, trade_date, lookback_days)
+
+    async def _equity_quote_summary(
+        self, spec: TickerSpec, trade_date: str, lookback_days: int
+    ) -> QuoteSummary:
+        symbol = spec.alpaca_symbol
         # Pin `end` to now-16min to satisfy the free-tier SIP recency cap.
-        # Use ISO-8601 UTC.
         end_dt = datetime.now(timezone.utc) - timedelta(seconds=_ALPACA_SIP_END_DELAY_SECONDS)
         start_dt = end_dt - timedelta(days=lookback_days + 5)
         url = f"{ALPACA_DATA_BASE_URL}/v2/stocks/{symbol}/bars"
@@ -258,21 +308,34 @@ class AlpacaProvider:
             "end": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "adjustment": "raw",
         }
+        t0 = datetime.now(timezone.utc)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, params=params, headers=self._headers())
         except Exception as exc:  # noqa: BLE001 — surface as DataUnavailable
+            sys.stderr.write(
+                f"[alpaca] bars FAILED {symbol} ({type(exc).__name__}: {exc})\n"
+            )
             raise DataUnavailable(
                 f"alpaca request failed for {symbol}: {type(exc).__name__}: {exc}"
             ) from exc
+        elapsed_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
 
         if resp.status_code == 401 or resp.status_code == 403:
+            sys.stderr.write(
+                f"[alpaca] bars AUTH-FAIL {symbol} status={resp.status_code} "
+                f"in {elapsed_ms}ms\n"
+            )
             raise DataUnavailable(
                 f"alpaca rejected credentials ({resp.status_code}). "
                 "Check that you pasted PAPER keys (TradingAgentsLab connects only "
                 "to data.alpaca.markets — live keys won't work here)."
             )
         if resp.status_code != 200:
+            sys.stderr.write(
+                f"[alpaca] bars NON-200 {symbol} status={resp.status_code} "
+                f"body={resp.text[:120]!r}\n"
+            )
             raise DataUnavailable(
                 f"alpaca returned {resp.status_code} for {symbol}: {resp.text[:200]}"
             )
@@ -280,6 +343,10 @@ class AlpacaProvider:
         body = resp.json() or {}
         bars = body.get("bars") or []
         if not bars:
+            sys.stderr.write(
+                f"[alpaca] bars EMPTY {symbol} ({start_dt.date().isoformat()} → "
+                f"{end_dt.date().isoformat()})\n"
+            )
             raise DataUnavailable(
                 f"alpaca returned no bars for {symbol} between "
                 f"{start_dt.date().isoformat()} and {end_dt.date().isoformat()}"
@@ -301,8 +368,13 @@ class AlpacaProvider:
         avg_volume = sum(float(b.get("v") or 0.0) for b in bars) / max(1, len(bars))
         as_of = (last.get("t") or "")[:10]  # "2026-05-08T20:00:00Z" -> "2026-05-08"
 
+        sys.stderr.write(
+            f"[alpaca] bars OK {spec.display} (equity) → {len(bars)} bars · "
+            f"close=${round(last_close, 2)} change={period_change_pct:+.2f}% "
+            f"in {elapsed_ms}ms\n"
+        )
         return QuoteSummary(
-            ticker=symbol,
+            ticker=spec.display,
             trade_date=trade_date,
             as_of=as_of,
             last_close=round(last_close, 2),
@@ -313,12 +385,125 @@ class AlpacaProvider:
             avg_volume=float(round(avg_volume, 0)),
             sessions=int(len(bars)),
             source="alpaca",
+            asset_class="equity",
+        )
+
+    async def _crypto_quote_summary(
+        self, spec: TickerSpec, trade_date: str, lookback_days: int
+    ) -> QuoteSummary:
+        """Crypto bars via the v1beta3 endpoint.
+
+        Differences from equities:
+        - Different URL path (/v1beta3/crypto/us/bars)
+        - Symbol passed as `symbols=BTC/USD` query param (not in path)
+        - Response shape: `{"bars": {"BTC/USD": [{t,o,h,l,c,v,n,vw}, ...]}}`
+        - No `feed` parameter (no SIP feed concept for crypto)
+        - No 15-min recency cap (crypto data is real-time on free tier)
+        - 24/7 market — no weekend cushion
+        """
+        end_dt = datetime.now(timezone.utc)
+        start_dt = end_dt - timedelta(days=lookback_days + 2)
+        url = f"{ALPACA_DATA_BASE_URL}/v1beta3/crypto/us/bars"
+        params = {
+            "symbols": spec.alpaca_symbol,
+            "timeframe": "1Day",
+            "limit": str(max(1, lookback_days + 2)),
+            "start": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "end": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        t0 = datetime.now(timezone.utc)
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params, headers=self._headers())
+        except Exception as exc:  # noqa: BLE001
+            sys.stderr.write(
+                f"[alpaca] crypto bars FAILED {spec.alpaca_symbol} "
+                f"({type(exc).__name__}: {exc})\n"
+            )
+            raise DataUnavailable(
+                f"alpaca crypto request failed for {spec.alpaca_symbol}: "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+        elapsed_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
+
+        if resp.status_code in (401, 403):
+            sys.stderr.write(
+                f"[alpaca] crypto bars AUTH-FAIL {spec.alpaca_symbol} "
+                f"status={resp.status_code} in {elapsed_ms}ms\n"
+            )
+            raise DataUnavailable(
+                f"alpaca rejected credentials ({resp.status_code}) for crypto. "
+                "Check that you pasted PAPER keys."
+            )
+        if resp.status_code != 200:
+            sys.stderr.write(
+                f"[alpaca] crypto bars NON-200 {spec.alpaca_symbol} "
+                f"status={resp.status_code} body={resp.text[:120]!r}\n"
+            )
+            raise DataUnavailable(
+                f"alpaca crypto returned {resp.status_code} for "
+                f"{spec.alpaca_symbol}: {resp.text[:200]}"
+            )
+
+        body = resp.json() or {}
+        # Crypto response: {"bars": {"BTC/USD": [...]}, "next_page_token": ...}
+        bars_by_symbol = body.get("bars") or {}
+        bars = bars_by_symbol.get(spec.alpaca_symbol) or []
+        if not bars:
+            sys.stderr.write(
+                f"[alpaca] crypto bars EMPTY {spec.alpaca_symbol} "
+                f"({start_dt.date().isoformat()} → {end_dt.date().isoformat()})\n"
+            )
+            raise DataUnavailable(
+                f"alpaca returned no crypto bars for {spec.alpaca_symbol} between "
+                f"{start_dt.date().isoformat()} and {end_dt.date().isoformat()}"
+            )
+
+        bars = bars[-lookback_days:]
+        first = bars[0]
+        last = bars[-1]
+        first_open = float(first.get("o") or 0.0)
+        last_close = float(last.get("c") or 0.0)
+        period_change_pct = (
+            round((last_close - first_open) / first_open * 100, 2)
+            if first_open
+            else 0.0
+        )
+        period_high = max(float(b.get("h") or 0.0) for b in bars)
+        period_low = min(float(b.get("l") or 0.0) for b in bars if b.get("l") is not None)
+        avg_volume = sum(float(b.get("v") or 0.0) for b in bars) / max(1, len(bars))
+        as_of = (last.get("t") or "")[:10]
+
+        # Crypto can be sub-dollar; use 4dp precision when small.
+        price_dp = 4 if last_close < 10 else 2
+        sys.stderr.write(
+            f"[alpaca] crypto bars OK {spec.display} → {len(bars)} bars · "
+            f"close=${round(last_close, price_dp)} change={period_change_pct:+.2f}% "
+            f"in {elapsed_ms}ms\n"
+        )
+        return QuoteSummary(
+            ticker=spec.display,
+            trade_date=trade_date,
+            as_of=as_of,
+            last_close=round(last_close, price_dp),
+            period_open=round(first_open, price_dp),
+            period_high=round(period_high, price_dp),
+            period_low=round(period_low, price_dp),
+            period_change_pct=period_change_pct,
+            avg_volume=float(round(avg_volume, 0)),
+            sessions=int(len(bars)),
+            source="alpaca",
+            asset_class="crypto",
         )
 
     async def news_headlines(
         self, *, ticker: str, limit: int = 5
     ) -> list[Headline]:
-        symbol = ticker.upper()
+        spec = normalize_ticker(ticker)
+        # Alpaca's news endpoint accepts both equity tickers ("NVDA") and
+        # crypto base symbols ("BTC") — use the base for crypto so we get
+        # broader bitcoin coverage rather than just BTC/USD trade-pair news.
+        symbol = spec.base if spec.asset_class == "crypto" else spec.alpaca_symbol
         url = f"{ALPACA_DATA_BASE_URL}/v1beta1/news"
         params = {
             "symbols": symbol,
@@ -326,20 +511,21 @@ class AlpacaProvider:
             "include_content": "false",
             "sort": "desc",
         }
+        t0 = datetime.now(timezone.utc)
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url, params=params, headers=self._headers())
         except Exception as exc:  # noqa: BLE001
             sys.stderr.write(
-                f"[alpaca] news request failed for {symbol}: "
-                f"{type(exc).__name__}: {exc}\n"
+                f"[alpaca] news FAILED {symbol} ({type(exc).__name__}: {exc})\n"
             )
             return []
+        elapsed_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
 
         if resp.status_code != 200:
             sys.stderr.write(
-                f"[alpaca] news returned {resp.status_code} for {symbol}: "
-                f"{resp.text[:200]}\n"
+                f"[alpaca] news NON-200 {symbol} status={resp.status_code} "
+                f"body={resp.text[:120]!r}\n"
             )
             return []
 
@@ -365,6 +551,9 @@ class AlpacaProvider:
                     summary=summary,
                 )
             )
+        sys.stderr.write(
+            f"[alpaca] news OK {spec.display} → {len(headlines)} headlines in {elapsed_ms}ms\n"
+        )
         return headlines
 
 

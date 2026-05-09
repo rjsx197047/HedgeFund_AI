@@ -12,6 +12,7 @@ Auth: all endpoints require `Authorization: Bearer <token>` header (or
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from typing import Annotated, Any
 
@@ -305,6 +306,15 @@ def build_app(*, token: str) -> FastAPI:
             data_provider: BaseDataProvider = (
                 provider_from_data_config(start.get("data_config")) or default_provider
             )
+            llm_label = (
+                f"{config.provider}/{config.auth_kind}/{config.model}"
+                if config is not None
+                else "stub"
+            )
+            sys.stderr.write(
+                f"[ws] OPEN ticker={ticker} date={trade_date} "
+                f"data={data_provider.name} llm={llm_label}\n"
+            )
 
             # Best-effort data fetch; debate degrades gracefully if it fails.
             summary = await _fetch_summary_safe(
@@ -395,8 +405,12 @@ def build_app(*, token: str) -> FastAPI:
                 events=captured_events,
             )
 
+            sys.stderr.write(
+                f"[ws] CLOSE ticker={ticker} events={len(captured_events)} code=1000\n"
+            )
             await ws.close(code=1000)
         except WebSocketDisconnect:
+            sys.stderr.write(f"[ws] DISCONNECT ticker={ticker} mid-stream\n")
             return
 
     return app
@@ -490,6 +504,7 @@ def _summary_to_dict(summary: QuoteSummary) -> dict[str, Any]:
         "avg_volume": summary.avg_volume,
         "sessions": summary.sessions,
         "source": summary.source,
+        "asset_class": summary.asset_class,
     }
 
 

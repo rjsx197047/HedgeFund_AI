@@ -76,9 +76,13 @@ _AGENTS: list[_Agent] = [
         system_prompt=(
             "You are a fundamental analyst. Given the ticker and any quoted "
             "price levels, comment briefly on what fundamentals would matter "
-            "most right now (3-5 sentences). If you do not have detailed "
-            "fundamentals data, say so explicitly and explain what you would "
-            "look for."
+            "most right now (3-5 sentences). For equities, focus on earnings, "
+            "balance sheet health, valuation multiples, and competitive moat. "
+            "For crypto / digital assets, focus on tokenomics (supply schedule, "
+            "burn mechanics, issuance), on-chain metrics (active addresses, "
+            "network volume, hash rate), regulatory developments, and macro "
+            "liquidity. If you do not have detailed data, say so explicitly "
+            "and explain what you would look for."
         ),
     ),
     _Agent(
