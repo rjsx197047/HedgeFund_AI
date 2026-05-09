@@ -33,13 +33,27 @@ Why: sidesteps the SEC / financial-advisor regulatory surface entirely. Avoids t
 
 ### Marketing / legal
 
-- **Educational lab + paper-trade simulation only.** Never recommend, market, promote, or train on real-money trading in code, copy, or chat with the user.
-- **Disclaimer language** in any user-facing text: *"For educational research and paper trading. This is not investment advice."*
-- **Banned phrasing in user-facing copy:** "trading app," "execute trades," "broker integration," "live trading," "order management."
-- **Approved phrasing:** "analysis platform," "research tool," "paper-trade simulation," "multi-agent LLM analysis."
+- **Educational research only.** Never recommend, market, promote, or train on real-money trading in code, copy, or chat with the user.
+- **Disclaimer language is locked** in three tiers (persistent footer / inline below decision card / page-level full text). See `project_disclaimer_language.md` in memory for verbatim copy. SEC's 2026 enforcement priority is "AI washing" — boilerplate alone doesn't shield. Always pair disclaimer with honest AI-capability disclosure.
+- **Banned phrasing in user-facing copy:** "trading app," "execute trades," "broker integration," "live trading," "order management," "AI-powered trading," "outperforms the market," "predicts," "forecasts," any guarantee or performance claim.
+- **Approved phrasing:** "analysis platform," "research tool," "educational lab," "multi-agent LLM analysis," "surfaces multiple perspectives."
+- **Mission statement (canonical):** *"Trading Agents Lab provides a high-quality, professional-grade tool purely for educational purposes. We do not force user adoption and we do not provide trading tools — we provide a free resource for analysis and learning."*
 - **Locked phrasing for Clawless relationship:**
   - ✅ "Standalone trading companion for Clawless"
   - ❌ NOT "Clawless extension / plugin / add-on / integration"
+
+### Business model + privacy
+
+- **Free, open-source, zero-monetization** for the foreseeable future. AGPL-3.0. No subscription, no paywall, no premium tier. If monetization is ever considered → engage securities counsel BEFORE shipping anything (the change in business model is the regulatory inflection point).
+- **Public repo never includes broker / live-trading code.** Even feature-flagged. Users may fork for personal modifications; PRs adding execution code are rejected upstream regardless of quality. Per `project_risk_profile_and_education.md`.
+- **Zero data collection — no exceptions.** No analytics SDKs, no telemetry beacons, no error reporting to remote services, no install pings, no user accounts, no email collection. Every renderer fetch goes to `127.0.0.1`. Engine outbound calls only to user-configured providers (yfinance, Alpaca data, LLM providers, future webhooks).
+- **One soft external identifier:** OpenRouter requests carry HTTP-Referer + X-Title courtesy headers (their telemetry, our courtesy). Disclose in Privacy Policy.
+- **Marketing website (when it lands):** brochure-only, no analytics, no tracking. Static site preferred.
+
+### Educational integration
+
+- Trading Agents Lab is a **practical case study for Claudomy.org** (founder's AI education platform). Students read the source to learn multi-agent LLM design.
+- **How to apply:** keep code readable and well-commented; documentation should explain the *why* of choices, not just the *what*. Avoid clever code that's hard to learn from. The codebase is a teaching artifact.
 
 ### Code / license
 

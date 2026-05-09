@@ -1,16 +1,23 @@
-# TradingAgentsLab
+# Trading Agents Lab
 
-> **An open-source desktop lab for studying multi-agent LLM trading research — with paper trading, multi-provider LLM support, and bring-your-own-API-key economics.**
->
-> *For educational research and paper trading. This is not investment advice.*
+> **A free, open-source desktop lab for studying multi-agent LLM analysis of stocks and cryptocurrencies. Bring-your-own-key. Zero data collection.**
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 [![Upstream: Apache 2.0](https://img.shields.io/badge/Upstream-Apache%202.0-green.svg)](LICENSE-APACHE)
 [![Status: Active Development](https://img.shields.io/badge/Status-Active%20Development-orange.svg)](backlog.md)
+[![No Tracking](https://img.shields.io/badge/Tracking-Zero-brightgreen.svg)](#privacy--zero-data-collection)
 
-TradingAgentsLab is a standalone desktop application that lets you watch multi-agent LLM "trading firms" debate a ticker live — fundamentals analyst, sentiment analyst, news analyst, technical analyst, bull researcher, bear researcher, trader, and a risk-management committee — and produce a transparent, auditable trade thesis with a confidence score. Every step of the debate streams into the UI, every transcript is saved locally, and every API call uses your own key (or your own ChatGPT subscription via OAuth).
+> **For educational research only.** Trading Agents Lab is **not** a registered investment advisor and does not provide investment, financial, legal, or tax advice. LLM-generated analyses can be inaccurate or hallucinated. Nothing this software produces is a recommendation to buy, sell, or hold any security, cryptocurrency, or other asset. See the [full disclaimer](#disclaimer) below.
+
+Trading Agents Lab is a standalone desktop application that lets you watch multi-agent LLM "trading firms" debate a ticker live — fundamentals analyst, sentiment analyst, news analyst, technical analyst, bull researcher, bear researcher, trader, and a risk-management committee — and produce a transparent, auditable trade thesis with a confidence score. Every step of the debate streams into the UI, every transcript is saved locally, and every API call uses your own key (or your own ChatGPT subscription via OAuth).
 
 It is **not** a trading bot, brokerage, or signal service. It is a lab for *understanding how LLM agents reason about markets* — built for researchers, students, and traders who want to see the full chain of reasoning behind a recommendation rather than a black-box buy/sell call.
+
+## Mission
+
+> *Trading Agents Lab provides a high-quality, professional-grade tool purely for educational purposes. We do not force user adoption and we do not provide trading tools — we provide a free resource for analysis and learning.*
+
+The project also serves as a practical case study for **[Claudomy.org](https://claudomy.org)**, an AI education platform — a working example of how multi-agent LLM systems can be designed, prompted, and orchestrated end-to-end. Read the source to learn; fork it to build something new.
 
 ---
 
@@ -32,14 +39,16 @@ It is **not** a trading bot, brokerage, or signal service. It is a lab for *unde
 
 ## What it does
 
-- 🧠 **Multi-agent LLM debate.** A team of specialised agents (analysts → researchers → trader → risk-management committee → portfolio manager) reasons about a ticker under your selected LLM, then produces a HOLD / BUY / SELL recommendation with confidence and a complete reasoning trail.
-- 🔌 **Bring your own LLM provider.** First-class support for **OpenAI** (API key or **ChatGPT OAuth via the Codex backend**), **Anthropic**, **OpenRouter**, and **Google Gemini**. Pick your provider per session; switch model per provider with persistent memory of your last choice.
-- 📈 **Real market data, free.** Built-in [yfinance](https://github.com/ranaroussi/yfinance) integration pulls quotes, price history, volume, and Yahoo Finance news headlines into the agent context — no separate market-data subscription required.
-- 💾 **Everything is local.** SQLite session storage, OS-keychain-backed secrets (Electron `safeStorage`), no telemetry, no analytics, no calls home. Your debates, your keys, your machine.
+- 🧠 **Multi-agent LLM debate.** A team of 12 specialised agents (4 analysts → 3 researchers → trader → 4-seat risk committee → portfolio manager) reasons about a ticker under your selected LLM, then produces a HOLD / BUY / SELL recommendation with confidence and a complete reasoning trail.
+- 📈 **Stocks AND cryptocurrencies.** Type `NVDA` for equities or `BTC`, `ETH`, `SOL`, `BTC/USD`, `BTC-USD` for crypto — the engine auto-detects asset class and routes to the right data endpoint. The fundamental analyst's prompt is asset-class-aware (earnings/balance-sheet for equities, tokenomics/on-chain/macro liquidity for crypto).
+- 🔌 **Bring your own LLM provider.** First-class support for **OpenAI** (API key or **ChatGPT OAuth via the Codex backend**), **Anthropic**, **OpenRouter**, and **Google Gemini**. Pick provider per session; switch model per provider with persistent memory of your last choice.
+- 🗂️ **Two market-data providers.** [yfinance](https://github.com/ranaroussi/yfinance) is the free zero-config default. **Alpaca Markets** (free Basic tier) optional for higher-quality SIP-feed data — auto-routed when your API keys are configured, falls back to yfinance otherwise. For crypto news, the engine falls through to yfinance when Alpaca's news endpoint returns thin coverage for mid- and small-cap tokens.
+- 🛡️ **Cost Guard.** Configurable daily / weekly / monthly USD caps + optional sessions-per-day rate cap. TOCTOU-safe atomic reservations prevent parallel debates from blowing the cap. Override modal with 3-second anti-tamper countdown for emergency cases. OAuth subscription paths billed at $0; rate cap protects subscription quotas.
+- 💾 **Everything is local. Zero data collection.** SQLite session storage, OS-keychain-backed secrets (Electron `safeStorage`). **No analytics, no telemetry, no error reporting to remote services, no user accounts, no email collection.** Every renderer fetch hits `127.0.0.1`. The only outbound calls are to your configured providers (yfinance, Alpaca, LLMs) — verifiable in the source.
 - ⌨️ **Native desktop app.** Electron + React + TypeScript on the front, FastAPI + Python sidecar on the back. Cmd+N (new analysis), Cmd+. (stop), Cmd+, (settings), Cmd+1/2/3 (navigate). Real macOS / Windows / Linux app menu.
-- 📰 **News integration.** Per-session headline pull from Yahoo Finance, surfaced in a linked News card and included in transcript export.
-- 🪙 **Cost-aware by design.** Token usage and estimated USD cost shown per session for API-key paths. ChatGPT OAuth sessions route through your subscription (no per-token billing).
-- 🔓 **Open source under AGPL-3.0.** Modify it, study it, self-host it. Commercial licenses available — see [License](#license).
+- 📰 **News integration.** Per-session headline pull from yfinance or Alpaca news (with crypto fallback chain), surfaced in a linked News card and included in transcript export.
+- 🪙 **Cost-aware by design.** Token usage and estimated USD cost shown per session for API-key paths. ChatGPT OAuth sessions route through your subscription — no per-token billing, $0 in the ledger.
+- 🔓 **Open source under AGPL-3.0.** Free forever. Modify it, study it, self-host it, fork it for personal use. No subscription, no paywall, no premium tier.
 
 ## How it works
 
@@ -65,9 +74,11 @@ flowchart LR
         FastAPI["FastAPI<br/>127.0.0.1:dyn"]
         Orchestrator["LiveDebate<br/>orchestrator"]
         Adapters["LLMAdapter Protocol<br/>5 implementations"]
-        DataMod["yfinance<br/>data + news"]
+        DataMod["DataProvider<br/>yfinance + Alpaca<br/>(stocks + crypto)"]
+        CostGuard["CostGuard<br/>budget caps + reservations"]
         FastAPI --> Orchestrator
         Orchestrator --> Adapters
+        Orchestrator --> CostGuard
         FastAPI --> DataMod
     end
 
@@ -80,6 +91,7 @@ flowchart LR
     end
 
     Yahoo[("Yahoo Finance<br/>public data")]
+    Alpaca[("Alpaca Markets<br/>data.alpaca.markets<br/>stocks + crypto")]
 
     User --> Renderer
     Renderer <==>|"WebSocket<br/>debate stream"| FastAPI
@@ -90,9 +102,10 @@ flowchart LR
     Adapters --> OpenRouter
     Adapters --> Codex
     DataMod --> Yahoo
+    DataMod --> Alpaca
 ```
 
-The **desktop** holds your secrets and renders the UI. The **engine** orchestrates the debate and talks to LLMs. They communicate over a local-only WebSocket on `127.0.0.1` with a per-process bearer token. Nothing ever leaves your machine except the LLM API calls (using your own key) and the public yfinance fetches.
+The **desktop** holds your secrets and renders the UI. The **engine** orchestrates the debate, talks to LLMs, and gates spend via CostGuard. They communicate over a local-only WebSocket on `127.0.0.1` with a per-process bearer token. The only outbound calls leaving your machine are to the providers you've explicitly configured (LLM, Alpaca, yfinance). Zero analytics, zero telemetry — see [Privacy](#privacy--zero-data-collection) below.
 
 ### The debate pipeline — 12 agents across 4 phases
 
@@ -207,6 +220,28 @@ bash tools/dev-smoke.sh
 
 All keys are stored encrypted via Electron's native `safeStorage` (OS keychain on macOS, DPAPI on Windows). Keys never leave your machine and are never logged to disk in plaintext.
 
+## Market data providers
+
+Two providers, auto-selected based on what you've configured:
+
+| Provider | Auth | Best for | Notes |
+|---|---|---|---|
+| **yfinance** (default) | none | Zero-config use; equities + crypto via `BTC-USD`-style tickers | Free, public Yahoo Finance scraper. Always available. |
+| **Alpaca Markets** | API key + secret | Higher-quality equities data via SIP feed; native crypto pairs | Free [Basic tier](docs/kb/data-providers.md) is sufficient — analysis use never approaches the 200-req/min cap. Engine hard-codes `data.alpaca.markets` only; the live trading endpoint never appears in the code. |
+
+Routing logic: when both Alpaca Key ID + Secret are stored under Settings → Data Providers, the engine routes per-debate fetches to Alpaca; otherwise yfinance. **For crypto news**, the engine falls through to yfinance when Alpaca's news endpoint returns thin coverage (Alpaca news is robust for BTC/ETH but sparse for mid- and small-cap tokens).
+
+## Cost Guard
+
+Configurable spending caps with TOCTOU-safe atomic reservations so parallel debates can't blow the cap:
+
+- **Three USD windows** (daily / weekly / monthly) — defaults $1 / $5 / $15. Set any to 0 to disable.
+- **Sessions/day rate cap** — protects ChatGPT subscription quotas on the OAuth path (where per-token cost is $0 but rate limits still apply).
+- **Override modal** with a 3-second anti-tamper countdown. Per-session override only — no "remember for the day" bypass.
+- **OAuth-aware policy** — subscription-routed sessions count for rate caps but skip USD caps (cost is genuinely $0 in the ledger).
+
+Configure under Settings → Cost Guard. Current spend visible inline with green/amber/red progress bars.
+
 ## Architecture
 
 TradingAgentsLab is built as **two cooperating processes**:
@@ -229,13 +264,27 @@ TradingAgentsLab/
 └── assets/              Logos, diagrams, screenshots
 ```
 
+## Privacy — zero data collection
+
+This is an explicit design principle, not a marketing claim. Verifiable in the source.
+
+- **No analytics SDKs.** No Sentry, Mixpanel, Amplitude, PostHog, Segment, Google Analytics, gtag — none. Greppable.
+- **No telemetry beacons, no install pings, no error reporting** to remote services.
+- **No user accounts, no email collection, no login** — the app runs entirely without identity.
+- **Every renderer fetch goes to `127.0.0.1`** — the local engine sidecar. No external API calls from the UI directly.
+- **Engine outbound calls** go only to providers you explicitly configure: Yahoo Finance (yfinance), Alpaca Markets (when keys configured), your chosen LLM provider (when keys configured), and any webhooks you set up in a future release.
+- **One soft external identifier**: when you use OpenRouter, our requests carry their recommended `HTTP-Referer` + `X-Title` courtesy headers (their service identifies our app to *them*; not your data to *us*).
+
+Your debates, your transcripts, your decisions — all stay on your machine in `data/sessions.db` (SQLite, plaintext, file-system-permissioned). Want at-rest encryption for transcripts? Store the repo on an encrypted volume (FileVault, BitLocker, LUKS).
+
 ## Roadmap
 
 Phase status lives in [`backlog.md`](backlog.md). High-level:
 
-- ✅ **Phases 0–5 (part 1):** Desktop shell, Python sidecar, end-to-end debate streaming, settings + secrets, multi-provider LLM picker, ChatGPT OAuth, history, watchlist, yfinance market data + news.
-- ⏳ **In progress:** Cost guard with per-day / per-week / per-month budget caps, Playwright UI tests.
-- 🔜 **Next:** Alpaca paper-trading integration, optional Clawless gateway tap, signed distribution builds, auto-update.
+- ✅ **Shipped:** Desktop shell + Python sidecar + end-to-end debate streaming + settings/secrets + multi-provider LLM picker + ChatGPT OAuth + history + watchlist + yfinance + Alpaca data adapter + crypto support (auto-routed, asset-class-aware) + Cost Guard with override UX + compact status strip.
+- ⏳ **In progress:** Playwright UI tests; KB documentation sweep for crypto + Alpaca + Cost Guard.
+- 🔜 **Next:** Optional Clawless gateway tap (Phase 6), webhooks for external broker handoff (Phase 8), launch-prep (Terms of Service, Privacy Policy, brochure marketing site, signed DMG distribution).
+- 🚫 **Out of scope, ever** (per locked positioning): native broker execution, live-trading order management, real-money trade routing. Users may fork for personal modifications; PRs adding execution code are rejected upstream.
 
 ## License
 
@@ -262,7 +311,11 @@ Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and 
 
 ## Disclaimer
 
-TradingAgentsLab is for **educational research and paper trading only**. Nothing produced by the system constitutes financial, investment, or trading advice. LLM agents can and do hallucinate. Do not use any output from this software to make real-money trading decisions without independent verification by a qualified professional.
+**For educational and research purposes only.** Trading Agents Lab is **not a registered investment advisor** and does not provide investment, financial, legal, or tax advice. The multi-agent LLM analyses produced by this software may be inaccurate, incomplete, or outdated — large language models can and do hallucinate. Nothing produced by this software is a recommendation to buy, sell, or hold any security, cryptocurrency, or other asset.
+
+Consult a qualified financial professional before making any investment decision. You assume all risk for any action you take based on output from this software. The maintainers and contributors accept no liability for losses arising from use of this software.
+
+The application contains no order-execution capability and never connects to live trading endpoints. If you fork this software and add execution capability for personal use, you assume sole responsibility for regulatory compliance in your jurisdiction.
 
 ---
 

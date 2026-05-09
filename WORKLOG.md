@@ -6,6 +6,59 @@
 
 ---
 
+## 2026-05-09 — Daylong session: docs cleanup → CostGuard → Alpaca → crypto → strategic posture
+
+**Goal:** Continue from yesterday's OAuth wrap-up. Founder authorized a long autonomous block plus interactive testing. By end-of-day: 18 commits shipping CostGuard end-to-end, locked positioning + memory, Alpaca data adapter (Phase 5b), full crypto support (auto-routed by ticker), compact app-shell status strip, tightened SEC-aware disclaimers, and an upstream-check tool.
+
+**Headline shipped (in order):**
+
+- `8c0db38` — **docs:** rewrote README around TradingAgentsLab + refresh KB. Added 3 Mermaid diagrams (system arch, debate pipeline, sequence). Killed the upstream-dominant 358-line README in favor of 99-line Lab-focused content + acknowledgements at bottom. Updated 8 KB pages including `oauth.md` (NEW) — all stale "wiring in progress" / "OpenAI only" claims cleared.
+- `0b3bc20` — **CostGuard 1/6:** `engine/cost_guard.py` (DAO + math + dataclasses). Storage schema v1→v2 with in-place ALTER for `auth_kind`. 36 unit tests covering window math, worst-case reservation, OAuth bypass, TTL sweep, crash recovery.
+- `d501238` — **CostGuard 2/6:** wire reserve/finalize into `live_debate.py` finally + 4 HTTP endpoints. WS `/stream` reads optional `reservation_id`, auto-reserves on backward-compat path, emits `cost.blocked` event. 15 API integration tests.
+- `6e15c8e` — **CostGuard 3/6:** renderer-side reservation gate in Analyze.tsx + `<CostGuardModal>` with 3-second anti-tamper countdown.
+- `3ccbd05` — **CostGuard 4/6:** Settings → Cost Guard tab with toggle, USD cap inputs, session rate cap, current-period spend bars (green→amber→red).
+- `e96bb30` — **app name:** "Trading Agents Lab" (3 words) for user-facing surfaces. Repo / npm package stay one word.
+- `43bd8df` — **CORS fix:** `engine/server.py` `allow_methods` was missing PUT — Settings → Cost Guard save was failing with "Failed to fetch."
+- `d8fb196` — **green Connected pill universal:** applied yesterday's convention to every SecretRowItem so any stored key flips to green. Alpaca Live rows show "Stored · Inert" (preserves safety messaging).
+- `dcde744` — **Alpaca split-fields:** Settings → Broker now splits Alpaca Paper into Key ID + Secret rows (Alpaca needs both APCA headers).
+- `5d73d7c` — **Positioning lock:** founder formally locked analysis-only-no-execution-ever positioning. Removed Settings → Broker tab. Moved Alpaca to Data Providers as "Alpaca Markets — Key ID/Secret". Backlog Phase 5 part 2 marked REMOVED. New Phase 8 (webhooks) added. CLAUDE.md §3 expanded. Memory: `project_positioning_analysis_only.md`.
+- `5f2e6e3` — **upstream-check tool:** `tools/upstream-check.sh` reports behind-by count; CLAUDE.md gets weekly cadence rule. Verified at upstream/main HEAD (2 commits past v0.2.4 already in our tree).
+- `146933d` — **Phase 5b: Alpaca data adapter end-to-end.** AlpacaProvider hits `data.alpaca.markets/v2/stocks/{symbol}/bars` with `feed=sip` + `end=now-16min`. Auto-routes when keys configured; falls back to yfinance otherwise. Hard-coded base URL (locked positioning safety). 13 unit tests.
+- `0ff70e3` — **Crypto support proper path.** New `engine/ticker.py` for symbol normalization (BTC, BTC-USD, BTC/USD all canonicalize). AlpacaProvider gains `_crypto_quote_summary` using `/v1beta3/crypto/us/bars`. YFinance routes crypto via `BTC-USD`. `fundamental_analyst` prompt updated for crypto fundamentals (tokenomics, on-chain, macro). `asset_class` propagates through `data.summary` event to UI. 17 ticker + 2 alpaca crypto tests.
+- `517d99d` — **yfinance crypto news fallback:** when Alpaca returns 0 headlines for crypto (sparse outside BTC/ETH), silently fall through to yfinance. Equity path unchanged.
+- `fbf226a` — **Compact StatusStrip at app shell.** Founder feedback: 4 bulky cards on Analyze were taking the prime real estate above the debate output. Lifted to 28px row between titleBar and main grid — visible on every page. CustomEvent (`tal:data-provider`) lets per-stream Data routing flow through.
+- `b8e395c` — **Disclaimer tightening (SEC AI-washing aware):** three-tier system locked. Tier 1 footer, Tier 2 inline below decision card, Tier 3 page bottom. Memory: `project_disclaimer_language.md` with banned/approved phrasing.
+- (this commit) — **Strategic posture + README refresh + wrap-up.** Memory: `project_risk_profile_and_education.md` covering free-OSS, Claudomy.org integration, zero-data-collection, public-repo-never-includes-broker-code, launch-prep gating items. README updated with crypto, Alpaca, Cost Guard, mission, privacy section, Tier 3 disclaimer. Backlog Phase 7b (launch prep) added. CLAUDE.md §3 expanded with business model + privacy + educational integration.
+
+**Engine logging mid-day:** Added `[ws] OPEN/CLOSE`, `[alpaca] bars/news OK/FAILED/AUTH-FAIL/NON-200/EMPTY`, `[yfinance] bars/news OK/FAILED`, `[yfinance fallback] news OK` log lines for live-monitor visibility. Founder requested per-step progress visibility; we live-tailed engine stderr via Monitor tool through testing.
+
+**Live testing this session (real LLM, all OAuth/$0):**
+- Equities through Alpaca: NVDA, AAPL, CRCL, BAC — all clean
+- BTC (equity ticker collision — surfaced design gap → backlog item → fixed in 0ff70e3)
+- Crypto via Alpaca v1beta3: ETH ($2,329, +6.37%), ADA ($0.2725, +7.29% — sub-dollar 4dp validated), DOGE ($0.1094, +18.21%)
+- ADA + DOGE confirmed Alpaca news sparseness for non-major crypto → motivated 517d99d yfinance fallback
+
+**Founder strategic statements captured to memory:**
+1. **Locked positioning** — analysis only, no execution code in public repo, even feature-flagged. Webhooks for external broker handoff is the integration model.
+2. **Risk profile + education** — free OSS, no monetization (legal counsel before any change), Claudomy.org case-study integration, zero data collection, brochure-only marketing site, polish to professional standard before public DMG.
+
+**Verification at end-of-day:**
+- 100 engine tests pass (cost_guard 36 + cost_guard_api 15 + ticker 17 + alpaca_provider 15 + others)
+- `dev-smoke.sh` 17/17
+- `npm run type-check` + `npm run build` clean
+- Live UI verified across multiple equities + 3 crypto symbols end-to-end
+
+**Next session opens with:**
+- 18 commits pushed at end-of-day (founder authorized)
+- Live dev stack PID 96112 still running — `pkill -f "engine/.venv/bin/python -m engine"; pkill -f "TradingAgents.*electron"` if not needed
+- Most natural next priorities (founder's call):
+  1. Phase 7b launch-prep items (ToS, Privacy Policy, Cookie Policy, brochure site, DMG distribution)
+  2. KB sweep to add pages for crypto + Alpaca + Cost Guard
+  3. Playwright UI tests (originally planned today; deferred for the strategic-posture work that emerged)
+  4. Phase 6 Clawless gateway tap or Phase 8 webhooks
+
+---
+
 ## 2026-05-09 (continued) — Codex adapter (OAuth → ChatGPT-subscription routing)
 
 **Founder bug report:** OAuth path 429'd with `insufficient_quota`. The OAuth access token was being attached to the standard `/v1/chat/completions` endpoint, which OpenAI treats as a regular API-tier key (and the founder's API quota was exhausted, hence the 429).

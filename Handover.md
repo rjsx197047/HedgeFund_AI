@@ -12,15 +12,45 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-08 — Phase 3 shipping)
+## Where we are right now (as of 2026-05-09 end-of-day — comprehensive update)
 
-### Session in progress
+### Major shipping milestones since the previous Handover
 
-- ✅ Founder rebooted machine cleanly (yesterday's wrap-up worked — `e527632` on origin/main)
-- ✅ Registered as `trading-agents-lab` developer on ClaudeLink
-- ✅ Phase 3 shipped — renderer ↔ engine wired end-to-end (see Phase 3 entry in `WORKLOG.md` and `backlog.md`)
-- ⏳ Continuing into Phase 4 spike (settings page scaffolding) per advisor green-light for unsupervised stretch scope
-- ⏳ Founder away ~4-5 hours; report on return
+- ✅ **CostGuard end-to-end** — engine math + 4 HTTP endpoints + renderer modal + Settings tab. TOCTOU-safe, OAuth-aware ($0 path), 3-second anti-tamper override. (`0b3bc20` → `3ccbd05`)
+- ✅ **Phase 5b Alpaca data adapter** — auto-routed when keys configured, hard-coded `data.alpaca.markets` (locked positioning safety). Free Basic-tier compatible. (`146933d`)
+- ✅ **Crypto support proper path** — `engine/ticker.py` normalization, AlpacaProvider `_crypto_quote_summary` via `/v1beta3/crypto/us/bars`, yfinance crypto branch, asset-class-aware fundamental_analyst prompt, `asset_class` on the wire, Crypto badge on Data card. (`0ff70e3`, `517d99d` for yfinance crypto news fallback)
+- ✅ **Compact StatusStrip** at app shell (28px row, visible on every page, replaces 4 bulky cards on Analyze) — frees prime real estate for the debate output. (`fbf226a`)
+- ✅ **SEC-aware disclaimer tightening** — three-tier system (footer / inline below decision card / page-level full text). Memory: `project_disclaimer_language.md`. (`b8e395c`)
+- ✅ **Locked positioning** — analysis only, no execution code in public repo, ever. Removed Settings → Broker tab. Memory: `project_positioning_analysis_only.md`. (`5d73d7c`)
+- ✅ **Strategic posture (this commit)** — free OSS, zero data collection, Claudomy.org integration, public-repo-never-includes-broker-code, launch-prep gating items. Memory: `project_risk_profile_and_education.md`. README + CLAUDE.md updated.
+- ✅ **App display name** "Trading Agents Lab" (3 words) on user-facing surfaces — macOS app menu, window title, header, footer, brand. (`e96bb30`, `b8e395c`)
+- ✅ **Engine logging upgrade** — `[ws] OPEN/CLOSE`, `[alpaca]`, `[yfinance]`, `[yfinance fallback]` log lines for live-tail visibility during testing.
+- ✅ **Upstream-check tool** — `tools/upstream-check.sh` + weekly cadence rule in CLAUDE.md. We're at upstream/main HEAD (2 commits past v0.2.4 already in tree).
+- ✅ **CORS fix** for PUT preflight that was blocking Settings → Cost Guard saves. (`43bd8df`)
+- ✅ **Universal green Connected pill** on every SecretRowItem (was only OAuth + yfinance). (`d8fb196`)
+
+### Strategic posture lock-ins (memory; load-bearing)
+
+- `project_positioning_analysis_only.md` — analysis-only, no execution code in public repo, webhooks for external broker handoff
+- `project_risk_profile_and_education.md` — free OSS, no monetization, Claudomy.org case study, zero data collection, launch-prep gating items
+- `project_disclaimer_language.md` — three-tier disclaimer copy locked, banned/approved phrasing for AI-washing risk
+- `project_alpaca_data_tier.md` — free Basic tier sufficient; never ship features requiring Algo Trader Plus
+- `feedback_handle_restarts_yourself.md` — engine kill / dev-server cycle done autonomously; founder has no spare terminals
+
+### Verification at end-of-day
+
+- 100 engine tests pass (cost_guard 36 + cost_guard_api 15 + ticker 17 + alpaca_provider 15 + others)
+- `bash tools/dev-smoke.sh` 17/17
+- `npm --prefix desktop run type-check` clean
+- `npm --prefix desktop run build` clean
+- Live UI verified across NVDA, AAPL, CRCL, BAC (equities) + ETH, ADA, DOGE (crypto) end-to-end
+- Founder's Alpaca Basic-tier credentials confirmed working for both stocks and crypto endpoints
+
+### Live state at session end
+
+- Dev stack PID 96112 (engine) + Electron + Vite still running for any morning testing
+- Kill cleanly with: `pkill -f "engine/.venv/bin/python -m engine"; sleep 1; pkill -TERM -f "TradingAgents.*electron"; sleep 2; pkill -f "TradingAgents.*\.bin/vite"`
+- 18 commits ready to push (founder authorized end-of-day push)
 
 ### Done — Phase 0 → Phase 3 → Phase 4 → Phase 5p1 → Phase 2.1-light → SQLite + History + Watchlist
 
@@ -126,6 +156,20 @@ Decisions I deferred during this run. The three from the previous block that I *
 - **Phase 5b (Alpaca data adapter)** — Alpaca Markets keys now stored in Settings → Data Providers; engine adapter for `data.alpaca.markets` is the next discrete unit. Broker work removed per locked positioning 2026-05-09.
 - **Phase 6 (Clawless tap)** — could start anytime; deferred behind cost-guard + playwright per founder priority.
 - **Subscription-routing verification** — first OAuth debate succeeded; you should check your OpenAI billing dashboard to confirm the run did NOT add to your API tier (i.e., that the Codex/subscription path is actually billing through your ChatGPT plan, not per-token).
+
+### Most natural next priorities (founder picks)
+
+1. **Phase 7b launch-prep** — Terms of Service, Privacy Policy, Cookie Policy, brochure marketing site at tradingagentslab.com, signed DMG distribution. Backlog has the breakdown. Requires founder direction on jurisdiction + scope; engage securities counsel for the disclaimer review before public launch.
+2. **KB sweep** — add docs/kb pages for crypto symbols, Alpaca data, Cost Guard. Existing pages still mostly current.
+3. **Playwright UI tests** — was originally planned today; deferred for the strategic-posture work that emerged. Closes the "UI not click-tested autonomously" gap that's been carried since the autonomous block days.
+4. **Phase 6 Clawless gateway tap** OR **Phase 8 webhooks** — both pending; founder's call which feels more valuable next.
+5. **Streaming progress UX** — backlog item from this morning for a phase chip + completion badge in DebateStream (improves the "is it still running?" perception during 60-90s gpt-5.4 debates).
+
+### Domain bookings (founder action)
+
+- `tradingagentslab.com` — defensive must-have, ~$12/yr, canonical
+- `tradingagentslab.ai` — brand alignment for AI/LLM positioning, ~$70-90/yr
+- Skip `.io` (`.ai` has eclipsed it for AI projects)
 
 ### What founder should do first when they return
 
