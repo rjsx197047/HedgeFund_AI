@@ -198,6 +198,10 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         setEngineStatus('running');
         engineReadyRef.current = true;
         setEngineError(null);
+        // Seed from /health (the engine's default — usually yfinance). The
+        // data.summary event handler below overrides this per-debate when
+        // the user has Alpaca configured (engine reports actual source on
+        // each fetch).
         setDataProvider(health.data_provider ?? null);
       })
       .catch((err: unknown) => {
@@ -211,6 +215,23 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
       cancelled = true;
     };
   }, []);
+
+  // Reflect the actual data provider used per stream. The engine emits the
+  // source on every data.summary event ("yfinance" | "alpaca" | ...). The
+  // /health seed only knows the engine's default; per-stream Alpaca routing
+  // shows up here.
+  useEffect(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const evt = events[i];
+      if (evt.type === 'data.summary') {
+        const src = (evt as { source?: string }).source;
+        if (src && src !== dataProvider) {
+          setDataProvider(src);
+        }
+        break;
+      }
+    }
+  }, [events, dataProvider]);
 
   // Reset state when the menu fires "New analysis".
   useEffect(() => {
@@ -414,6 +435,30 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         // surfaces the broken-encryption case.
       }
 
+      // Build optional data_config for the WS start frame. When the user has
+      // BOTH Alpaca Markets credentials configured, the engine instantiates
+      // a per-stream AlpacaProvider for this debate's data fetches. Either
+      // missing → engine falls through to its yfinance default. No fallback
+      // chain on Alpaca failure: if user configured Alpaca and a request
+      // errors, the data card stays empty so they notice (silent fallback
+      // would mask configuration issues).
+      let dataConfig: { provider: 'alpaca'; key_id: string; secret: string } | undefined;
+      try {
+        const [alpacaKeyId, alpacaSecret] = await Promise.all([
+          getSecret('data:alpaca-key-id'),
+          getSecret('data:alpaca-secret'),
+        ]);
+        if (alpacaKeyId && alpacaSecret) {
+          dataConfig = {
+            provider: 'alpaca',
+            key_id: alpacaKeyId,
+            secret: alpacaSecret,
+          };
+        }
+      } catch {
+        // safeStorage offline — fall through to yfinance default.
+      }
+
       // CostGuard reservation gate. Only applies to live debates — stub
       // mode (no providerConfig) skips the gate entirely on both sides.
       // We try the reservation, and if it fails with CostGuardBlocked we
@@ -476,6 +521,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
           trade_date: date,
           provider_config: providerConfig,
           reservation_id: reservationId,
+          data_config: dataConfig,
         },
         (event) => setEvents((prev) => [...prev, event]),
         (err) => {
@@ -743,9 +789,11 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
             {dataProvider ? `${dataProvider} · live` : 'Pending…'}
           </div>
           <div className={styles.statusHint}>
-            {dataProvider === 'yfinance'
-              ? 'Yahoo Finance · free · default'
-              : 'yfinance default · Alpaca optional'}
+            {dataProvider === 'alpaca'
+              ? 'Alpaca Markets · SIP feed (15-min delayed)'
+              : dataProvider === 'yfinance'
+                ? 'Yahoo Finance · free · default'
+                : 'yfinance default · Alpaca optional'}
           </div>
         </div>
         <div className={styles.statusCard}>

@@ -29,10 +29,12 @@ from pydantic import BaseModel, Field
 
 from . import __version__
 from .data_providers import (
+    BaseDataProvider,
     DataUnavailable,
     Headline,
     QuoteSummary,
     default_provider,
+    provider_from_data_config,
 )
 from .live_debate import ProviderConfig, live_debate
 from . import cost_guard, storage
@@ -293,20 +295,34 @@ def build_app(*, token: str) -> FastAPI:
             # check. If absent on a live debate, the WS handler auto-reserves
             # below for backward compatibility.
             reservation_id = start.get("reservation_id") or None
+            # Optional. When the renderer has Alpaca data keys configured,
+            # it sends them as data_config = {provider: "alpaca", key_id, secret}.
+            # Engine instantiates a per-stream AlpacaProvider; otherwise falls
+            # through to the module-level yfinance default. No fallback chain
+            # on Alpaca failure — if user configured Alpaca and it errors, the
+            # data card stays empty so they notice (silent fall-through to
+            # yfinance would mask configuration issues).
+            data_provider: BaseDataProvider = (
+                provider_from_data_config(start.get("data_config")) or default_provider
+            )
 
             # Best-effort data fetch; debate degrades gracefully if it fails.
-            summary = await _fetch_summary_safe(ticker=ticker, trade_date=trade_date)
+            summary = await _fetch_summary_safe(
+                ticker=ticker, trade_date=trade_date, provider=data_provider
+            )
             if summary is not None:
                 evt = {"type": "data.summary", **_summary_to_dict(summary)}
                 await ws.send_json(evt)
                 captured_events.append(evt)
 
-            headlines = await _fetch_news_safe(ticker=ticker, limit=4)
+            headlines = await _fetch_news_safe(
+                ticker=ticker, limit=4, provider=data_provider
+            )
             if headlines:
                 evt = {
                     "type": "news.headlines",
                     "ticker": ticker,
-                    "source": default_provider.name,
+                    "source": data_provider.name,
                     "headlines": [_headline_to_dict(h) for h in headlines],
                 }
                 await ws.send_json(evt)
@@ -421,22 +437,32 @@ def _persist_session_safe(
     )
 
 
-async def _fetch_summary_safe(*, ticker: str, trade_date: str) -> QuoteSummary | None:
+async def _fetch_summary_safe(
+    *,
+    ticker: str,
+    trade_date: str,
+    provider: BaseDataProvider | None = None,
+) -> QuoteSummary | None:
     if not ticker or not trade_date:
         return None
+    p = provider or default_provider
     try:
-        return await default_provider.quote_summary(
-            ticker=ticker, trade_date=trade_date
-        )
+        return await p.quote_summary(ticker=ticker, trade_date=trade_date)
     except Exception:  # noqa: BLE001 — never let data issues break the stream
         return None
 
 
-async def _fetch_news_safe(*, ticker: str, limit: int) -> list[Headline]:
+async def _fetch_news_safe(
+    *,
+    ticker: str,
+    limit: int,
+    provider: BaseDataProvider | None = None,
+) -> list[Headline]:
     if not ticker:
         return []
+    p = provider or default_provider
     try:
-        return await default_provider.news_headlines(ticker=ticker, limit=limit)
+        return await p.news_headlines(ticker=ticker, limit=limit)
     except Exception:  # noqa: BLE001
         return []
 

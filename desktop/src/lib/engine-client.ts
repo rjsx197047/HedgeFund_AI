@@ -182,6 +182,20 @@ export const PROVIDER_SECRET_KEY: Record<LLMProvider, string> = {
   gemini: 'llm:gemini',
 };
 
+/** Per-stream data provider override. When present on the WS start frame,
+ * the engine instantiates the named provider for this debate's data fetches
+ * (quote summary + news). When absent or malformed, the engine falls back
+ * to its module-level yfinance default.
+ *
+ * Only "alpaca" is wired today. Engine hard-codes data.alpaca.markets — it
+ * structurally cannot route to api.alpaca.markets, so even live keys can
+ * never accidentally execute a trade through this path. */
+export interface DataConfig {
+  provider: 'alpaca';
+  key_id: string;
+  secret: string;
+}
+
 export interface AnalyzeRequest {
   ticker: string;
   trade_date: string;
@@ -191,6 +205,9 @@ export interface AnalyzeRequest {
    * debate, the engine auto-reserves with override=false and may block
    * with a `cost.blocked` event. */
   reservation_id?: string;
+  /** Optional per-stream data provider override (e.g. Alpaca). Engine
+   * falls through to yfinance default when absent. */
+  data_config?: DataConfig;
 }
 
 export interface AnalyzeDecision {
@@ -492,6 +509,7 @@ export async function streamDebate(
         trade_date: req.trade_date,
         provider_config: req.provider_config,
         reservation_id: req.reservation_id,
+        data_config: req.data_config,
       }),
     );
   });
