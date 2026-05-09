@@ -126,6 +126,73 @@
   flex-wrap: wrap;
 }
 
+/* Provider selector — sits between the form row and the helper text.
+ * Visible by default so the founder always knows which provider will run
+ * the next debate. */
+.providerRow {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-3);
+  flex-wrap: wrap;
+}
+
+.providerLabel {
+  font-size: var(--tal-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+  font-family: var(--tal-font-mono);
+}
+
+.providerSelect {
+  background: var(--tal-bg-input);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  color: var(--tal-text-primary);
+  padding: var(--tal-space-2) var(--tal-space-3);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-sm);
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--tal-duration-fast) var(--tal-ease-out);
+  min-width: 280px;
+}
+
+.providerSelect:focus {
+  border-color: var(--tal-accent-border);
+  box-shadow: 0 0 0 3px var(--tal-accent-muted);
+}
+
+.providerSelect:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.providerReset {
+  background: transparent;
+  color: var(--tal-text-muted);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-1) var(--tal-space-3);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background var(--tal-duration-fast) var(--tal-ease-out);
+}
+
+.providerReset:hover:not(:disabled) {
+  background: var(--tal-bg-overlay);
+  color: var(--tal-text-primary);
+}
+
+.providerReset:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .transcriptButton {
   background: transparent;
   color: var(--tal-text-secondary);

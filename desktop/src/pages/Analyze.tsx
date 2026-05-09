@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './Analyze.module.css';
 import DebateStream from '../components/DebateStream';
 import {
@@ -22,6 +22,9 @@ import {
   getOpenAIOAuthStatus,
 } from '../lib/oauth';
 
+/** Persists the dropdown choice across app sessions (per founder, 2026-05-09). */
+const SELECTED_PROVIDER_STORAGE_KEY = 'tal:analyze:selected-provider';
+
 type EngineStatus = 'pending' | 'running' | 'error';
 
 interface AnalyzeProps {
@@ -44,21 +47,65 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   /**
-   * The provider that will run the next debate, picked by priority order
-   * over whichever LLM keys the user has configured. `null` = no key
-   * configured, debate runs in stub mode.
+   * Set of providers the user has configured (any auth flow). Drives both
+   * the dropdown's enabled/disabled state and the priority resolver
+   * fallback when no manual selection is saved.
    */
-  const [activeProvider, setActiveProvider] = useState<LLMProvider | null>(null);
+  const [configuredProviders, setConfiguredProviders] = useState<Set<LLMProvider>>(
+    () => new Set(),
+  );
+  /**
+   * The user's *manual* dropdown choice (persisted to localStorage). null
+   * means "use the priority resolver" — the dropdown still pre-fills with
+   * the resolver's pick so the user can see what's about to run.
+   */
+  const [manualProvider, setManualProvider] = useState<LLMProvider | null>(() => {
+    try {
+      const raw = localStorage.getItem(SELECTED_PROVIDER_STORAGE_KEY);
+      if (raw && (PROVIDER_PRIORITY as readonly string[]).includes(raw)) {
+        return raw as LLMProvider;
+      }
+    } catch {
+      // localStorage can throw in private mode — fall through.
+    }
+    return null;
+  });
   /**
    * Whether OpenAI auth resolves to OAuth (subscription plan) vs API key.
-   * Surfaced in the LLM status hint so the founder can see at a glance
-   * which billing path the next debate will hit. Null when activeProvider
-   * isn't openai or no key is configured.
-   *
-   * Priority: OAuth > API key when both are stored (founder's stated
-   * preference for personal use). User-facing override is Phase 7 polish.
+   * Internal to the OpenAI provider — OAuth wins when both are stored.
+   * Surfaced in the LLM status hint so the founder can see which billing
+   * path the next debate will hit when the active provider is OpenAI.
    */
   const [openaiAuthKind, setOpenaiAuthKind] = useState<'oauth' | 'api_key' | null>(null);
+
+  /**
+   * The provider that will actually run the next debate, after considering
+   * (a) the user's manual dropdown choice and (b) the priority resolver.
+   * Stays in sync with `configuredProviders` and `manualProvider` via
+   * `useMemo` rather than living in its own state — single source of truth.
+   */
+  const activeProvider = useMemo<LLMProvider | null>(() => {
+    if (manualProvider && configuredProviders.has(manualProvider)) {
+      return manualProvider;
+    }
+    return (
+      PROVIDER_PRIORITY.find((p) => configuredProviders.has(p)) ?? null
+    );
+  }, [manualProvider, configuredProviders]);
+
+  // Ref mirrors of the resolution state. `onAnalyze` is async (multiple
+  // awaits between mousedown and the WS open frame) — reading via refs
+  // means a Settings-driven state change racing with a click can't leave
+  // the request using a now-stale provider/auth combo. Same pattern as
+  // `isStreamingRef`/`engineReadyRef` above.
+  const activeProviderRef = useRef<LLMProvider | null>(null);
+  const openaiAuthKindRef = useRef<'oauth' | 'api_key' | null>(null);
+  useEffect(() => {
+    activeProviderRef.current = activeProvider;
+  }, [activeProvider]);
+  useEffect(() => {
+    openaiAuthKindRef.current = openaiAuthKind;
+  }, [openaiAuthKind]);
   const handleRef = useRef<StreamHandle | null>(null);
   const isStreamingRef = useRef(false);
   const engineReadyRef = useRef(false);
@@ -95,11 +142,12 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     setCopied(false);
   }, [resetSignal]);
 
-  // Re-poll secret presence whenever the page mounts, whenever the user
-  // returns from Settings (resetSignal), and whenever a session ends. The
-  // *only* meaningful transition for is-streaming is `true → false` — we
+  // Re-poll secret presence + OAuth status whenever the page mounts, when
+  // the user returns from Settings (resetSignal), and when a session ends.
+  // The *only* meaningful transition for is-streaming is `true → false` —
   // skip the redundant call when streaming begins (the key set didn't
-  // change). Picks the highest-priority configured provider.
+  // change). Updates `configuredProviders` (drives the dropdown) and
+  // `openaiAuthKind` (drives the OAuth-vs-API-key hint).
   useEffect(() => {
     if (isStreaming) return;
     let cancelled = false;
@@ -111,25 +159,25 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         ]);
         if (cancelled) return;
         const stored = new Set(rows.map((r) => r.key));
-        const hasOpenAI =
-          oauth.connected || stored.has(PROVIDER_SECRET_KEY.openai);
-        // Priority: openai > anthropic > openrouter > gemini, where openai
-        // counts as configured if EITHER OAuth tokens OR an API key exist.
-        const chosen = PROVIDER_PRIORITY.find((p) =>
-          p === 'openai'
-            ? hasOpenAI
-            : stored.has(PROVIDER_SECRET_KEY[p]),
-        );
-        setActiveProvider(chosen ?? null);
-        if (chosen === 'openai') {
-          // OAuth wins when both are present (founder's stated preference).
-          setOpenaiAuthKind(oauth.connected ? 'oauth' : 'api_key');
-        } else {
-          setOpenaiAuthKind(null);
+        const next = new Set<LLMProvider>();
+        for (const p of PROVIDER_PRIORITY) {
+          const hasKey = stored.has(PROVIDER_SECRET_KEY[p]);
+          if (p === 'openai' && (oauth.connected || hasKey)) next.add(p);
+          else if (p !== 'openai' && hasKey) next.add(p);
         }
+        setConfiguredProviders(next);
+        // OAuth wins over API key when both are present (founder
+        // preference). Surfaced when openai is the active provider.
+        setOpenaiAuthKind(
+          oauth.connected
+            ? 'oauth'
+            : stored.has(PROVIDER_SECRET_KEY.openai)
+              ? 'api_key'
+              : null,
+        );
       } catch {
         if (!cancelled) {
-          setActiveProvider(null);
+          setConfiguredProviders(new Set());
           setOpenaiAuthKind(null);
         }
       }
@@ -139,6 +187,40 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
       cancelled = true;
     };
   }, [resetSignal, isStreaming]);
+
+  // When the saved manual choice no longer has credentials (user deleted
+  // the key in Settings), drop it so the priority resolver takes over.
+  // localStorage stays in sync — a stale key shouldn't survive across
+  // app launches once we know it's invalid.
+  useEffect(() => {
+    if (manualProvider && !configuredProviders.has(manualProvider)) {
+      setManualProvider(null);
+      try {
+        localStorage.removeItem(SELECTED_PROVIDER_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+    }
+  }, [manualProvider, configuredProviders]);
+
+  const onSelectProvider = useCallback((value: LLMProvider | '') => {
+    if (value === '') {
+      // "Auto" sentinel — clear the manual override and let priority resolver win.
+      setManualProvider(null);
+      try {
+        localStorage.removeItem(SELECTED_PROVIDER_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    setManualProvider(value);
+    try {
+      localStorage.setItem(SELECTED_PROVIDER_STORAGE_KEY, value);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const onAnalyze = async () => {
     if (!engineReadyRef.current || isStreamingRef.current) return;
@@ -155,10 +237,15 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
       // OpenAI special case: prefer OAuth (subscription plan) when both
       // OAuth tokens AND an API key are stored. The main-process service
       // silently refreshes the access token if it's within 60s of expiry.
+      // Snapshot the resolved provider + OpenAI auth flow at click-time
+      // through the refs — guards against a Settings-tab state change
+      // racing with the multiple awaits inside this async handler.
+      const provider = activeProviderRef.current;
+      const authKind = openaiAuthKindRef.current;
       let providerConfig: ProviderConfig | undefined;
       try {
-        if (activeProvider === 'openai') {
-          if (openaiAuthKind === 'oauth') {
+        if (provider === 'openai') {
+          if (authKind === 'oauth') {
             const creds = await getOpenAICredentialsForRequest();
             if (creds) {
               providerConfig = {
@@ -185,13 +272,13 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
               };
             }
           }
-        } else if (activeProvider) {
-          const apiKey = await getSecret(PROVIDER_SECRET_KEY[activeProvider]);
+        } else if (provider) {
+          const apiKey = await getSecret(PROVIDER_SECRET_KEY[provider]);
           if (apiKey) {
             providerConfig = {
-              provider: activeProvider,
+              provider,
               auth: { type: 'api_key', api_key: apiKey },
-              model: PROVIDER_DEFAULT_MODEL[activeProvider],
+              model: PROVIDER_DEFAULT_MODEL[provider],
               max_tokens: 400,
             };
           }
@@ -331,10 +418,54 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
             )}
           </div>
         </div>
+        <div className={styles.providerRow}>
+          <label className={styles.providerLabel} htmlFor="run-with">
+            Run with
+          </label>
+          <select
+            id="run-with"
+            className={styles.providerSelect}
+            value={activeProvider ?? ''}
+            onChange={(e) => onSelectProvider(e.target.value as LLMProvider | '')}
+            disabled={isStreaming || engineStatus !== 'running'}
+          >
+            {PROVIDER_PRIORITY.map((p) => {
+              const configured = configuredProviders.has(p);
+              const isOpenAIOAuth = p === 'openai' && openaiAuthKind === 'oauth';
+              const label = configured
+                ? `${PROVIDER_LABEL[p]}${isOpenAIOAuth ? ' (OAuth)' : ''} · ${PROVIDER_DEFAULT_MODEL[p]}`
+                : `${PROVIDER_LABEL[p]} — configure in Settings`;
+              return (
+                <option key={p} value={p} disabled={!configured}>
+                  {label}
+                </option>
+              );
+            })}
+            {configuredProviders.size === 0 && (
+              <option value="" disabled>
+                Stub debate — no LLM configured
+              </option>
+            )}
+          </select>
+          {manualProvider && (
+            <button
+              type="button"
+              className={styles.providerReset}
+              onClick={() => onSelectProvider('')}
+              disabled={isStreaming}
+              title="Reset to priority default"
+              aria-label="Reset provider selection to automatic priority default"
+            >
+              Reset
+            </button>
+          )}
+        </div>
         <div className={styles.cardFooter}>
           <p className={styles.helper}>
             {engineStatus === 'pending' && 'Engine starting — sidecar handshake pending.'}
-            {engineStatus === 'running' && !isStreaming && activeProvider &&
+            {engineStatus === 'running' && !isStreaming && activeProvider === 'openai' && openaiAuthKind === 'oauth' &&
+              `Live debate — OAuth · ${PROVIDER_DEFAULT_MODEL.openai}, capped per agent.`}
+            {engineStatus === 'running' && !isStreaming && activeProvider && !(activeProvider === 'openai' && openaiAuthKind === 'oauth') &&
               `Live debate — sequential calls to ${PROVIDER_LABEL[activeProvider]} ${PROVIDER_DEFAULT_MODEL[activeProvider]}, capped per agent.`}
             {engineStatus === 'running' && !isStreaming && !activeProvider &&
               'Stub debate — paste an LLM key in Settings to switch to live agents.'}

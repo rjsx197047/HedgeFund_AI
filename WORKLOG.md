@@ -6,6 +6,35 @@
 
 ---
 
+## 2026-05-09 (continued) — Provider selector on Analyze page
+
+**Founder feedback live:** smoke-tested OAuth + Anthropic API key configured simultaneously. OpenAI quota was exhausted but the silent priority resolver kept picking OpenAI; the only way to fall back to Anthropic was to disconnect OpenAI entirely. Bad workflow. Founder asked for a model selector on the Analyze page so the user can pick which provider runs the next debate without disconnecting others.
+
+**Architect protocol followed (advisor before, write, reviewer after):**
+- Pre-design advisor: required one entry per provider (NOT splitting OpenAI dual-auth into two dropdown items — that's feature creep), pre-select the resolver's pick on mount with the choice visibly displayed, persist in localStorage with mount-time validation against current credentials, keep state local to `Analyze.tsx` (no context lifting), no explicit "Stub debate" option (debug affordance, not user-facing).
+- Reviewer (Sonnet): one strong-recommend (closure-capture race in async `onAnalyze`), three nice-to-haves (a11y label, doc drift in §7, stub-only-option fragility). Race fix applied via `activeProviderRef` + `openaiAuthKindRef` mirrors — same pattern the codebase already uses for `isStreamingRef`/`engineReadyRef`. aria-label on Reset added. Doc drift can travel.
+
+**Shipped:**
+
+- New "Run with" `<select>` between the form row and helper text. All 4 providers shown in priority order (`openai > anthropic > openrouter > gemini`). Configured providers show "{Provider} · {model}"; unconfigured show "{Provider} — configure in Settings" and are `disabled`.
+- For OpenAI specifically: when OAuth is configured, the dropdown label reads "OpenAI (OAuth) · gpt-4o-mini". OAuth-vs-API-key resolution stays internal — one entry per provider, advisor's call.
+- "Reset" button next to dropdown when a manual override is active. Clears localStorage and falls back to the priority resolver.
+- Persistence: `tal:analyze:selected-provider` localStorage key. Mount-time validation: if the saved choice's credentials are gone (key deleted in Settings since last session), `useEffect` clears both state and localStorage so the priority resolver wins on next render.
+- Refactored: `activeProvider` is now a `useMemo` derived from `manualProvider` + `configuredProviders` rather than its own state. Single source of truth.
+- Race guard: `activeProviderRef` + `openaiAuthKindRef` mirror the resolution state. `onAnalyze` reads from the refs at click-time, so a Settings-driven state change racing with the multiple awaits between mousedown and the WS open frame can't leave the request using stale provider/auth state.
+
+**Verification:**
+- `npm run type-check` clean
+- `npm run build` clean
+- `bash tools/dev-smoke.sh NVDA 2026-05-08`: 17 passed, 0 failed (no engine-side change in this commit)
+- Vite HMR live on the running app — founder will see the dropdown immediately
+
+**Open question queued for founder:** persistence policy. Default is "persist with mount-time validation" — saved choice survives across launches but auto-drops if its credentials disappear. Fine to keep, or want to reset on launch every time?
+
+**Commit:** TBD.
+
+---
+
 ## 2026-05-09 (continued) — UX polish: green pill for active connections
 
 **Context:** Founder smoke-testing the live OAuth flow noticed the "Connected" pill on the Settings → LLM Providers row stayed amber (brand accent) instead of flipping to green. Same amber as the disconnected "Recommended" state — no visual confirmation. Status dots elsewhere in the app already use green for the "wired and working" state; the Settings pill needed to match.
