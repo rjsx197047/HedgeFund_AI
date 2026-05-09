@@ -45,6 +45,8 @@ export interface OAuthCredentialsBridge {
   refresh: string;
   expires: number;
   email?: string;
+  /** Required for Codex backend's `chatgpt-account-id` header. */
+  accountId?: string;
 }
 
 contextBridge.exposeInMainWorld('tradingAgentsLab', {

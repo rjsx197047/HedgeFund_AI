@@ -28,6 +28,8 @@ export interface OAuthCredentials {
   refresh: string;
   expires: number;
   email?: string;
+  /** Required for the Codex backend's `chatgpt-account-id` header. */
+  accountId?: string;
 }
 
 function bridge() {

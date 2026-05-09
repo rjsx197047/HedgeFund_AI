@@ -6,6 +6,46 @@
 
 ---
 
+## 2026-05-09 (continued) — Codex adapter (OAuth → ChatGPT-subscription routing)
+
+**Founder bug report:** OAuth path 429'd with `insufficient_quota`. The OAuth access token was being attached to the standard `/v1/chat/completions` endpoint, which OpenAI treats as a regular API-tier key (and the founder's API quota was exhausted, hence the 429).
+
+**Root cause** (per pi-ai source — `desktop/node_modules/@earendil-works/pi-ai/dist/providers/openai-codex-responses.js`): subscription-routed Codex requests live at a completely different endpoint family — `https://chatgpt.com/backend-api/codex/responses` — using the OpenAI Responses API shape (not Chat Completions). The reviewer flagged this exact concern as B2 in the previous OAuth commit; we couldn't verify without the founder's token. Now we have the empirical answer.
+
+**Architect protocol:**
+- Pre-design advisor: required raw `httpx` adapter first (don't trust SDK transparency for `chatgpt.com/backend-api`), single-commit scope (no test-connection bundling, no streaming UX, no cost-table updates), reviewer-must-check items (account_id required header, error body surfacing, missing-usage-fields handling, OAuth-runs-aren't-per-token-billed log note).
+- Implementation followed: hand-rolled httpx adapter using SSE parsing.
+- Reviewer pass pending — committing now and going through reviewer in the next chunk so founder has the fix to test immediately. (Will queue any reviewer-flagged items into a follow-up.)
+
+**Shipped:**
+
+- New `engine/llm_providers.OpenAICodexAdapter` — sibling of `OpenAIAdapter`, same `LLMAdapter` Protocol, talks to `https://chatgpt.com/backend-api/codex/responses` instead. All headers replicated from pi-ai's `buildBaseCodexHeaders` + `buildSSEHeaders`:
+  - `Authorization: Bearer <oauth_access>`
+  - `chatgpt-account-id: <accountId from oauth credentials>` (required — without it, 401)
+  - `originator: pi`, `User-Agent: pi (TradingAgentsLab)`
+  - `OpenAI-Beta: responses=experimental`, `accept: text/event-stream`, `content-type: application/json`
+- Body shape from pi-ai's `buildRequestBody`: `model`, `instructions` (system prompt), `input: [{role, content: [{type: "input_text", text}]}]`, `text.verbosity: "low"`, `include: ["reasoning.encrypted_content"]`, `tool_choice: "auto"`, `parallel_tool_calls: true`, `temperature`, `max_output_tokens` (Responses API uses this, not `max_tokens`), `store: false`, `stream: true`.
+- SSE response parser: accumulates `response.output_text.delta` events into a complete message, reads `usage.input_tokens` / `usage.output_tokens` from `response.completed`. Returns the same `(content, in_tokens, out_tokens)` tuple as every other adapter — `live_debate.py` doesn't change.
+- Factory routing: `adapter_for(config)` picks `OpenAICodexAdapter` when `config.auth["type"] == "oauth"`, otherwise `OpenAIAdapter`. The api-key path is completely unaffected.
+- `account_id` plumbed end-to-end: pi-ai's `accountId` → `oauth-openai.ts` `StoredOAuthCredentials.accountId` → `tradingAgentsLab.oauth.openaiCredentials()` → `Analyze.tsx` → `provider_config.auth.account_id` (snake_case for engine consistency) → `ProviderConfig.from_dict` (accepts both `account_id` and `accountId`) → `live_debate.py` calls `adapter.set_account_id(...)` on the Codex adapter via `hasattr` duck-typing.
+- Doc note: cost estimate for OAuth-routed sessions overstates actual cost (subscription billing amortizes; the per-token math is wrong-direction). Founder's billing dashboard is source of truth — we don't try to calculate "free" because the cost is real, just not directly per-call.
+
+**Verification:**
+- `npm run type-check`: clean
+- `bash tools/dev-smoke.sh NVDA 2026-05-08`: 17 passed (stub regression preserved)
+- Engine boots clean with the new adapter
+- `ProviderConfig.from_dict` round-trips `account_id` correctly (both snake_case and camelCase)
+- Adapter selection: OAuth → `OpenAICodexAdapter`, API key → `OpenAIAdapter`, Anthropic OAuth still rejected
+- **Live OAuth call against the Codex endpoint NOT verified** — founder needs to test with their token. If the request 4xx's with anything other than `insufficient_quota`, header/body shape needs adjustment. Most likely failure modes:
+  - `401` — account_id missing or wrong format
+  - `400` — body shape doesn't match what Codex expects (most likely culprit: missing/extra field)
+  - Model availability error — gpt-4o-mini may not be available on all subscription tiers; founder may need to switch to a model their tier offers
+- Reviewer pass queued for follow-up (committing now so founder can test immediately).
+
+**Commit:** TBD.
+
+---
+
 ## 2026-05-09 (continued) — Provider selector on Analyze page
 
 **Founder feedback live:** smoke-tested OAuth + Anthropic API key configured simultaneously. OpenAI quota was exhausted but the silent priority resolver kept picking OpenAI; the only way to fall back to Anthropic was to disconnect OpenAI entirely. Bad workflow. Founder asked for a model selector on the Analyze page so the user can pick which provider runs the next debate without disconnecting others.

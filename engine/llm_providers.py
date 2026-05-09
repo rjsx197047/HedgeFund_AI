@@ -5,15 +5,23 @@ any provider without per-provider branching. Cost caps (`max_tokens`,
 `MAX_AGENTS_PER_SESSION`) are enforced by `live_debate.py`, not here —
 adapters cannot accidentally raise them.
 
-Today's allowlist: `openai`, `anthropic`, `openrouter`, `gemini`.
+Today's allowlist: `openai`, `anthropic`, `openrouter`, `gemini`. OpenAI
+also has a sibling `OpenAICodexAdapter` for the OAuth/subscription path
+that hits `chatgpt.com/backend-api/codex/responses` instead of the
+standard chat-completions endpoint — the factory picks based on
+`config.auth.type`.
 
 Cost rates are local approximations refreshed manually. They are budgeting
 hints for the founder, never billing records — providers update prices
-quarterly and this table will drift.
+quarterly and this table will drift. **Subscription-billed routes
+(OpenAI Codex / OAuth) are NOT per-token billed**; the engine's logged
+cost estimate overstates true cost for OAuth sessions. The founder's
+billing dashboard is the source of truth.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol
 
@@ -155,12 +163,16 @@ def _normalize_auth(raw: dict) -> Optional[dict[str, Any]]:
             expires = int(raw.get("expires") or 0)
         except (TypeError, ValueError):
             expires = 0
-        return {
+        account_id = (raw.get("account_id") or raw.get("accountId") or "").strip()
+        out: dict[str, Any] = {
             "type": "oauth",
             "access": access,
             "refresh": refresh,
             "expires": expires,
         }
+        if account_id:
+            out["account_id"] = account_id
+        return out
     return None
 
 
@@ -278,6 +290,202 @@ class OpenRouterAdapter(OpenAIAdapter):
         "HTTP-Referer": "https://github.com/jaysidd/TradingAgentsLab",
         "X-Title": "TradingAgentsLab",
     }
+
+
+# ---- OpenAI Codex adapter (OAuth / ChatGPT-subscription path) -------------
+
+
+class OpenAICodexAdapter:
+    """OpenAI Codex Responses API — the path that routes through the user's
+    ChatGPT subscription instead of their per-token API tier.
+
+    OAuth tokens issued by `loginOpenAICodex` are NOT API tokens. Attaching
+    them as `Authorization: Bearer …` to the standard `/v1/chat/completions`
+    endpoint hits the user's API quota, not their subscription (founder
+    smoke-tested this 2026-05-09 and got `insufficient_quota` 429).
+
+    Subscription routing requires a different endpoint:
+
+        URL: https://chatgpt.com/backend-api/codex/responses
+        Headers: Authorization: Bearer <oauth_access>
+                 chatgpt-account-id: <accountId from oauth credentials>
+                 originator: pi
+                 User-Agent: pi (...)
+        Body: OpenAI Responses-API shape (`input` not `messages`,
+              `instructions` not `system` role, etc.)
+
+    This adapter implements the same `LLMAdapter` Protocol as the
+    `OpenAIAdapter` (Chat Completions, API key) but talks to the Codex
+    backend. The factory `adapter_for(config)` picks one or the other based
+    on `config.auth["type"]`.
+
+    Replicates the request shape pi-ai (@earendil-works/pi-ai/oauth) uses
+    for Clawless desktop's OAuth path. The header set + body shape is taken
+    directly from `openai-codex-responses.js` `buildBaseCodexHeaders` and
+    `buildRequestBody`.
+
+    Cost note: when a session runs through this adapter, the founder is
+    NOT being billed per-token — the cost is amortized into their ChatGPT
+    subscription. The cost-estimate the engine logs on session.complete is
+    technically wrong-direction (overstates) for OAuth runs. We don't try
+    to "fix" that with a $0 calculation; the founder's billing dashboard
+    is the source of truth.
+    """
+
+    name = "openai-codex"
+    BASE_URL = "https://chatgpt.com/backend-api/codex/responses"
+
+    def __init__(self) -> None:
+        self._client = None  # type: ignore[assignment]
+        self._token: Optional[str] = None
+        self._account_id: Optional[str] = None
+
+    async def open(self, *, api_key: str) -> None:
+        """Open with `api_key` carrying the OAuth access token (per
+        `LLMAdapter` Protocol — name kept for consistency, value is the
+        Bearer token regardless of auth flow). The `accountId` is supplied
+        out-of-band via `set_account_id` because the Protocol surface
+        doesn't pass arbitrary metadata.
+        """
+        import httpx
+
+        self._token = api_key
+        # 30s connect, 90s read — Codex responses can take a beat on big
+        # context windows. No retries; the engine's outer error path
+        # surfaces failures as session events.
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=30.0, read=90.0, write=30.0, pool=30.0),
+        )
+
+    def set_account_id(self, account_id: str) -> None:
+        """Codex backend requires `chatgpt-account-id` — set after `open`
+        from the same OAuth credential blob the renderer sent.
+        """
+        self._account_id = account_id
+
+    async def close(self) -> None:
+        if self._client is not None:
+            try:
+                await self._client.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+            self._client = None
+        self._token = None
+        self._account_id = None
+
+    async def complete(
+        self,
+        *,
+        system: str,
+        user: str,
+        model: str,
+        max_tokens: int,
+    ) -> tuple[str, int, int]:
+        if self._client is None or self._token is None:
+            raise RuntimeError("OpenAICodexAdapter not opened")
+
+        # Header set per pi-ai (openai-codex-responses.js:buildBaseCodexHeaders +
+        # buildSSEHeaders). `chatgpt-account-id` is required; if we don't
+        # have one the Codex backend will 401.
+        headers: dict[str, str] = {
+            "Authorization": f"Bearer {self._token}",
+            "originator": "pi",
+            "User-Agent": "pi (TradingAgentsLab)",
+            "OpenAI-Beta": "responses=experimental",
+            "accept": "text/event-stream",
+            "content-type": "application/json",
+        }
+        if self._account_id:
+            headers["chatgpt-account-id"] = self._account_id
+
+        # Body per pi-ai (buildRequestBody). `stream: true` is what pi-ai
+        # always uses; the Codex backend appears to require it. We parse
+        # the SSE response and accumulate text chunks into a complete
+        # message, matching the `LLMAdapter` Protocol's "complete message"
+        # return contract.
+        body = {
+            "model": model,
+            "store": False,
+            "stream": True,
+            "instructions": system,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": user}],
+                }
+            ],
+            "text": {"verbosity": "low"},
+            "include": ["reasoning.encrypted_content"],
+            "tool_choice": "auto",
+            "parallel_tool_calls": True,
+            "temperature": 0.7,
+            # `max_tokens` is unsupported on the Responses API; the
+            # equivalent budget control is `max_output_tokens`.
+            "max_output_tokens": max_tokens,
+        }
+
+        content_parts: list[str] = []
+        in_tokens = 0
+        out_tokens = 0
+
+        # SSE response: each event is `event: <type>\ndata: <json>\n\n`.
+        # We care about `response.output_text.delta` (incremental text)
+        # and `response.completed` (final usage). We DON'T stream tokens
+        # back to the WS — `LLMAdapter.complete` returns the full message
+        # so the existing `live_debate.py` orchestration is unchanged.
+        try:
+            async with self._client.stream(
+                "POST",
+                self.BASE_URL,
+                headers=headers,
+                json=body,
+            ) as response:
+                if response.status_code != 200:
+                    # Read error body before raising — Codex returns
+                    # JSON error blobs that are useful to surface.
+                    error_body = await response.aread()
+                    error_text = error_body.decode("utf-8", errors="replace")[:500]
+                    raise RuntimeError(
+                        f"Codex {response.status_code}: {error_text}"
+                    )
+
+                async for line in response.aiter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    payload = line[len("data:") :].strip()
+                    if payload == "[DONE]" or not payload:
+                        continue
+                    try:
+                        evt = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+
+                    evt_type = evt.get("type")
+                    if evt_type == "response.output_text.delta":
+                        delta = evt.get("delta") or ""
+                        if isinstance(delta, str):
+                            content_parts.append(delta)
+                    elif evt_type == "response.completed":
+                        # Final response carries `usage` and the full
+                        # `output` array. Prefer `usage` from here.
+                        resp = evt.get("response") or {}
+                        usage = resp.get("usage") or {}
+                        in_tokens = int(usage.get("input_tokens") or 0)
+                        out_tokens = int(usage.get("output_tokens") or 0)
+                        # If we missed the deltas (unlikely but possible),
+                        # extract text from the completed output as fallback.
+                        if not content_parts:
+                            for item in resp.get("output") or []:
+                                for part in item.get("content") or []:
+                                    text = part.get("text")
+                                    if isinstance(text, str):
+                                        content_parts.append(text)
+        except RuntimeError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"Codex stream failed: {type(exc).__name__}: {exc}")
+
+        return "".join(content_parts).strip(), in_tokens, out_tokens
 
 
 # ---- Anthropic adapter ----------------------------------------------------
@@ -420,6 +628,12 @@ class GeminiAdapter:
 
 def adapter_for(config: ProviderConfig) -> LLMAdapter:
     if config.provider == "openai":
+        # OAuth → Codex backend (subscription-routed). API key → standard
+        # /v1/chat/completions (per-token billed). The two endpoints have
+        # totally different request/response shapes; the factory picks the
+        # right adapter so `live_debate.py` stays auth-agnostic.
+        if config.auth.get("type") == "oauth":
+            return OpenAICodexAdapter()
         return OpenAIAdapter()
     if config.provider == "openrouter":
         return OpenRouterAdapter()

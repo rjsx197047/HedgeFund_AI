@@ -9,10 +9,21 @@ export type LLMProvider = 'openai' | 'anthropic' | 'openrouter' | 'gemini';
  * Auth shape on the WS start frame. Discriminated union so the engine
  * never has to guess whether `api_key` carries an API key or an OAuth
  * access token. OAuth is OpenAI-only today.
+ *
+ * `account_id` is required for the OAuth path — Codex backend uses it as
+ * the `chatgpt-account-id` header. pi-ai returns it on the credential
+ * blob as `accountId`; we forward it on the wire as `account_id` to keep
+ * the engine's snake_case style consistent.
  */
 export type ProviderAuth =
   | { type: 'api_key'; api_key: string }
-  | { type: 'oauth'; access: string; refresh: string; expires: number };
+  | {
+      type: 'oauth';
+      access: string;
+      refresh: string;
+      expires: number;
+      account_id?: string;
+    };
 
 export interface ProviderConfig {
   provider: LLMProvider;

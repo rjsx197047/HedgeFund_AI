@@ -50,6 +50,10 @@ export interface StoredOAuthCredentials {
   expires: number;     // Unix timestamp; pi-ai docs are silent on s vs ms — we
                        // treat values >= 1e12 as ms and others as seconds.
   email?: string;
+  /** Required by the Codex backend in the `chatgpt-account-id` header.
+   * pi-ai returns this as `accountId` on OAuthCredentials. Without it,
+   * Codex requests 401. */
+  accountId?: string;
 }
 
 export interface OAuthStartResult {
@@ -308,17 +312,20 @@ export class OpenAIOAuthService {
     // itself — we accept either if present and fall back to the previous
     // value on refresh.
     const extras = credentials as Record<string, unknown>;
+    const accountId =
+      typeof extras.accountId === 'string' ? (extras.accountId as string) : undefined;
     const email =
       typeof extras.email === 'string'
         ? (extras.email as string)
-        : typeof extras.accountId === 'string'
-          ? `account ${(extras.accountId as string).slice(0, 8)}…`
+        : accountId
+          ? `account ${accountId.slice(0, 8)}…`
           : fallbackEmail;
     return {
       access: credentials.access,
       refresh: credentials.refresh,
       expires: credentials.expires,
       email,
+      accountId,
     };
   }
 }

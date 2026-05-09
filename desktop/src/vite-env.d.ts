@@ -56,6 +56,7 @@ interface OAuthCredentialsBridge {
   refresh: string;
   expires: number;
   email?: string;
+  accountId?: string;
 }
 
 interface OAuthBridge {

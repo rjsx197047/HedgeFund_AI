@@ -255,6 +255,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
                   access: creds.access,
                   refresh: creds.refresh,
                   expires: creds.expires,
+                  account_id: creds.accountId,
                 },
                 model: PROVIDER_DEFAULT_MODEL.openai,
                 max_tokens: 400,

@@ -311,10 +311,16 @@ async def live_debate(
     state = _DebateState()
     # `bearer_token` works for both api_key and oauth auth shapes; the
     # adapter's `api_key` kwarg is named for Protocol consistency but
-    # accepts any Bearer token (OpenAI's /chat/completions accepts both
-    # sk-…  API keys and OAuth access tokens via the same Authorization
-    # header).
+    # accepts any Bearer token. For OpenAI's standard chat-completions
+    # endpoint both `sk-…` and OAuth tokens go in the same Authorization
+    # header. For the Codex backend (OAuth path) the same header carries
+    # the access token, AND a separate `chatgpt-account-id` header is
+    # required — passed via the adapter's `set_account_id` if it has one.
     await adapter.open(api_key=config.bearer_token)
+    if config.auth.get("type") == "oauth":
+        account_id = config.auth.get("account_id")
+        if account_id and hasattr(adapter, "set_account_id"):
+            adapter.set_account_id(str(account_id))
 
     # try/finally guarantees adapter cleanup even when the client disconnects
     # mid-stream (FastAPI raises WebSocketDisconnect, which throws GeneratorExit
