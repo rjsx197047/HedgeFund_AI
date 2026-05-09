@@ -398,17 +398,22 @@ class OpenAICodexAdapter:
         if self._account_id:
             headers["chatgpt-account-id"] = self._account_id
 
-        # Body per pi-ai (buildRequestBody). `stream: true` is what pi-ai
-        # always uses; the Codex backend appears to require it. We parse
-        # the SSE response and accumulate text chunks into a complete
-        # message, matching the `LLMAdapter` Protocol's "complete message"
-        # return contract.
+        # Body matches pi-ai's `buildRequestBody` exactly — every field
+        # present here is one pi-ai sends unconditionally to Codex; every
+        # field pi-ai sends conditionally (temperature, service_tier,
+        # tools, reasoning, prompt_cache_key) is omitted because we
+        # don't supply those options.
         #
-        # NOTE on `temperature`: GPT-5 family models on the Codex backend
-        # reject it as an unsupported parameter (the new reasoning-tuned
-        # models don't expose temperature control — pi-ai only sends it
-        # when explicitly supplied via options, never by default). We
-        # follow the same pattern: omit it entirely so the model decides.
+        # On `max_output_tokens`: NOT in pi-ai's body. I tried adding
+        # it as the Responses API equivalent of `max_tokens` and Codex
+        # backend returned 400 Unsupported parameter (founder hit
+        # this 2026-05-09). Output length is bounded by the system
+        # prompts (each agent's prompt explicitly says "3-5
+        # sentences" / "2-3 sentences"), not by an enforced cap. The
+        # `max_tokens` arg here is ignored on the Codex path; the
+        # API-key adapter (`OpenAIAdapter`) still enforces it via
+        # `client.chat.completions.create(max_tokens=...)`.
+        del max_tokens  # noqa — argument intentionally unused on this path
         body = {
             "model": model,
             "store": False,
@@ -424,9 +429,6 @@ class OpenAICodexAdapter:
             "include": ["reasoning.encrypted_content"],
             "tool_choice": "auto",
             "parallel_tool_calls": True,
-            # `max_tokens` is unsupported on the Responses API; the
-            # equivalent budget control is `max_output_tokens`.
-            "max_output_tokens": max_tokens,
         }
 
         content_parts: list[str] = []
