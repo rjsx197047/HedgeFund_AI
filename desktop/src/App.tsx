@@ -64,7 +64,7 @@ function App() {
         <div className={styles.titleBarContent}>
           <span className={styles.brand}>
             <span className={styles.brandMark}>◆</span>
-            <span className={styles.brandText}>TradingAgentsLab</span>
+            <span className={styles.brandText}>Trading Agents Lab</span>
           </span>
           <span className={styles.connectionPill}>Standalone</span>
         </div>
@@ -90,8 +90,10 @@ function App() {
       </main>
 
       <footer className={styles.footer}>
-        <span>v0.0.1 · Phase 4 · Educational lab + paper trading</span>
-        <span className={styles.footerRight}>This is not investment advice.</span>
+        <span>Trading Agents Lab v0.0.1 · AGPL-3.0</span>
+        <span className={styles.footerRight}>
+          Educational research only · Not a registered investment advisor · Not investment advice
+        </span>
       </footer>
     </div>
   );

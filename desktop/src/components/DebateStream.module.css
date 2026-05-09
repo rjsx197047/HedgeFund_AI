@@ -339,6 +339,30 @@ a.newsTitle:hover {
   }
 }
 
+/* SEC: disclaimers must be prominent AND close to the relevant content.
+   The decision card is the riskiest piece on the page — a clear
+   "BUY at 75% confidence" reads like a recommendation. Inline disclaimer
+   directly below the decision keeps regulatory positioning explicit. */
+.decisionDisclaimer {
+  grid-column: 1 / -1;
+  grid-row: 5;
+  font-family: var(--tal-font-mono);
+  font-size: 11px;
+  color: var(--tal-text-muted);
+  letter-spacing: 0.02em;
+  padding-top: var(--tal-space-2);
+  margin-top: var(--tal-space-2);
+  border-top: 1px dashed var(--tal-border-subtle);
+  text-align: center;
+  font-style: italic;
+}
+
+@media (max-width: 720px) {
+  .decisionDisclaimer {
+    grid-row: 6;
+  }
+}
+
 .decisionAction {
   grid-column: 1;
   grid-row: 2 / 4;

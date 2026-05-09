@@ -792,9 +792,17 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
       <DebateStream events={events} isStreaming={isStreaming} />
 
       <section className={styles.disclaimer}>
-        <strong>For educational research and paper trading.</strong> TradingAgentsLab
-        does not provide investment advice. Trading decisions and any real-money
-        outcomes are entirely your own.
+        <strong>For educational and research purposes only.</strong> Trading
+        Agents Lab is <strong>not a registered investment advisor</strong> and
+        does not provide investment, financial, legal, or tax advice. The
+        multi-agent LLM analyses on this page may be inaccurate, incomplete,
+        or outdated — large language models can and do hallucinate. Nothing
+        produced by this software is a recommendation to buy, sell, or hold
+        any security, cryptocurrency, or other asset. Consult a qualified
+        financial professional before making any investment decision. You
+        assume all risk for any action you take based on this analysis. The
+        maintainers and contributors accept no liability for losses arising
+        from use of this software.
       </section>
     </div>
   );

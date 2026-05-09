@@ -275,6 +275,10 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
               )}
             </div>
           )}
+          <div className={styles.decisionDisclaimer}>
+            Not investment advice · LLM output may be inaccurate · Verify
+            independently before any action
+          </div>
         </div>
       )}
     </section>
