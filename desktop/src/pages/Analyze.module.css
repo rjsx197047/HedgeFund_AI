@@ -324,3 +324,19 @@
   color: var(--tal-text-primary);
   font-weight: 600;
 }
+
+.engineErrorBanner {
+  background: rgba(248, 81, 73, 0.08);
+  border: 1px solid rgba(248, 81, 73, 0.4);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-3) var(--tal-space-4);
+  font-size: var(--tal-text-sm);
+  color: var(--tal-negative, #f85149);
+  line-height: 1.5;
+  margin-bottom: var(--tal-space-3);
+}
+
+.engineErrorBanner strong {
+  color: var(--tal-negative, #f85149);
+  font-weight: 600;
+}

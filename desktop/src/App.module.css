@@ -1,12 +1,17 @@
 .shell {
   display: grid;
   grid-template-columns: 220px 1fr;
-  grid-template-rows: 44px 1fr 32px;
+  grid-template-rows: 44px 28px 1fr 32px;
   grid-template-areas:
     "title  title"
+    "strip  strip"
     "side   main"
     "foot   foot";
   height: 100vh;
+}
+
+.statusStripRow {
+  grid-area: strip;
 }
 
 .titleBar {

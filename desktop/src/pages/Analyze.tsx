@@ -224,7 +224,9 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   // engine emits source ("yfinance" | "alpaca") and asset_class ("equity"
   // | "crypto") on every data.summary event. The /health seed only knows
   // the engine's default provider; per-stream routing + asset class show up
-  // here once the first data.summary arrives.
+  // here once the first data.summary arrives. Also dispatches a
+  // window-level CustomEvent so the App-shell <StatusStrip> can reflect
+  // per-stream changes without us having to lift state.
   useEffect(() => {
     for (let i = events.length - 1; i >= 0; i--) {
       const evt = events[i];
@@ -233,6 +235,13 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         const ac = (evt as { asset_class?: 'equity' | 'crypto' }).asset_class;
         if (src && src !== dataProvider) setDataProvider(src);
         if (ac && ac !== assetClass) setAssetClass(ac);
+        if (src) {
+          window.dispatchEvent(
+            new CustomEvent('tal:data-provider', {
+              detail: { source: src, asset_class: ac },
+            }),
+          );
+        }
         break;
       }
     }
@@ -769,76 +778,16 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         )}
       </section>
 
-      <section className={styles.statusGrid}>
-        <div className={styles.statusCard}>
-          <div className={styles.statusLabel}>Engine</div>
-          <div className={styles.statusValue}>
-            <span
-              className={
-                engineStatus === 'running'
-                  ? styles.statusDotOk
-                  : engineStatus === 'error'
-                    ? styles.statusDotError
-                    : styles.statusDotPending
-              }
-            />
-            {engineStatus === 'running' && 'Running'}
-            {engineStatus === 'pending' && 'Starting…'}
-            {engineStatus === 'error' && 'Error'}
-          </div>
-          <div className={styles.statusHint}>Python sidecar · live or stub</div>
+      {/* Status cards used to live here; lifted to the App-shell `<StatusStrip>`
+          so the user can glance up from any page (founder feedback 2026-05-09).
+          The Analyze page surfaces engine error inline below the streamError
+          banner when needed; everything else is on the strip. */}
+
+      {engineStatus === 'error' && engineError && (
+        <div className={styles.engineErrorBanner}>
+          <strong>Engine error:</strong> {engineError}
         </div>
-        <div className={styles.statusCard}>
-          <div className={styles.statusLabel}>Data</div>
-          <div className={styles.statusValue}>
-            <span
-              className={
-                dataProvider ? styles.statusDotOk : styles.statusDotPending
-              }
-            />
-            {dataProvider
-              ? `${dataProvider}${assetClass === 'crypto' ? ' · crypto' : ''} · live`
-              : 'Pending…'}
-          </div>
-          <div className={styles.statusHint}>
-            {dataProvider === 'alpaca'
-              ? assetClass === 'crypto'
-                ? 'Alpaca crypto feed · v1beta3'
-                : 'Alpaca Markets · SIP feed (15-min delayed)'
-              : dataProvider === 'yfinance'
-                ? assetClass === 'crypto'
-                  ? 'Yahoo Finance · crypto pair'
-                  : 'Yahoo Finance · free · default'
-                : 'yfinance default · Alpaca optional'}
-          </div>
-        </div>
-        <div className={styles.statusCard}>
-          <div className={styles.statusLabel}>LLM</div>
-          <div className={styles.statusValue}>
-            <span
-              className={
-                activeProvider ? styles.statusDotOk : styles.statusDotPending
-              }
-            />
-            {activeProvider
-              ? `${PROVIDER_LABEL[activeProvider]} · live`
-              : 'Not configured'}
-          </div>
-          <div className={styles.statusHint}>
-            {activeProvider && activeModel
-              ? `${openaiAuthKind === 'oauth' && activeProvider === 'openai' ? 'OAuth · ' : ''}${activeModel} · sequential agent calls`
-              : 'Settings → LLM Providers · stub debate until configured'}
-          </div>
-        </div>
-        <div className={styles.statusCard}>
-          <div className={styles.statusLabel}>Clawless</div>
-          <div className={styles.statusValue}>
-            <span className={styles.statusDotPending} />
-            Disconnected
-          </div>
-          <div className={styles.statusHint}>Optional connector — Phase 6</div>
-        </div>
-      </section>
+      )}
 
       <DebateStream events={events} isStreaming={isStreaming} />
 

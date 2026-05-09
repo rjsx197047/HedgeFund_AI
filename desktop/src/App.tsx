@@ -3,6 +3,7 @@ import Analyze from './pages/Analyze';
 import Settings from './pages/Settings';
 import History from './pages/History';
 import Watchlist from './pages/Watchlist';
+import StatusStrip from './components/StatusStrip';
 import styles from './App.module.css';
 
 type Route = 'analyze' | 'watchlist' | 'history' | 'settings';
@@ -68,6 +69,10 @@ function App() {
           <span className={styles.connectionPill}>Standalone</span>
         </div>
       </header>
+
+      <div className={`${styles.statusStripRow} app-no-drag`}>
+        <StatusStrip />
+      </div>
 
       <nav className={`${styles.sidebar} app-no-drag`}>
         {navItem('analyze', 'Analyze')}
