@@ -17,8 +17,14 @@ import {
   submitOAuthPromptResponse,
   type OAuthStatus,
 } from '../lib/oauth';
+import {
+  getCostGuardState,
+  updateCostGuardConfig,
+  type CostGuardConfig,
+  type SpendState,
+} from '../lib/cost-guard';
 
-type Tab = 'llm' | 'data' | 'broker' | 'clawless' | 'about';
+type Tab = 'llm' | 'data' | 'broker' | 'clawless' | 'costguard' | 'about';
 
 interface TabDef {
   id: Tab;
@@ -50,6 +56,12 @@ const TABS: TabDef[] = [
     label: 'Clawless',
     description:
       'Optional connector — route LLM calls through a Clawless gateway when one is reachable.',
+  },
+  {
+    id: 'costguard',
+    label: 'Cost Guard',
+    description:
+      'Daily / weekly / monthly USD caps + optional sessions-per-day rate cap. Applies to live LLM debates only — stub mode is always free.',
   },
   {
     id: 'about',
@@ -292,6 +304,7 @@ function Settings() {
               onChange={refresh}
             />
           )}
+          {active === 'costguard' && <CostGuardTab />}
           {active === 'about' && (
             <AboutTab availability={availability} secretsCount={listings.length} />
           )}
@@ -733,6 +746,290 @@ function formatRelative(iso: string): string {
   if (diffSec < 3600) return `${Math.round(diffSec / 60)}m ago`;
   if (diffSec < 86400) return `${Math.round(diffSec / 3600)}h ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+// ---- Cost Guard tab --------------------------------------------------------
+
+function CostGuardTab() {
+  const [config, setConfig] = useState<CostGuardConfig | null>(null);
+  const [spend, setSpend] = useState<SpendState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Form draft state — separate from `config` so the user can edit without
+  // clobbering displayed-current values until they hit Save.
+  const [draftEnabled, setDraftEnabled] = useState(true);
+  const [draftDaily, setDraftDaily] = useState('');
+  const [draftWeekly, setDraftWeekly] = useState('');
+  const [draftMonthly, setDraftMonthly] = useState('');
+  const [draftSessionsPerDay, setDraftSessionsPerDay] = useState('');
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const state = await getCostGuardState();
+      setConfig(state.config);
+      setSpend(state.spend);
+      setDraftEnabled(state.config.enabled);
+      setDraftDaily(String(state.config.cap_daily_usd));
+      setDraftWeekly(String(state.config.cap_weekly_usd));
+      setDraftMonthly(String(state.config.cap_monthly_usd));
+      setDraftSessionsPerDay(String(state.config.cap_sessions_per_day));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'failed to load cost guard');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const onSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    setError(null);
+    try {
+      const updated = await updateCostGuardConfig({
+        enabled: draftEnabled,
+        cap_daily_usd: parseNonNegFloat(draftDaily, config?.cap_daily_usd ?? 0),
+        cap_weekly_usd: parseNonNegFloat(draftWeekly, config?.cap_weekly_usd ?? 0),
+        cap_monthly_usd: parseNonNegFloat(draftMonthly, config?.cap_monthly_usd ?? 0),
+        cap_sessions_per_day: parseNonNegInt(
+          draftSessionsPerDay,
+          config?.cap_sessions_per_day ?? 0,
+        ),
+      });
+      setConfig(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+      // Refresh spend snapshot in case time crossed a window boundary.
+      const state = await getCostGuardState();
+      setSpend(state.spend);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'failed to save cost guard');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading || !config || !spend) {
+    return (
+      <div className={styles.formCard}>
+        <p className={styles.formHint}>{error ?? 'Loading cost guard…'}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.formCard}>
+      <div className={styles.formGroup}>
+        <label className={styles.toggleRow}>
+          <input
+            type="checkbox"
+            checked={draftEnabled}
+            onChange={(e) => setDraftEnabled(e.target.checked)}
+          />
+          <span>
+            <strong>Budget caps enabled</strong>
+            <div className={styles.formHint}>
+              When off, all live debates are allowed regardless of caps.
+            </div>
+          </span>
+        </label>
+      </div>
+
+      <fieldset className={styles.formGroup} disabled={!draftEnabled}>
+        <legend className={styles.formLegend}>API cost caps (USD)</legend>
+        <p className={styles.formHint}>
+          Applies to API-key sessions only. OAuth sessions cost $0
+          (subscription-billed). Set to 0 to disable any window.
+        </p>
+        <CostInputRow
+          label="Daily"
+          value={draftDaily}
+          onChange={setDraftDaily}
+          step={0.25}
+          placeholder="1.00"
+        />
+        <CostInputRow
+          label="Weekly"
+          value={draftWeekly}
+          onChange={setDraftWeekly}
+          step={1}
+          placeholder="5.00"
+        />
+        <CostInputRow
+          label="Monthly"
+          value={draftMonthly}
+          onChange={setDraftMonthly}
+          step={5}
+          placeholder="15.00"
+        />
+      </fieldset>
+
+      <fieldset className={styles.formGroup} disabled={!draftEnabled}>
+        <legend className={styles.formLegend}>Session rate cap</legend>
+        <p className={styles.formHint}>
+          Applies to all live sessions including OAuth. Use this to cap your
+          ChatGPT subscription quota usage. Set to 0 to disable.
+        </p>
+        <CostInputRow
+          label="Per day"
+          value={draftSessionsPerDay}
+          onChange={setDraftSessionsPerDay}
+          step={1}
+          placeholder="0 (disabled)"
+          asInteger
+        />
+      </fieldset>
+
+      <fieldset className={styles.formGroup}>
+        <legend className={styles.formLegend}>Current period spend</legend>
+        <SpendBar
+          label="Daily"
+          current={spend.daily_usd}
+          cap={config.cap_daily_usd}
+        />
+        <SpendBar
+          label="Weekly"
+          current={spend.weekly_usd}
+          cap={config.cap_weekly_usd}
+        />
+        <SpendBar
+          label="Monthly"
+          current={spend.monthly_usd}
+          cap={config.cap_monthly_usd}
+        />
+        {config.cap_sessions_per_day > 0 && (
+          <SpendBar
+            label="Sessions today"
+            current={spend.sessions_today}
+            cap={config.cap_sessions_per_day}
+            isCount
+          />
+        )}
+        <button
+          type="button"
+          className={styles.refreshLink}
+          onClick={() => void refresh()}
+        >
+          Refresh
+        </button>
+      </fieldset>
+
+      {error && <p className={styles.formError}>{error}</p>}
+      {saved && <p className={styles.formSuccess}>Saved.</p>}
+
+      <div className={styles.formActions}>
+        <button
+          type="button"
+          className={styles.formSave}
+          onClick={() => void onSave()}
+          disabled={saving}
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface CostInputRowProps {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  step?: number;
+  placeholder?: string;
+  asInteger?: boolean;
+}
+
+function CostInputRow({
+  label,
+  value,
+  onChange,
+  step = 0.25,
+  placeholder,
+  asInteger,
+}: CostInputRowProps) {
+  return (
+    <div className={styles.costInputRow}>
+      <label className={styles.costInputLabel}>
+        {label}
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step={asInteger ? 1 : step}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className={styles.costInputField}
+        />
+      </label>
+    </div>
+  );
+}
+
+interface SpendBarProps {
+  label: string;
+  current: number;
+  cap: number;
+  isCount?: boolean;
+}
+
+function SpendBar({ label, current, cap, isCount }: SpendBarProps) {
+  if (cap <= 0) {
+    return (
+      <div className={styles.spendRow}>
+        <span className={styles.spendLabel}>{label}</span>
+        <span className={styles.spendValue}>
+          {isCount ? current : formatUsdShort(current)} · cap disabled
+        </span>
+      </div>
+    );
+  }
+  const pct = Math.min(100, (current / cap) * 100);
+  const tone = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : 'ok';
+  return (
+    <div className={styles.spendRow}>
+      <span className={styles.spendLabel}>{label}</span>
+      <div className={styles.spendProgress}>
+        <div
+          className={`${styles.spendBar} ${styles[`spendBar_${tone}`] ?? ''}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className={styles.spendValue}>
+        {isCount
+          ? `${current} / ${cap}`
+          : `${formatUsdShort(current)} / ${formatUsdShort(cap)}`}
+      </span>
+    </div>
+  );
+}
+
+function parseNonNegFloat(raw: string, fallback: number): number {
+  const n = parseFloat(raw);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return n;
+}
+
+function parseNonNegInt(raw: string, fallback: number): number {
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return n;
+}
+
+function formatUsdShort(value: number): string {
+  if (value >= 100) return `$${value.toFixed(0)}`;
+  if (value >= 1) return `$${value.toFixed(2)}`;
+  if (value >= 0.01) return `$${value.toFixed(3)}`;
+  return `$${value.toFixed(4)}`;
 }
 
 export default Settings;
