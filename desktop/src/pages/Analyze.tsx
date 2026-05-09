@@ -9,6 +9,7 @@ import {
   type LLMProvider,
   type ProviderConfig,
   type StreamHandle,
+  OPENAI_CODEX_DEFAULT_MODEL,
   PROVIDER_DEFAULT_MODEL,
   PROVIDER_LABEL,
   PROVIDER_PRIORITY,
@@ -257,7 +258,9 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
                   expires: creds.expires,
                   account_id: creds.accountId,
                 },
-                model: PROVIDER_DEFAULT_MODEL.openai,
+                // Codex backend rejects gpt-4o-mini for ChatGPT-account
+                // auth — different model family lives behind that endpoint.
+                model: OPENAI_CODEX_DEFAULT_MODEL,
                 max_tokens: 400,
               };
             }
@@ -364,12 +367,59 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   return (
     <div className={styles.page}>
       <header className={styles.pageHeader}>
-        <h1 className={styles.pageTitle}>Analyze</h1>
-        <p className={styles.pageSubtitle}>
-          Run a multi-agent analysis of a ticker on a specific date. The analyst,
-          researcher, trader, and risk-manager agents debate and produce a
-          recommendation.
-        </p>
+        <div className={styles.pageHeaderTitleBlock}>
+          <h1 className={styles.pageTitle}>Analyze</h1>
+          <p className={styles.pageSubtitle}>
+            Run a multi-agent analysis of a ticker on a specific date. The
+            analyst, researcher, trader, and risk-manager agents debate and
+            produce a recommendation.
+          </p>
+        </div>
+        <div className={styles.pageHeaderProvider}>
+          <label className={styles.providerLabel} htmlFor="run-with">
+            Run with
+          </label>
+          <select
+            id="run-with"
+            className={styles.providerSelect}
+            value={activeProvider ?? ''}
+            onChange={(e) => onSelectProvider(e.target.value as LLMProvider | '')}
+            disabled={isStreaming || engineStatus !== 'running'}
+          >
+            {PROVIDER_PRIORITY.map((p) => {
+              const configured = configuredProviders.has(p);
+              const isOpenAIOAuth = p === 'openai' && openaiAuthKind === 'oauth';
+              const modelLabel = isOpenAIOAuth
+                ? OPENAI_CODEX_DEFAULT_MODEL
+                : PROVIDER_DEFAULT_MODEL[p];
+              const label = configured
+                ? `${PROVIDER_LABEL[p]}${isOpenAIOAuth ? ' (OAuth)' : ''} · ${modelLabel}`
+                : `${PROVIDER_LABEL[p]} — configure in Settings`;
+              return (
+                <option key={p} value={p} disabled={!configured}>
+                  {label}
+                </option>
+              );
+            })}
+            {configuredProviders.size === 0 && (
+              <option value="" disabled>
+                Stub debate — no LLM configured
+              </option>
+            )}
+          </select>
+          {manualProvider && (
+            <button
+              type="button"
+              className={styles.providerReset}
+              onClick={() => onSelectProvider('')}
+              disabled={isStreaming}
+              title="Reset to priority default"
+              aria-label="Reset provider selection to automatic priority default"
+            >
+              Reset
+            </button>
+          )}
+        </div>
       </header>
 
       <section className={styles.card}>
@@ -419,53 +469,11 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
             )}
           </div>
         </div>
-        <div className={styles.providerRow}>
-          <label className={styles.providerLabel} htmlFor="run-with">
-            Run with
-          </label>
-          <select
-            id="run-with"
-            className={styles.providerSelect}
-            value={activeProvider ?? ''}
-            onChange={(e) => onSelectProvider(e.target.value as LLMProvider | '')}
-            disabled={isStreaming || engineStatus !== 'running'}
-          >
-            {PROVIDER_PRIORITY.map((p) => {
-              const configured = configuredProviders.has(p);
-              const isOpenAIOAuth = p === 'openai' && openaiAuthKind === 'oauth';
-              const label = configured
-                ? `${PROVIDER_LABEL[p]}${isOpenAIOAuth ? ' (OAuth)' : ''} · ${PROVIDER_DEFAULT_MODEL[p]}`
-                : `${PROVIDER_LABEL[p]} — configure in Settings`;
-              return (
-                <option key={p} value={p} disabled={!configured}>
-                  {label}
-                </option>
-              );
-            })}
-            {configuredProviders.size === 0 && (
-              <option value="" disabled>
-                Stub debate — no LLM configured
-              </option>
-            )}
-          </select>
-          {manualProvider && (
-            <button
-              type="button"
-              className={styles.providerReset}
-              onClick={() => onSelectProvider('')}
-              disabled={isStreaming}
-              title="Reset to priority default"
-              aria-label="Reset provider selection to automatic priority default"
-            >
-              Reset
-            </button>
-          )}
-        </div>
         <div className={styles.cardFooter}>
           <p className={styles.helper}>
             {engineStatus === 'pending' && 'Engine starting — sidecar handshake pending.'}
             {engineStatus === 'running' && !isStreaming && activeProvider === 'openai' && openaiAuthKind === 'oauth' &&
-              `Live debate — OAuth · ${PROVIDER_DEFAULT_MODEL.openai}, capped per agent.`}
+              `Live debate — OAuth · ${OPENAI_CODEX_DEFAULT_MODEL}, capped per agent.`}
             {engineStatus === 'running' && !isStreaming && activeProvider && !(activeProvider === 'openai' && openaiAuthKind === 'oauth') &&
               `Live debate — sequential calls to ${PROVIDER_LABEL[activeProvider]} ${PROVIDER_DEFAULT_MODEL[activeProvider]}, capped per agent.`}
             {engineStatus === 'running' && !isStreaming && !activeProvider &&
@@ -539,7 +547,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
           </div>
           <div className={styles.statusHint}>
             {activeProvider === 'openai' && openaiAuthKind === 'oauth'
-              ? 'OAuth · gpt-4o-mini · sequential agent calls'
+              ? `OAuth · ${OPENAI_CODEX_DEFAULT_MODEL} · sequential agent calls`
               : activeProvider
                 ? `${PROVIDER_DEFAULT_MODEL[activeProvider]} · sequential agent calls`
                 : 'Settings → LLM Providers · stub debate until configured'}

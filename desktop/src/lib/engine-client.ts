@@ -40,13 +40,28 @@ export const PROVIDER_LABEL: Record<LLMProvider, string> = {
   gemini: 'Google Gemini',
 };
 
-/** Default model the engine assumes when ProviderConfig.model is not set. */
+/** Default model the engine assumes when ProviderConfig.model is not set.
+ *
+ * NOTE: OpenAI here is the API-key path (gpt-4o-mini against
+ * `/v1/chat/completions`). The OAuth path routes through the Codex
+ * backend at `chatgpt.com/backend-api`, which only accepts a different
+ * model family — see OPENAI_CODEX_DEFAULT_MODEL.
+ */
 export const PROVIDER_DEFAULT_MODEL: Record<LLMProvider, string> = {
   openai: 'gpt-4o-mini',
   anthropic: 'claude-haiku-4-5',
   openrouter: 'openai/gpt-4o-mini',
   gemini: 'gemini-2.0-flash',
 };
+
+/**
+ * Default model when the OpenAI auth flow is OAuth (Codex). The Codex
+ * backend rejects `gpt-4o-mini` ("not supported when using Codex with a
+ * ChatGPT account") and only accepts the GPT-5 family for ChatGPT-account
+ * routing. We pick `gpt-5.1-codex-mini` as the cheapest reasoning-capable
+ * default — listed in pi-ai's `openai-codex` provider model registry.
+ */
+export const OPENAI_CODEX_DEFAULT_MODEL = 'gpt-5.1-codex-mini';
 
 /**
  * Priority order when multiple keys are configured. First match wins.

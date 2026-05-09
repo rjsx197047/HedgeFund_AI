@@ -7,8 +7,29 @@
 
 .pageHeader {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--tal-space-6);
+  flex-wrap: wrap;
+}
+
+.pageHeaderTitleBlock {
+  display: flex;
   flex-direction: column;
   gap: var(--tal-space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+/* Provider selector pinned to the top-right of the page header, across
+ * from the "Analyze" title. Treated as a one-time setup affordance — not
+ * a recurring form field — so it stays out of the main analyze card. */
+.pageHeaderProvider {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-2);
+  flex-shrink: 0;
+  margin-top: var(--tal-space-1);
 }
 
 .pageTitle {
@@ -126,16 +147,8 @@
   flex-wrap: wrap;
 }
 
-/* Provider selector — sits between the form row and the helper text.
- * Visible by default so the founder always knows which provider will run
- * the next debate. */
-.providerRow {
-  display: flex;
-  align-items: center;
-  gap: var(--tal-space-3);
-  flex-wrap: wrap;
-}
-
+/* Provider selector lives on the top-right of the page header now (less
+ * prominent — one-time setup, not a recurring form field). */
 .providerLabel {
   font-size: var(--tal-text-xs);
   font-weight: 600;
@@ -150,13 +163,13 @@
   border: 1px solid var(--tal-border-default);
   border-radius: var(--tal-radius-md);
   color: var(--tal-text-primary);
-  padding: var(--tal-space-2) var(--tal-space-3);
+  padding: var(--tal-space-1) var(--tal-space-3);
   font-family: var(--tal-font-mono);
-  font-size: var(--tal-text-sm);
+  font-size: var(--tal-text-xs);
   outline: none;
   cursor: pointer;
   transition: border-color var(--tal-duration-fast) var(--tal-ease-out);
-  min-width: 280px;
+  min-width: 240px;
 }
 
 .providerSelect:focus {
@@ -174,7 +187,7 @@
   color: var(--tal-text-muted);
   border: 1px solid var(--tal-border-default);
   border-radius: var(--tal-radius-md);
-  padding: var(--tal-space-1) var(--tal-space-3);
+  padding: 2px var(--tal-space-2);
   font-family: var(--tal-font-mono);
   font-size: var(--tal-text-xs);
   text-transform: uppercase;
