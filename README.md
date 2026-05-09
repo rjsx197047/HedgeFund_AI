@@ -23,12 +23,31 @@ The project also serves as a practical case study for **[Clawdemy.org](https://c
 
 ## Screenshots
 
-> 📸 **Screenshots coming soon.** The four pages below are functional in the running app today — captures will land here as the UI hits v0.1. See [`assets/screenshots/README.md`](assets/screenshots/README.md) for the capture spec if you want to contribute screenshots.
+### The Analyze flow
 
-- **Analyze** — pick a ticker (stocks or crypto), pick an LLM provider, watch 12 agents debate live in real time with token usage and cost shown per session.
-- **Settings** — bring-your-own keys for OpenAI (API key or ChatGPT OAuth), Anthropic, OpenRouter, Google Gemini. Optional Alpaca data + Cost Guard caps configurable here.
-- **History** — every debate persisted to local SQLite. Browse past sessions, replay the full transcript, copy as Markdown.
-- **Watchlist** — track tickers locally, deep-link straight into Analyze. No server, no telemetry.
+| Pick a ticker, provider, model — see live data context | Watch the debate stream → final decision with disclaimer |
+|:---:|:---:|
+| ![Analyze form](assets/screenshots/analyze-form.png) | ![Decision card](assets/screenshots/analyze-decision.png) |
+| Compact status strip up top (Engine / Data / LLM / Clawless) is always visible. Data card shows real Alpaca SIP-feed bars before the debate starts. | Risk committee debates → portfolio manager outputs BUY / SELL / HOLD with confidence + reasoning + inline disclaimer. |
+
+### Settings — bring your own everything
+
+| LLM Providers | Data Providers |
+|:---:|:---:|
+| ![LLM Providers](assets/screenshots/settings-llm.png) | ![Data Providers](assets/screenshots/settings-data.png) |
+| OpenAI (API key or OAuth — OAuth wins when both are configured), Anthropic, OpenRouter, Google Gemini. Green "Connected" pill confirms each. | yfinance is the free zero-config default. Alpaca Markets optional for higher-quality SIP-feed bars + crypto. Both keys encrypted via OS keychain. |
+
+| Cost Guard | Other pages |
+|:---:|:---:|
+| ![Cost Guard](assets/screenshots/settings-costguard.png) | ![Watchlist](assets/screenshots/watchlist.png) |
+| Daily / weekly / monthly USD caps + optional sessions-per-day rate cap. Live spend bars (green → amber → red). Override modal has a 3-second anti-tamper countdown. | Watchlist for stocks AND crypto — `BTC`, `ETH`, etc. auto-route to the crypto endpoint. Click Analyze to drop straight into a debate with the ticker pre-filled. |
+
+| History |  |
+|:---:|:---:|
+| ![History](assets/screenshots/history.png) |  |
+| Every debate persisted to local SQLite at `data/sessions.db`. Browse past sessions, replay the full transcript, copy as Markdown. Aborted runs aren't stored. | |
+
+> 📸 *More captures (Analyst phase, Researcher phase, Clawless tab) live in [`assets/screenshots/`](assets/screenshots/) for documentation/marketing reuse. See the [capture spec](assets/screenshots/README.md) if you want to refresh them.*
 
 ---
 
