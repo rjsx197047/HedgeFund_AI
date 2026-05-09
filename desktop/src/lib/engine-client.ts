@@ -62,11 +62,96 @@ export const PROVIDER_DEFAULT_MODEL: Record<LLMProvider, string> = {
  * during founder smoke tests. `gpt-5.4` ("strong model for everyday
  * coding" per the official Codex model list) is the first entry on
  * Codex's own picker and should be reliably available across tiers.
- *
- * For the per-provider model picker (next chunk), this becomes the
- * "recommended" pre-selection rather than a hard default.
  */
 export const OPENAI_CODEX_DEFAULT_MODEL = 'gpt-5.4';
+
+/** Per-provider model registry for the model picker. Each entry has an
+ * id (sent to the engine), a display label, an optional `note` shown
+ * inline, and a `recommended` flag for the suggested default.
+ *
+ * Curated to the 3-5 latest, non-legacy models per provider as of
+ * 2026-05-09. Refresh manually as providers ship new model families.
+ */
+export interface ModelChoice {
+  id: string;
+  label: string;
+  note?: string;
+  recommended?: boolean;
+}
+
+export const PROVIDER_MODELS: Record<LLMProvider, ModelChoice[]> = {
+  openai: [
+    { id: 'gpt-5',       label: 'gpt-5',        note: 'Most capable' },
+    { id: 'gpt-5-mini',  label: 'gpt-5-mini',   note: 'Balanced' },
+    { id: 'gpt-4o',      label: 'gpt-4o',       note: 'Multimodal flagship' },
+    { id: 'gpt-4o-mini', label: 'gpt-4o-mini',  note: 'Cheapest', recommended: true },
+  ],
+  anthropic: [
+    { id: 'claude-opus-4-7',   label: 'Claude Opus 4.7',   note: 'Most capable' },
+    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', note: 'Balanced',  recommended: true },
+    { id: 'claude-haiku-4-5',  label: 'Claude Haiku 4.5',  note: 'Cheapest' },
+  ],
+  openrouter: [
+    { id: 'openai/gpt-4o-mini',          label: 'OpenAI · gpt-4o-mini', note: 'Cheapest', recommended: true },
+    { id: 'openai/gpt-5-mini',           label: 'OpenAI · gpt-5-mini',  note: 'Balanced' },
+    { id: 'anthropic/claude-sonnet-4-6', label: 'Anthropic · Sonnet 4.6' },
+    { id: 'google/gemini-2.0-flash',     label: 'Google · Gemini 2.0 Flash' },
+  ],
+  gemini: [
+    { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   note: 'Most capable' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: 'Balanced' },
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', note: 'Cheapest', recommended: true },
+  ],
+};
+
+/** OpenAI Codex (OAuth path) — distinct list from the API-key models.
+ * Codex backend has stricter model availability for ChatGPT-account
+ * routing. List sourced from founder's own Codex picker (2026-05-09).
+ * `gpt-5.1-codex-mini` is intentionally excluded — Codex returns 400
+ * for it when authed via ChatGPT account despite its presence in
+ * pi-ai's registry. `gpt-5.4` is the first entry on Codex's own UI
+ * and confirmed working.
+ */
+export const OPENAI_CODEX_MODELS: ModelChoice[] = [
+  { id: 'gpt-5.4',           label: 'gpt-5.4',           note: 'Strong everyday', recommended: true },
+  { id: 'gpt-5.2',           label: 'gpt-5.2',           note: 'Long-running agents' },
+  { id: 'gpt-5.1-codex-max', label: 'gpt-5.1-codex-max', note: 'Flagship reasoning' },
+  { id: 'gpt-5.4-mini',      label: 'gpt-5.4-mini',      note: 'Cheaper / faster' },
+  { id: 'gpt-5.2-codex',     label: 'gpt-5.2-codex',     note: 'Frontier coding' },
+  { id: 'gpt-5.3-codex',     label: 'gpt-5.3-codex',     note: 'Coding-optimized' },
+];
+
+/** Returns the model list to show in the picker for a given provider +
+ * OpenAI auth flow. The OAuth path picks from the Codex-specific list. */
+export function getAvailableModels(
+  provider: LLMProvider,
+  authKind: 'oauth' | 'api_key' | null,
+): ModelChoice[] {
+  if (provider === 'openai' && authKind === 'oauth') return OPENAI_CODEX_MODELS;
+  return PROVIDER_MODELS[provider];
+}
+
+/** Returns the recommended model id for a provider + auth flow. */
+export function getRecommendedModel(
+  provider: LLMProvider,
+  authKind: 'oauth' | 'api_key' | null,
+): string {
+  const list = getAvailableModels(provider, authKind);
+  return (list.find((m) => m.recommended) ?? list[0]).id;
+}
+
+/** localStorage key for the user's saved model choice for a given
+ * (provider, auth flow) tuple. Switching providers and back remembers
+ * each provider's last manual choice independently. */
+export function getModelStorageKey(
+  provider: LLMProvider,
+  authKind: 'oauth' | 'api_key' | null,
+): string {
+  if (provider === 'openai' && authKind === 'oauth') {
+    return 'tal:analyze:selected-model:openai-oauth';
+  }
+  return `tal:analyze:selected-model:${provider}`;
+}
 
 /**
  * Priority order when multiple keys are configured. First match wins.

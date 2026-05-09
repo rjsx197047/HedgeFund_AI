@@ -9,8 +9,9 @@ import {
   type LLMProvider,
   type ProviderConfig,
   type StreamHandle,
-  OPENAI_CODEX_DEFAULT_MODEL,
-  PROVIDER_DEFAULT_MODEL,
+  getAvailableModels,
+  getModelStorageKey,
+  getRecommendedModel,
   PROVIDER_LABEL,
   PROVIDER_PRIORITY,
   PROVIDER_SECRET_KEY,
@@ -107,6 +108,62 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   useEffect(() => {
     openaiAuthKindRef.current = openaiAuthKind;
   }, [openaiAuthKind]);
+
+  /**
+   * Available models for the current provider+auth combo. Recomputed
+   * whenever the active provider or OpenAI auth flow changes.
+   */
+  const availableModels = useMemo(() => {
+    if (!activeProvider) return [];
+    return getAvailableModels(activeProvider, openaiAuthKind);
+  }, [activeProvider, openaiAuthKind]);
+
+  /**
+   * The model that will run the next debate. Pulls from per-(provider,auth)
+   * localStorage memory if the user picked one before; falls back to the
+   * recommended entry. Validates against the current available list — if
+   * the saved id no longer exists in the registry (model deprecated), we
+   * drop it and use the recommendation.
+   */
+  const [activeModel, setActiveModel] = useState<string | null>(null);
+
+  // Resync the model selection whenever the (provider, authKind) tuple
+  // changes. Reads from localStorage; falls back to recommended.
+  useEffect(() => {
+    if (!activeProvider) {
+      setActiveModel(null);
+      return;
+    }
+    const key = getModelStorageKey(activeProvider, openaiAuthKind);
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(key);
+    } catch {
+      // ignore
+    }
+    const inList = saved && availableModels.some((m) => m.id === saved);
+    setActiveModel(inList ? saved : getRecommendedModel(activeProvider, openaiAuthKind));
+  }, [activeProvider, openaiAuthKind, availableModels]);
+
+  /** Ref mirror so onAnalyze sees the right model under racing state. */
+  const activeModelRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeModelRef.current = activeModel;
+  }, [activeModel]);
+
+  const onSelectModel = useCallback(
+    (modelId: string) => {
+      if (!activeProvider) return;
+      setActiveModel(modelId);
+      try {
+        const key = getModelStorageKey(activeProvider, openaiAuthKind);
+        localStorage.setItem(key, modelId);
+      } catch {
+        // ignore
+      }
+    },
+    [activeProvider, openaiAuthKind],
+  );
   const handleRef = useRef<StreamHandle | null>(null);
   const isStreamingRef = useRef(false);
   const engineReadyRef = useRef(false);
@@ -223,6 +280,29 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     }
   }, []);
 
+  /**
+   * Reset BOTH provider and model overrides. Provider falls back to the
+   * priority resolver; model falls back to the recommended entry for
+   * whatever provider then resolves. Per-provider model memories in
+   * localStorage are also cleared so "Reset" really means "give me the
+   * recommended setup."
+   */
+  const onResetOverrides = useCallback(() => {
+    setManualProvider(null);
+    try {
+      localStorage.removeItem(SELECTED_PROVIDER_STORAGE_KEY);
+      // Clear per-(provider,auth) model memories.
+      for (const p of PROVIDER_PRIORITY) {
+        localStorage.removeItem(getModelStorageKey(p, null));
+        if (p === 'openai') {
+          localStorage.removeItem(getModelStorageKey('openai', 'oauth'));
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const onAnalyze = async () => {
     if (!engineReadyRef.current || isStreamingRef.current) return;
     setEvents([]);
@@ -238,11 +318,15 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
       // OpenAI special case: prefer OAuth (subscription plan) when both
       // OAuth tokens AND an API key are stored. The main-process service
       // silently refreshes the access token if it's within 60s of expiry.
-      // Snapshot the resolved provider + OpenAI auth flow at click-time
-      // through the refs — guards against a Settings-tab state change
-      // racing with the multiple awaits inside this async handler.
+      // Snapshot the resolved provider + OpenAI auth flow + model at
+      // click-time through the refs — guards against a Settings-tab
+      // state change racing with the multiple awaits inside this async
+      // handler.
       const provider = activeProviderRef.current;
       const authKind = openaiAuthKindRef.current;
+      const model =
+        activeModelRef.current ??
+        (provider ? getRecommendedModel(provider, authKind) : '');
       let providerConfig: ProviderConfig | undefined;
       try {
         if (provider === 'openai') {
@@ -258,9 +342,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
                   expires: creds.expires,
                   account_id: creds.accountId,
                 },
-                // Codex backend rejects gpt-4o-mini for ChatGPT-account
-                // auth — different model family lives behind that endpoint.
-                model: OPENAI_CODEX_DEFAULT_MODEL,
+                model,
                 max_tokens: 400,
               };
             }
@@ -271,7 +353,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
               providerConfig = {
                 provider: 'openai',
                 auth: { type: 'api_key', api_key: apiKey },
-                model: PROVIDER_DEFAULT_MODEL.openai,
+                model,
                 max_tokens: 400,
               };
             }
@@ -282,7 +364,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
             providerConfig = {
               provider,
               auth: { type: 'api_key', api_key: apiKey },
-              model: PROVIDER_DEFAULT_MODEL[provider],
+              model,
               max_tokens: 400,
             };
           }
@@ -389,11 +471,8 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
             {PROVIDER_PRIORITY.map((p) => {
               const configured = configuredProviders.has(p);
               const isOpenAIOAuth = p === 'openai' && openaiAuthKind === 'oauth';
-              const modelLabel = isOpenAIOAuth
-                ? OPENAI_CODEX_DEFAULT_MODEL
-                : PROVIDER_DEFAULT_MODEL[p];
               const label = configured
-                ? `${PROVIDER_LABEL[p]}${isOpenAIOAuth ? ' (OAuth)' : ''} · ${modelLabel}`
+                ? `${PROVIDER_LABEL[p]}${isOpenAIOAuth ? ' (OAuth)' : ''}`
                 : `${PROVIDER_LABEL[p]} — configure in Settings`;
               return (
                 <option key={p} value={p} disabled={!configured}>
@@ -407,14 +486,34 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
               </option>
             )}
           </select>
-          {manualProvider && (
+          {activeProvider && availableModels.length > 0 && (
+            <select
+              className={styles.providerSelect}
+              value={activeModel ?? ''}
+              onChange={(e) => onSelectModel(e.target.value)}
+              disabled={isStreaming || engineStatus !== 'running'}
+              aria-label="Select model"
+            >
+              {availableModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                  {m.recommended ? ' (recommended)' : ''}
+                  {m.note ? ` — ${m.note}` : ''}
+                </option>
+              ))}
+            </select>
+          )}
+          {(manualProvider ||
+            (activeProvider &&
+              activeModel !== null &&
+              activeModel !== getRecommendedModel(activeProvider, openaiAuthKind))) && (
             <button
               type="button"
               className={styles.providerReset}
-              onClick={() => onSelectProvider('')}
+              onClick={onResetOverrides}
               disabled={isStreaming}
-              title="Reset to priority default"
-              aria-label="Reset provider selection to automatic priority default"
+              title="Reset provider and model to recommended defaults"
+              aria-label="Reset provider and model to recommended defaults"
             >
               Reset
             </button>
@@ -472,10 +571,8 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         <div className={styles.cardFooter}>
           <p className={styles.helper}>
             {engineStatus === 'pending' && 'Engine starting — sidecar handshake pending.'}
-            {engineStatus === 'running' && !isStreaming && activeProvider === 'openai' && openaiAuthKind === 'oauth' &&
-              `Live debate — OAuth · ${OPENAI_CODEX_DEFAULT_MODEL}, capped per agent.`}
-            {engineStatus === 'running' && !isStreaming && activeProvider && !(activeProvider === 'openai' && openaiAuthKind === 'oauth') &&
-              `Live debate — sequential calls to ${PROVIDER_LABEL[activeProvider]} ${PROVIDER_DEFAULT_MODEL[activeProvider]}, capped per agent.`}
+            {engineStatus === 'running' && !isStreaming && activeProvider && activeModel &&
+              `Live debate — ${PROVIDER_LABEL[activeProvider]}${openaiAuthKind === 'oauth' && activeProvider === 'openai' ? ' (OAuth)' : ''} · ${activeModel}, capped per agent.`}
             {engineStatus === 'running' && !isStreaming && !activeProvider &&
               'Stub debate — paste an LLM key in Settings to switch to live agents.'}
             {engineStatus === 'running' && isStreaming &&
@@ -546,11 +643,9 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
               : 'Not configured'}
           </div>
           <div className={styles.statusHint}>
-            {activeProvider === 'openai' && openaiAuthKind === 'oauth'
-              ? `OAuth · ${OPENAI_CODEX_DEFAULT_MODEL} · sequential agent calls`
-              : activeProvider
-                ? `${PROVIDER_DEFAULT_MODEL[activeProvider]} · sequential agent calls`
-                : 'Settings → LLM Providers · stub debate until configured'}
+            {activeProvider && activeModel
+              ? `${openaiAuthKind === 'oauth' && activeProvider === 'openai' ? 'OAuth · ' : ''}${activeModel} · sequential agent calls`
+              : 'Settings → LLM Providers · stub debate until configured'}
           </div>
         </div>
         <div className={styles.statusCard}>
