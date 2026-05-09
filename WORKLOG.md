@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-05-09 (continued) — Multi-provider live debate (Anthropic, OpenRouter, Gemini)
+
+**Goal:** Founder confirmed they have keys for OpenAI, Anthropic, OpenRouter, Google Gemini (no DeepSeek). Wire all four through one shared `LLMAdapter` abstraction so the live debate path isn't OpenAI-only. Reviewer required this be ONE commit (not three) so the abstraction itself is the review surface.
+
+**Architect protocol followed:**
+- ClaudeLink ping to Clawless Advisor for OpenAI OAuth pattern (replied-when-convenient).
+- Pre-design advisor consult: required one commit, dictated `LLMAdapter` Protocol shape, said cost caps stay in `live_debate.py` not adapters, said remove DeepSeek from Settings (no engine wiring → bad UX), conservative cost numbers with "as of 2026-05-09" comment.
+- Reviewer agent (Sonnet) on the working tree pre-commit. Two functional issues + three doc drifts + several nice-to-haves. All addressed before commit.
+
+**Reviewer fixes applied:**
+1. **Adapter resource leak on `WebSocketDisconnect` mid-stream** — `live_debate` wrapped in `try/finally`; `adapter.close()` runs even when `GeneratorExit` is thrown by FastAPI. Logs disconnect reason + agents-completed count to stderr.
+2. **`/health.live_default_model` was hardcoded "gpt-4o-mini"** — replaced with `live_providers` (allowlist) + `live_default_models` (per-provider dict).
+3. **`docs/api.md` three stale lines** + `docs/architecture.md` §5/§7 stale passages — all updated to reflect 4-provider reality.
+4. **Gemini `resp.text` raises `ValueError` on safety-blocked candidates** — wrapped in `try/except` with `[gemini blocked: ...]` fallback so the engine's outer error handler turns it into a clean debate event instead of a SDK stacktrace.
+5. **`session.complete.provider` not persisted** — added `provider` column to `sessions` table with in-place `ALTER TABLE` migration for existing DBs (additive, schema_version stays at 1). `SessionSummary` + `SessionDetail` carry it; History row pill + detail pill show "Live · provider · model".
+
+**Architecture choices:**
+- `LLMAdapter` is a `Protocol` (structural, not nominal). Four implementations: `OpenAIAdapter`, `OpenRouterAdapter` (extends OpenAI with `_base_url` + `HTTP-Referer`/`X-Title` headers), `AnthropicAdapter` (`AsyncAnthropic`, system prompt at top level not in messages, content block list joined defensively, `usage.input_tokens`/`output_tokens`), `GeminiAdapter` (uses maintained `google-genai`, NOT deprecated `google-generativeai`; sync client wrapped in `asyncio.to_thread`; `system_instruction` as config field; `usage_metadata.prompt_token_count`/`candidates_token_count`).
+- `ProviderConfig.from_dict` extended allowlist: `{openai, anthropic, openrouter, gemini}`. `_MAX_TOKENS_HARD_CAP = 800` clamps any caller's request — defense in depth.
+- Cost rate table moved to `llm_providers._COST_PER_M_TOKENS` with "As of 2026-05-09. Refresh annually" comment. OpenRouter passthrough has no rate entries (cost depends on the underlying model — surfaces as $0.00 in the UI).
+- `default_model` per provider: `gpt-4o-mini` / `claude-haiku-4-5` / `openai/gpt-4o-mini` / `gemini-2.0-flash`. Cheap defaults, founder can override per key by setting model in their config.
+- `live_debate.py` import-time assertion: `len(_AGENTS) == MAX_AGENTS_PER_SESSION` — drift fails on import.
+- `PROVIDER_PRIORITY` in renderer: openai > anthropic > openrouter > gemini. First-configured-key wins. Surfaced in LLM status card.
+
+**Removed:**
+- DeepSeek from `Settings.tsx` LLM Providers tab. Founder doesn't have a key, no engine wiring planned. Bad UX to ship configurable-with-no-engine. 5-line restore if a key appears later.
+
+**Verification:**
+- `npm run type-check`: clean
+- `npm run build`: clean
+- `bash tools/dev-smoke.sh NVDA 2026-05-08`: **17 passed, 0 failed** (stub regression preserved end-to-end; sessions migration works on fresh + existing DBs)
+- Direct storage round-trip of `provider` field verified outside the smoke
+- Provider rate table cost estimate sanity-checked at import
+
+**Commit:** TBD.
+
+---
+
 ## 2026-05-09 (continued) — Watchlist page + dead-code cleanup
 
 **Goal:** Replace the ComingSoon Watchlist placeholder with a real, SQLite-backed page that lets the founder track tickers and one-click into Analyze. Per advisor, this is a separate commit from History.

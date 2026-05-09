@@ -6,80 +6,44 @@ structure) but call the model directly with our own minimal orchestration.
 The full upstream-graph integration is a later phase; the simpler approach is
 controllable, debuggable, and stays under the founder's quota.
 
-Cost discipline (non-negotiable):
-- Default model is `gpt-4o-mini`
-- `max_tokens` per agent message is capped (default 400)
-- Total agents per session is bounded (12 — same shape as the canned debate)
+Cost discipline (non-negotiable, enforced HERE not in adapters):
+- Total agents per session is bounded by `MAX_AGENTS_PER_SESSION = 12`
+- `max_tokens` per agent message is capped to whatever `ProviderConfig` carries
+  (which is itself capped by `_MAX_TOKENS_HARD_CAP` in `llm_providers.py`)
 - Estimated cost per session is logged to stderr after `session.complete`
 
-Rough budget per session at defaults: ~7,400 input tokens (each agent gets
-the prior turns appended) + ~2,400 output tokens ≈ ~$0.005 USD on
-`gpt-4o-mini`. Switching to `gpt-4o` is ~16× more expensive.
+Rough budget per session at defaults (gpt-4o-mini, 400 tokens): ~7,400 input
+tokens (each agent gets the prior turns appended) + ~2,400 output tokens
+≈ ~$0.005 USD. Other providers in `llm_providers._COST_PER_M_TOKENS`.
 
 When a provider key is not configured, the module is not invoked at all —
 the WS path falls back to the canned `stub_debate.canned_debate` instead.
+Multi-provider support: see `llm_providers.LLMAdapter` for the Protocol +
+implementations (OpenAI, Anthropic, OpenRouter, Gemini).
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
-import os
 import sys
 import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Optional
 
 from .data_providers import Headline, QuoteSummary
-
-# OpenAI SDK is imported lazily inside the runner so the engine can boot
-# without the dep installed (e.g. an old venv) and the WS path can fall
-# through cleanly to the stub.
+from .llm_providers import (
+    LLMAdapter,
+    ProviderConfig,
+    adapter_for,
+    estimate_cost,
+)
 
 
 # ---- Cost / quota guardrails -------------------------------------------------
 
-DEFAULT_MODEL = "gpt-4o-mini"
-DEFAULT_MAX_TOKENS = 400
 MAX_AGENTS_PER_SESSION = 12  # same as the canned debate count
 
-# Approx GPT-4o-mini pricing (USD / 1M tokens) as of 2026-05. Used only for the
-# cost estimate logged to stderr — never relied on for billing decisions.
-_COST_PER_M_TOKENS = {
-    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-    "gpt-4o":      {"input": 2.50, "output": 10.00},
-    "gpt-4-turbo": {"input": 10.00, "output": 30.00},
-}
-
-
-@dataclass
-class ProviderConfig:
-    """Renderer-supplied config for a single debate session."""
-
-    provider: str = "openai"
-    api_key: str = ""
-    model: str = DEFAULT_MODEL
-    max_tokens: int = DEFAULT_MAX_TOKENS
-
-    @classmethod
-    def from_dict(cls, raw: Optional[dict]) -> "ProviderConfig | None":
-        if not isinstance(raw, dict):
-            return None
-        api_key = (raw.get("api_key") or "").strip()
-        if not api_key:
-            return None
-        provider = (raw.get("provider") or "openai").lower()
-        # Reject unknown providers at the boundary so the WS path can fall
-        # through to the stub cleanly. When we add Anthropic / DeepSeek /
-        # OpenRouter, extend this allowlist.
-        if provider not in {"openai"}:
-            return None
-        return cls(
-            provider=provider,
-            api_key=api_key,
-            model=raw.get("model") or DEFAULT_MODEL,
-            max_tokens=int(raw.get("max_tokens") or DEFAULT_MAX_TOKENS),
-        )
+# Backwards-compat re-exports — keep callers importing from live_debate working.
+__all__ = ["live_debate", "ProviderConfig", "MAX_AGENTS_PER_SESSION"]
 
 
 @dataclass
@@ -266,11 +230,6 @@ def _format_context(
     return "\n".join(lines)
 
 
-def _estimate_cost(model: str, in_tokens: int, out_tokens: int) -> float:
-    rates = _COST_PER_M_TOKENS.get(model, _COST_PER_M_TOKENS[DEFAULT_MODEL])
-    return (in_tokens * rates["input"] + out_tokens * rates["output"]) / 1_000_000
-
-
 def _parse_decision(content: str) -> dict:
     """Extract ACTION / CONFIDENCE from the portfolio_manager output.
 
@@ -306,34 +265,6 @@ def _parse_decision(content: str) -> dict:
     return {"action": action, "confidence": confidence, "reasoning": reasoning}
 
 
-async def _call_openai(
-    *,
-    client,
-    config: ProviderConfig,
-    system: str,
-    user: str,
-) -> tuple[str, int, int]:
-    """Single OpenAI chat call. Returns (content, in_tokens, out_tokens).
-
-    The caller owns the AsyncOpenAI client lifecycle so we don't open and
-    close a new httpx pool 12 times per session.
-    """
-    resp = await client.chat.completions.create(
-        model=config.model,
-        max_tokens=config.max_tokens,
-        temperature=0.7,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-    )
-    choice = resp.choices[0].message.content or ""
-    usage = resp.usage
-    in_tok = getattr(usage, "prompt_tokens", 0) if usage else 0
-    out_tok = getattr(usage, "completion_tokens", 0) if usage else 0
-    return choice.strip(), in_tok, out_tok
-
-
 async def live_debate(
     *,
     ticker: str,
@@ -348,12 +279,12 @@ async def live_debate(
     enforcing per-event delays — this generator does NOT include `_delay`
     fields because the LLM round trips already provide natural pacing.
     """
-    # `from_dict` already rejects unknown providers, but defend in depth:
-    # callers that build ProviderConfig manually shouldn't be able to bypass
-    # the allowlist and crash the WS handler.
-    if config.provider != "openai":
-        # Surface as a session-level decision so the UI shows a useful state
-        # and the WS still closes cleanly.
+    # `ProviderConfig.from_dict` rejects unknown providers; `adapter_for` is
+    # the second guard. If neither catches a misconfiguration, surface a
+    # graceful session.complete instead of crashing the WS handler.
+    try:
+        adapter: LLMAdapter = adapter_for(config)
+    except ValueError as exc:
         yield {
             "type": "session.start",
             "ticker": ticker,
@@ -367,121 +298,132 @@ async def live_debate(
                 "action": "HOLD",
                 "confidence": 0.0,
                 "reasoning": (
-                    f"Live debate aborted: provider {config.provider!r} is "
-                    "not yet supported. Configure OpenAI in Settings, or "
-                    "leave the LLM unconfigured to run the stub."
+                    f"Live debate aborted: {exc}. Configure a supported "
+                    "provider in Settings, or leave the LLM unconfigured "
+                    "to run the stub."
                 ),
             },
             "live": False,
         }
         return
 
-    from openai import AsyncOpenAI
-
     started_at = time.time()
     state = _DebateState()
-    # Single client for the whole session — pooled connections, deterministic
-    # teardown when the `async with` exits.
-    client = AsyncOpenAI(api_key=config.api_key)
+    await adapter.open(api_key=config.api_key)
 
-    yield {
-        "type": "session.start",
-        "ticker": ticker,
-        "trade_date": trade_date,
-    }
+    # try/finally guarantees adapter cleanup even when the client disconnects
+    # mid-stream (FastAPI raises WebSocketDisconnect, which throws GeneratorExit
+    # into this generator). Without this, the adapter's pooled httpx client
+    # leaks for the lifetime of the engine process.
+    yielded_complete = False
+    try:
+        yield {
+            "type": "session.start",
+            "ticker": ticker,
+            "trade_date": trade_date,
+        }
 
-    last_phase: Optional[str] = None
-    final_decision: Optional[dict] = None
+        last_phase: Optional[str] = None
+        final_decision: Optional[dict] = None
 
-    # Defensive cap: never exceed the agent count even if the table grows.
-    for agent in _AGENTS[:MAX_AGENTS_PER_SESSION]:
-        if last_phase is not None and agent.phase != last_phase:
-            yield {"type": "phase.transition", "from": last_phase, "to": agent.phase}
-        last_phase = agent.phase
+        # Defensive cap: never exceed the agent count even if the table grows.
+        for agent in _AGENTS[:MAX_AGENTS_PER_SESSION]:
+            if last_phase is not None and agent.phase != last_phase:
+                yield {"type": "phase.transition", "from": last_phase, "to": agent.phase}
+            last_phase = agent.phase
 
-        user_msg = _format_context(
-            ticker=ticker,
-            trade_date=trade_date,
-            summary=summary,
-            headlines=headlines,
-            state=state,
-        )
-        try:
-            content, in_tok, out_tok = await _call_openai(
-                client=client,
-                config=config,
-                system=agent.system_prompt,
-                user=user_msg,
+            user_msg = _format_context(
+                ticker=ticker,
+                trade_date=trade_date,
+                summary=summary,
+                headlines=headlines,
+                state=state,
             )
-        except Exception as exc:  # noqa: BLE001 — convert any provider error into a stream event
+            try:
+                content, in_tok, out_tok = await adapter.complete(
+                    system=agent.system_prompt,
+                    user=user_msg,
+                    model=config.model,
+                    max_tokens=config.max_tokens,
+                )
+            except Exception as exc:  # noqa: BLE001 — convert any provider error into a stream event
+                yield {
+                    "type": "agent.message",
+                    "agent": agent.name,
+                    "phase": agent.phase,
+                    "content": f"[live debate error] {type(exc).__name__}: {exc}",
+                }
+                # If the very first agent fails, abort early — no point continuing.
+                if not state.transcript:
+                    final_decision = {
+                        "action": "HOLD",
+                        "confidence": 0.0,
+                        "reasoning": (
+                            f"Live debate aborted: {type(exc).__name__}. "
+                            f"Check the configured {config.provider} key and model availability."
+                        ),
+                    }
+                    break
+                continue
+
+            state.input_tokens += in_tok
+            state.output_tokens += out_tok
+            state.transcript.append({"agent": agent.name, "content": content})
+
+            if agent.name == "portfolio_manager":
+                final_decision = _parse_decision(content)
+
             yield {
                 "type": "agent.message",
                 "agent": agent.name,
                 "phase": agent.phase,
-                "content": f"[live debate error] {type(exc).__name__}: {exc}",
+                "content": content,
             }
-            # If the very first agent fails, abort early — no point continuing.
-            if not state.transcript:
-                final_decision = {
-                    "action": "HOLD",
-                    "confidence": 0.0,
-                    "reasoning": (
-                        f"Live debate aborted: {type(exc).__name__}. "
-                        "Check the configured OpenAI key and model availability."
-                    ),
-                }
-                break
-            continue
 
-        state.input_tokens += in_tok
-        state.output_tokens += out_tok
-        state.transcript.append({"agent": agent.name, "content": content})
+        cost = estimate_cost(config.model, state.input_tokens, state.output_tokens)
+        duration = time.time() - started_at
+        sys.stderr.write(
+            f"[live_debate] provider={config.provider} ticker={ticker} model={config.model} "
+            f"in_tokens={state.input_tokens} out_tokens={state.output_tokens} "
+            f"est_cost_usd={cost:.4f} duration_s={duration:.1f}\n"
+        )
+        sys.stderr.flush()
 
-        if agent.name == "portfolio_manager":
-            final_decision = _parse_decision(content)
+        if final_decision is None:
+            final_decision = {
+                "action": "HOLD",
+                "confidence": 0.5,
+                "reasoning": (
+                    "Live debate finished without an explicit portfolio decision. "
+                    "Defaulting to HOLD."
+                ),
+            }
 
         yield {
-            "type": "agent.message",
-            "agent": agent.name,
-            "phase": agent.phase,
-            "content": content,
+            "type": "session.complete",
+            "ticker": ticker,
+            "trade_date": trade_date,
+            "decision": final_decision,
+            "live": True,
+            "provider": config.provider,
+            "model": config.model,
+            "input_tokens": state.input_tokens,
+            "output_tokens": state.output_tokens,
+            "estimated_cost_usd": round(cost, 4),
         }
-
-    cost = _estimate_cost(config.model, state.input_tokens, state.output_tokens)
-    duration = time.time() - started_at
-    sys.stderr.write(
-        f"[live_debate] ticker={ticker} model={config.model} "
-        f"in_tokens={state.input_tokens} out_tokens={state.output_tokens} "
-        f"est_cost_usd={cost:.4f} duration_s={duration:.1f}\n"
-    )
-    sys.stderr.flush()
-
-    # Best-effort client cleanup. AsyncOpenAI's __aexit__ closes the pooled
-    # httpx client; doing it explicitly avoids "unclosed transport" warnings
-    # in Python 3.12+ when the event loop tears down.
-    try:
-        await client.close()
-    except Exception:  # noqa: BLE001 — cleanup is best-effort
-        pass
-
-    if final_decision is None:
-        final_decision = {
-            "action": "HOLD",
-            "confidence": 0.5,
-            "reasoning": (
-                "Live debate finished without an explicit portfolio decision. "
-                "Defaulting to HOLD."
-            ),
-        }
-
-    yield {
-        "type": "session.complete",
-        "ticker": ticker,
-        "trade_date": trade_date,
-        "decision": final_decision,
-        "live": True,
-        "model": config.model,
-        "input_tokens": state.input_tokens,
-        "output_tokens": state.output_tokens,
-        "estimated_cost_usd": round(cost, 4),
-    }
+        yielded_complete = True
+    finally:
+        # Best-effort adapter cleanup. Runs on normal exit AND on
+        # GeneratorExit (client disconnect mid-stream) — without this the
+        # pooled httpx client inside Anthropic / OpenAI adapters leaks for
+        # the engine process lifetime.
+        try:
+            await adapter.close()
+        except Exception:  # noqa: BLE001 — cleanup is best-effort
+            pass
+        if not yielded_complete:
+            sys.stderr.write(
+                f"[live_debate] disconnected mid-stream provider={config.provider} "
+                f"ticker={ticker} agents_completed={len(state.transcript)}\n"
+            )
+            sys.stderr.flush()

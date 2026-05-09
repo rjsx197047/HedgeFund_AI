@@ -33,8 +33,10 @@
 - 🟢 Sidecar process startup: emits `{"port": <int>, "token": "..."}` JSON to stdout for Electron main to read.
 - 🟢 Bearer-token auth on all endpoints (`Authorization: Bearer <token>` for HTTP, `?token=` query param for WS).
 - 🟢 Acceptance verified: `/health` 200 with auth / 401 without; `/analyze` returns stub decision; `/stream` streams 16 events with realistic phasing.
-- 🟢 **Phase 2.1-light: real-LLM debate** — `engine/live_debate.py` ships a sequential per-agent loop with role-specific prompts mirroring the spirit of upstream's agents (4 analysts → 3 researchers → trader → 4 risk seats). `provider_config` in the WS start frame triggers it; absent → falls through to the canned stub. Cost discipline baked in: `max_tokens=400`, `MAX_AGENTS=12`, default `gpt-4o-mini`. Decision card surfaces live metadata (model, tokens, est cost). Provider allowlist gates non-OpenAI providers to fall through to the stub cleanly. **Note:** Phase 2.1-full (wrapping upstream's `TradingAgentsGraph` directly) is deferred — see `docs/architecture.md` §5 for the rationale.
-- ⚪ Phase 2.1 multi-provider — extend live path to Anthropic, DeepSeek, OpenRouter (allowlist already in place; just needs per-provider client adapters).
+- 🟢 **Phase 2.1-light: real-LLM debate** — `engine/live_debate.py` ships a sequential per-agent loop with role-specific prompts mirroring the spirit of upstream's agents (4 analysts → 3 researchers → trader → 4 risk seats). `provider_config` in the WS start frame triggers it; absent → falls through to the canned stub. Cost discipline baked in: `MAX_AGENTS=12`, `_MAX_TOKENS_HARD_CAP=800`. Decision card surfaces live metadata (provider, model, tokens, est cost). **Note:** Phase 2.1-full (wrapping upstream's `TradingAgentsGraph` directly) is deferred — see `docs/architecture.md` §5 for the rationale.
+- 🟢 **Multi-provider: OpenAI + Anthropic + OpenRouter + Google Gemini** — `engine/llm_providers.py` ships a shared `LLMAdapter` Protocol with per-provider implementations. Active provider in renderer chosen by `PROVIDER_PRIORITY` (first-found-key wins). Adapter lifecycle is try/finally guarded so client disconnects mid-stream don't leak the pooled httpx client. `session.complete` carries `provider` field; History persists and surfaces it.
+- ⚪ User-facing "Run with: …" provider override on Analyze — currently first-priority key wins silently.
+- ⚪ OpenAI OAuth (subscription-plan path, founder's preferred personal flow) — held pending Clawless Advisor's OAuth pattern reply.
 
 ## Phase 3 — End-to-end demo ✅ DONE
 

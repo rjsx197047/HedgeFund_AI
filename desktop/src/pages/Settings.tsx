@@ -69,7 +69,7 @@ const LLM_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'llm:openai',
     name: 'OpenAI',
-    note: 'GPT-4 family. Use API key today; OAuth wiring lands in a later commit.',
+    note: 'GPT-4o family. API key today; OAuth lands in a follow-up commit.',
     pillLabel: 'Recommended',
     pillVariant: 'default',
     placeholder: 'sk-…',
@@ -83,20 +83,20 @@ const LLM_PROVIDERS: SecretRow[] = [
     placeholder: 'sk-ant-…',
   },
   {
-    secretKey: 'llm:deepseek',
-    name: 'DeepSeek',
-    note: 'V4 thinking-mode supported via OpenAI-compatible chat completions.',
-    pillLabel: 'Compatible',
-    pillVariant: 'default',
-    placeholder: 'sk-…',
-  },
-  {
     secretKey: 'llm:openrouter',
     name: 'OpenRouter',
-    note: 'Provider-agnostic gateway. One key, many models.',
+    note: 'Provider-agnostic gateway. One key, many models — defaults to openai/gpt-4o-mini.',
     pillLabel: 'Compatible',
     pillVariant: 'default',
     placeholder: 'sk-or-…',
+  },
+  {
+    secretKey: 'llm:gemini',
+    name: 'Google Gemini',
+    note: 'Gemini 2.0 Flash family. Cheap + fast — good for high-volume runs.',
+    pillLabel: 'Compatible',
+    pillVariant: 'default',
+    placeholder: 'AIza…',
   },
 ];
 

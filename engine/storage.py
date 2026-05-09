@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     decision_confidence REAL NOT NULL,
     decision_reasoning TEXT NOT NULL,
     live INTEGER NOT NULL DEFAULT 0,
+    provider TEXT,
     model TEXT,
     input_tokens INTEGER,
     output_tokens INTEGER,
@@ -52,6 +53,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TEXT NOT NULL,
     events_json TEXT NOT NULL
 );
+
+-- Older databases predate the `provider` column; add it if missing. We
+-- intentionally do NOT bump SCHEMA_VERSION because the column is nullable
+-- and additive — older readers ignore it; older writers leave it NULL.
+
 
 CREATE INDEX IF NOT EXISTS sessions_ticker_idx ON sessions(ticker);
 CREATE INDEX IF NOT EXISTS sessions_created_at_idx ON sessions(created_at DESC);
@@ -108,6 +114,13 @@ def _ensure_initialized() -> None:
                     f"sessions.db schema version {stored} newer than this "
                     f"engine supports ({SCHEMA_VERSION}); refusing to write."
                 )
+        # In-place additive migration: add `provider` column to existing
+        # databases that predate it. Idempotent — PRAGMA reports the column
+        # set, we add only if missing.
+        cur = conn.execute("PRAGMA table_info(sessions)")
+        cols = {row["name"] for row in cur.fetchall()}
+        if "provider" not in cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN provider TEXT")
         conn.commit()
     _initialized = True
 
@@ -146,6 +159,7 @@ class SessionSummary:
     decision_confidence: float
     decision_reasoning: str
     live: bool
+    provider: Optional[str]
     model: Optional[str]
     input_tokens: Optional[int]
     output_tokens: Optional[int]
@@ -172,6 +186,7 @@ def write_session(
     events: list[dict],
     decision: dict,
     live: bool,
+    provider: Optional[str] = None,
     model: Optional[str] = None,
     input_tokens: Optional[int] = None,
     output_tokens: Optional[int] = None,
@@ -198,10 +213,10 @@ def write_session(
                 INSERT INTO sessions (
                     id, ticker, trade_date,
                     decision_action, decision_confidence, decision_reasoning,
-                    live, model, input_tokens, output_tokens,
+                    live, provider, model, input_tokens, output_tokens,
                     estimated_cost_usd, created_at, events_json
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -212,6 +227,7 @@ def write_session(
                     float(decision.get("confidence", 0.0)),
                     str(decision.get("reasoning", "")),
                     1 if live else 0,
+                    provider,
                     model,
                     input_tokens,
                     output_tokens,
@@ -237,7 +253,7 @@ def list_sessions(*, limit: int = 50, ticker: Optional[str] = None) -> list[Sess
                     """
                     SELECT id, ticker, trade_date, decision_action,
                            decision_confidence, decision_reasoning,
-                           live, model, input_tokens, output_tokens,
+                           live, provider, model, input_tokens, output_tokens,
                            estimated_cost_usd, created_at
                     FROM sessions
                     WHERE ticker = ?
@@ -251,7 +267,7 @@ def list_sessions(*, limit: int = 50, ticker: Optional[str] = None) -> list[Sess
                     """
                     SELECT id, ticker, trade_date, decision_action,
                            decision_confidence, decision_reasoning,
-                           live, model, input_tokens, output_tokens,
+                           live, provider, model, input_tokens, output_tokens,
                            estimated_cost_usd, created_at
                     FROM sessions
                     ORDER BY created_at DESC
@@ -269,6 +285,7 @@ def list_sessions(*, limit: int = 50, ticker: Optional[str] = None) -> list[Sess
                 decision_confidence=float(row["decision_confidence"]),
                 decision_reasoning=row["decision_reasoning"],
                 live=bool(row["live"]),
+                provider=row["provider"],
                 model=row["model"],
                 input_tokens=row["input_tokens"],
                 output_tokens=row["output_tokens"],
@@ -291,7 +308,7 @@ def get_session(session_id: str) -> Optional[SessionDetail]:
                 """
                 SELECT id, ticker, trade_date, decision_action,
                        decision_confidence, decision_reasoning,
-                       live, model, input_tokens, output_tokens,
+                       live, provider, model, input_tokens, output_tokens,
                        estimated_cost_usd, created_at, events_json
                 FROM sessions
                 WHERE id = ?
@@ -315,6 +332,7 @@ def get_session(session_id: str) -> Optional[SessionDetail]:
             decision_confidence=float(row["decision_confidence"]),
             decision_reasoning=row["decision_reasoning"],
             live=bool(row["live"]),
+            provider=row["provider"],
             model=row["model"],
             input_tokens=row["input_tokens"],
             output_tokens=row["output_tokens"],

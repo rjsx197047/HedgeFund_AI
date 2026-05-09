@@ -104,10 +104,10 @@ TradingAgentsLab/
 The original sketch assumed the engine would wrap upstream's `tradingagents.graph.TradingAgentsGraph` directly. In practice that path requires bringing in the full LangChain / LangGraph dep tree, mapping LangGraph state-graph events onto our streaming WS protocol, and reconciling upstream's data layer with our own. We chose a smaller blast radius:
 
 - The engine ships its own multi-agent orchestration in `engine/live_debate.py` — a sequential per-agent loop with role-specific prompts that mirror the *spirit* of upstream's agents (technical / fundamental / news / sentiment analysts, bull/bear/manager researchers, trader, three risk seats + portfolio manager).
-- Each agent is a single OpenAI Chat Completions call. No LangGraph, no LangChain.
+- Each agent is a single per-provider chat completion call routed through `engine/llm_providers.LLMAdapter`. No LangGraph, no LangChain.
 - Same wire shape as the canned stub debate — the renderer doesn't know whether a session was stub or live except via the `live: true` field on `session.complete`.
-- Cost discipline lives in code: `max_tokens=400` per call, `MAX_AGENTS_PER_SESSION=12`, default model `gpt-4o-mini`, estimated cost logged per session.
-- Multi-provider support is allowlist-gated. Today: OpenAI only. Anthropic / DeepSeek / OpenRouter land when their wiring is added; unsupported providers fall through to the stub rather than erroring.
+- Cost discipline lives in `live_debate.py` (NOT in adapters): `MAX_AGENTS_PER_SESSION=12` bounds the loop, `max_tokens` per call is bounded by `_MAX_TOKENS_HARD_CAP=800` enforced inside `ProviderConfig.from_dict`, estimated cost logged per session.
+- Multi-provider support is allowlist-gated via `_ALLOWED_PROVIDERS`. Today: **OpenAI, Anthropic, OpenRouter, Google Gemini**. Unsupported providers fall through to the stub rather than erroring, so the renderer can ship UI ahead of engine support.
 
 Future Phase 2.1-full may revisit upstream-graph integration — for now, the simpler path is the shipping path.
 
@@ -133,10 +133,10 @@ async def live_debate(
 | Path | When |
 |---|---|
 | `canned_debate` (stub) | No `provider_config` in WS start frame. Deterministic, free, used as the demo default. |
-| `live_debate` (OpenAI direct) | `provider_config.provider === "openai"`. Real LLM calls bounded by the cost caps above. |
+| `live_debate` (any allowlisted provider) | `provider_config.provider in {"openai", "anthropic", "openrouter", "gemini"}`. Real LLM calls bounded by the cost caps above; routed through `LLMAdapter`. |
 | `ClawlessGatewayClient` (Phase 6) | Optional connector. Translates LLM calls to OpenClaw RPCs over the gateway WebSocket. Schema constraints: `client.id: "cli"`, `client.mode: "ui"`. Not yet implemented in engine. |
 
-API-key-only for Anthropic — **OAuth banned** by Anthropic TOS. Anthropic / DeepSeek / OpenRouter wiring in the live path is the next chunk after this one ships.
+API-key-only for Anthropic — **OAuth banned** by Anthropic TOS. OpenAI OAuth (subscription-plan path) is held for a follow-up commit, gated on the Clawless Advisor's reference pattern.
 
 ## 6. Data + broker abstraction
 
@@ -167,7 +167,7 @@ Initial implementation: `AlpacaBroker`. Live trading gated behind explicit user 
 
 | Tab | Contents — what currently ships | Future |
 |---|---|---|
-| `LLM Providers` | API key fields for **OpenAI**, **Anthropic**, **DeepSeek**, **OpenRouter**. Anthropic is API-key-only (OAuth banned by TOS). Keys stored encrypted via Electron `safeStorage`. | OAuth flow for OpenAI; additional providers (Gemini, xAI, Qwen, GLM, etc.) added as engine wiring catches up — the secret schema generalizes. |
+| `LLM Providers` | API key fields for **OpenAI**, **Anthropic**, **OpenRouter**, **Google Gemini**. Anthropic is API-key-only (OAuth banned by TOS). Keys stored encrypted via Electron `safeStorage`. Active-provider chosen by `PROVIDER_PRIORITY` (first-configured-wins). | OpenAI OAuth (subscription-plan path); additional providers (xAI, Mistral, Qwen, GLM, etc.) added as engine wiring catches up — the secret schema generalizes. |
 | `Data Providers` | yfinance shown as the active free default. Alpaca config field stored but engine wiring pending. | Per-call override from Analyze page; Alpaca live data feed in Phase 5 part 2. |
 | `Broker` | Alpaca paper API key field (storage only — no orders yet). Alpaca live is restricted. | Order placement in Phase 5 part 2 with paper-only enforcement; live trading gated behind an explicit "I understand this is my decision" affordance. |
 | `Clawless` | Gateway URL + token fields stored. | Phase 6 wires the gateway tap with protocol negotiation (`max=4` falling back to `3`, schema constants `client.id: "cli"` + `client.mode: "ui"`). |

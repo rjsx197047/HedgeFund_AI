@@ -83,6 +83,7 @@ function findDecision(events: DebateEvent[]): AnalyzeDecision | null {
 
 interface DecisionMeta {
   live: boolean;
+  provider?: string;
   model?: string;
   inputTokens?: number;
   outputTokens?: number;
@@ -94,6 +95,7 @@ function findDecisionMeta(events: DebateEvent[]): DecisionMeta {
   if (complete && complete.type === 'session.complete') {
     return {
       live: complete.live === true,
+      provider: complete.provider,
       model: complete.model,
       inputTokens: complete.input_tokens,
       outputTokens: complete.output_tokens,
@@ -247,7 +249,7 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
             Decision
             {meta.live && (
               <span className={styles.decisionLiveBadge}>
-                Live · {meta.model ?? 'openai'}
+                Live · {meta.provider ?? 'openai'} · {meta.model ?? '?'}
               </span>
             )}
           </div>

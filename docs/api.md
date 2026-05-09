@@ -27,12 +27,18 @@ CORS is configured for renderer origin `http://localhost:5173` (and `http://127.
   "engine_state": "ready",
   "data_provider": "yfinance",
   "live_supported": true,
-  "live_default_model": "gpt-4o-mini",
+  "live_providers": ["anthropic", "gemini", "openai", "openrouter"],
+  "live_default_models": {
+    "openai": "gpt-4o-mini",
+    "anthropic": "claude-haiku-4-5",
+    "openrouter": "openai/gpt-4o-mini",
+    "gemini": "gemini-2.0-flash"
+  },
   "storage_path": "/Users/jay/Projects/TradingAgents/data/sessions.db"
 }
 ```
 
-`engine_state` describes engine *capability*, not the most recent session: it is `"ready"` whenever the server is up. Whether a given session ran a stub or a live debate is reported per-session in the `session.complete` event (see WS contract below). `data_provider` reports the active `BaseDataProvider.name`. `live_supported` indicates the engine can run real-LLM debates when given a `provider_config`. `live_default_model` is the cost-cheap default the engine assumes when a `provider_config` arrives without an explicit `model` field. `storage_path` reports where the engine writes persisted sessions — `<repo>/data/sessions.db` by default, overridable via the `TAL_SESSIONS_DB` env var.
+`engine_state` describes engine *capability*, not the most recent session: it is `"ready"` whenever the server is up. Whether a given session ran a stub or a live debate is reported per-session in the `session.complete` event (see WS contract below). `data_provider` reports the active `BaseDataProvider.name`. `live_supported` indicates the engine can run real-LLM debates when given a `provider_config`. `live_providers` is the allowlist the engine accepts; `live_default_models` shows the per-provider model the engine assumes when `provider_config` arrives without an explicit `model` field. `storage_path` reports where the engine writes persisted sessions — `<repo>/data/sessions.db` by default, overridable via the `TAL_SESSIONS_DB` env var.
 
 ### `GET /data/summary?ticker=<X>&trade_date=<YYYY-MM-DD>`
 
@@ -119,6 +125,7 @@ Lists recently-completed debates, newest first. `limit` defaults to 50 (max 500)
       "decision_confidence": 0.55,
       "decision_reasoning": "...",
       "live": false,                     // false for stub, true for real-LLM
+      "provider": null,                  // populated when live
       "model": null,                     // populated when live
       "input_tokens": null,
       "output_tokens": null,
@@ -236,7 +243,7 @@ Sent by the client immediately after `open`:
   // Optional. When present, the engine runs a real-LLM debate via the
   // configured provider; when absent, it runs the canned stub debate.
   "provider_config": {
-    "provider": "openai",        // currently the only allowlisted value
+    "provider": "openai",        // openai | anthropic | openrouter | gemini
     "api_key": "sk-…",
     "model": "gpt-4o-mini",      // optional, defaults to gpt-4o-mini
     "max_tokens": 400            // optional, defaults to 400, hard cap
@@ -314,7 +321,7 @@ Emitted between phases.
 }
 ```
 
-When `provider_config` was supplied in the start frame, the engine populates `live`, `model`, `input_tokens`, `output_tokens`, and `estimated_cost_usd`. The renderer uses these to render a "Live · model" badge on the decision card and to log a per-session cost estimate. Cost is calculated using local rate tables (`engine/live_debate.py:_COST_PER_M_TOKENS`) and is **never** authoritative — it's a budgeting hint, not a billing record.
+When `provider_config` was supplied in the start frame, the engine populates `live`, `provider`, `model`, `input_tokens`, `output_tokens`, and `estimated_cost_usd`. The renderer uses these to render a "Live · provider · model" badge on the decision card and to log a per-session cost estimate. Cost is calculated using local rate tables (`engine/llm_providers.py:_COST_PER_M_TOKENS`) and is **never** authoritative — it's a budgeting hint, not a billing record. The OpenRouter passthrough has no rate entries since the actual cost depends on the underlying model — `estimated_cost_usd` will read 0.0 in that case.
 
 ##### Server close
 
@@ -351,7 +358,8 @@ The Electron main process awaits `child.stdout.once('data')`, parses it once, an
 
 ## Out of scope (intentional gaps)
 
-- Multi-provider live debates — only OpenAI is wired today (`provider: "openai"`). Anthropic / DeepSeek / OpenRouter land when their wiring is added; the renderer can ship UI ahead of engine support because unsupported providers fall through to the stub.
+- Per-call provider override from the renderer — the active provider is currently picked by `PROVIDER_PRIORITY` order in the renderer (first-found-key wins). A user-facing "Run with: …" dropdown is a future UX win.
+- DeepSeek / Mistral / xAI / others — not wired today. The allowlist (`engine/llm_providers._ALLOWED_PROVIDERS`) is the source of truth; unsupported providers fall through to the stub rather than erroring, so the renderer can ship UI ahead of engine support.
 - Token-level streaming — each agent's full response is sent as a single `agent.message` event. Token-by-token streaming is a future protocol upgrade and would gate on a `agent.message.delta` event variant.
 - Cross-session search / export / sharing — persistence is per-row only. Future.
 - Authentication beyond bearer — sidecar is `127.0.0.1`-bound; no remote callers.

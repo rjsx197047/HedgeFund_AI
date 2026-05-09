@@ -78,6 +78,8 @@ def build_app(*, token: str) -> FastAPI:
 
     @app.get("/health", dependencies=bearer)
     async def health() -> dict[str, Any]:
+        from .llm_providers import _ALLOWED_PROVIDERS, _DEFAULT_MODELS
+
         return {
             "ok": True,
             "version": __version__,
@@ -89,7 +91,12 @@ def build_app(*, token: str) -> FastAPI:
             "engine_state": "ready",
             "data_provider": default_provider.name,
             "live_supported": True,
-            "live_default_model": "gpt-4o-mini",
+            # Per-provider default models the engine assumes when ProviderConfig
+            # arrives without an explicit `model` field. Renderer should also
+            # ship its own defaults (PROVIDER_DEFAULT_MODEL); these are the
+            # source of truth.
+            "live_providers": sorted(_ALLOWED_PROVIDERS),
+            "live_default_models": dict(_DEFAULT_MODELS),
             "storage_path": storage.db_path(),
         }
 
@@ -316,6 +323,7 @@ def _persist_session_safe(
         events=events,
         decision=decision,
         live=bool(complete.get("live", False)),
+        provider=complete.get("provider"),
         model=complete.get("model"),
         input_tokens=complete.get("input_tokens"),
         output_tokens=complete.get("output_tokens"),

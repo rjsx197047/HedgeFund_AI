@@ -175,7 +175,7 @@ function History() {
                 </span>
                 {detail.live ? (
                   <span className={styles.detailMetaPill}>
-                    Live · {detail.model ?? 'openai'}
+                    Live · {detail.provider ?? 'openai'} · {detail.model ?? '?'}
                   </span>
                 ) : (
                   <span className={styles.detailMetaPillNeutral}>Stub debate</span>
@@ -265,7 +265,11 @@ function History() {
                       {Math.round(s.decision_confidence * 100)}%
                     </span>
                   </span>
-                  {s.live && <span className={styles.livePill}>Live · {s.model ?? 'openai'}</span>}
+                  {s.live && (
+                    <span className={styles.livePill}>
+                      Live · {s.provider ?? 'openai'} · {s.model ?? '?'}
+                    </span>
+                  )}
                 </div>
                 <div className={styles.rowMeta}>
                   <span>{s.trade_date}</span>

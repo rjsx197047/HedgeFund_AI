@@ -58,6 +58,8 @@ See `WORKLOG.md` for the chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
+<multi-provider commit lands here>
+7fcbefa  End-of-block: reconcile architecture.md §7 + refresh founder Q&A inbox
 4b88894  Watchlist page: SQLite-backed tickers + deep-link to Analyze
 d736e6e  History page: list + detail of persisted debates
 7dbbeff  SQLite session storage + user-facing knowledge base
