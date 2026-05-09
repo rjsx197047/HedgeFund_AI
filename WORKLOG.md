@@ -36,7 +36,7 @@
 - `npm run build`: clean
 - `bash tools/dev-smoke.sh NVDA 2026-05-08`: **17 passed, 0 failed**
 
-**Commit:** TBD.
+**Commit:** `4b88894`.
 
 ---
 

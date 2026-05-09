@@ -22,11 +22,20 @@
 - ⏳ Continuing into Phase 4 spike (settings page scaffolding) per advisor green-light for unsupervised stretch scope
 - ⏳ Founder away ~4-5 hours; report on return
 
-### Done — Phase 0 → Phase 3 + Phase 4 + spikes + tooling
+### Done — Phase 0 → Phase 3 → Phase 4 → Phase 5p1 → Phase 2.1-light → SQLite + History + Watchlist
 
-**Yesterday (2026-05-07):** Phases 0, 1, 2 + license setup.
+**Day 1 (2026-05-07):** Phases 0, 1, 2 + license setup.
 
-**Today (2026-05-08), autonomous blocks (~9 feature commits, founder away):**
+**Day 2 (2026-05-08), three autonomous blocks (~13 feature commits, founder away):**
+
+Block 3 (Phase 2.1-light + storage + UI):
+
+- ✅ **Phase 2.1-light: real-LLM debate** (`75d020e`). `engine/live_debate.py` ships a sequential per-agent OpenAI loop with role-specific prompts mirroring upstream. Cost-capped (`max_tokens=400`, 12 agents, gpt-4o-mini default, ~$0.005/session estimate). When `provider_config` is absent in the WS start frame, the path falls through to the canned stub unchanged. Session.complete now carries `live`, `model`, `input_tokens`, `output_tokens`, `estimated_cost_usd` on live runs.
+- ✅ **SQLite session storage + parallel KB** (`7dbbeff`). `engine/storage.py` versioned-schema layer at `<repo>/data/sessions.db`, write-on-stream-end, `GET /sessions`, `GET /sessions/{id}`, `DELETE /sessions/{id}`. Best-effort writes never fail the stream. Plus 11-file user-facing knowledge base in `docs/kb/` built by a parallel sub-agent (Sonnet) — getting-started, how-it-works, configuring-llm-providers, data-providers, clawless-connector, reading-the-debate, keyboard-shortcuts, security-and-storage, troubleshooting, faq + index.
+- ✅ **History page** (`d736e6e`). List + detail of persisted debates. Race-guarded against rapid row clicks via generation counter. Reuses `DebateStream` for detail view. Copy transcript markdown.
+- ✅ **Watchlist page + cleanup** (`4b88894`). SQLite-backed tickers, deep-link to Analyze via `desktop/src/lib/handoff.ts`. Deleted dead `ComingSoon` component now that all four routes have real pages.
+
+Block 2 (Phase 4 main + news + menu + tooling):
 
 Block 1 (~4 commits):
 
@@ -49,7 +58,7 @@ See `WORKLOG.md` for the chronology with verification details per commit.
 ### Recent commits on `main` (newest first)
 
 ```
-<Watchlist commit lands here>
+4b88894  Watchlist page: SQLite-backed tickers + deep-link to Analyze
 d736e6e  History page: list + detail of persisted debates
 7dbbeff  SQLite session storage + user-facing knowledge base
 75d020e  Phase 2.1-light: real-LLM debate via sequential OpenAI calls
@@ -71,14 +80,20 @@ f0125b8  Phase 0: scaffold orchestration docs and gateway probe
 
 ### Open questions queued for founder (answer when back, then I unblock)
 
-These are decisions I deferred during the autonomous block rather than guess on. None are blocking the existing five-commit run; they're blocking *what comes next*.
+Decisions I deferred during this run. The three from the previous block that I *did* act on (your blanket authorization covered them) are noted at the bottom. None are blocking what shipped; they're blocking *what comes next*.
 
-1. **First LLM provider for Phase 2.1.** Wiring shape (per-request inject vs. spawn-time env) shouldn't be locked until you pick. I've been assuming OpenAI from the way the Settings tabs are framed — confirm or redirect.
-2. **"Test connection" button policy.** I held off because it makes a real provider request on your key, autonomously. OK to add now (with a warning + you trigger explicitly), or hold until after Phase 2.1 lands?
-3. **Watchlist + History storage.** `architecture.md` says SQLite. Confirm we're staying that course before I scaffold either page (no localStorage shortcut).
-4. **Stockstats / RSI / MACD indicators.** Net-new Python dep on `stockstats`. Adds real indicator math to the technical_analyst stub. OK to install, or hold?
-5. **OpenAI OAuth flow.** Phase 4 main only wires API-key paths. Scaffold the OAuth flow now (PKCE + redirect handler in main process), or wait until OpenAI is the locked first provider?
-6. **Secrets export / import.** For machine migration: should Settings → About expose a "Export encrypted secrets to file" / "Import on new machine" pair? Defer, or scope now?
+1. **Multi-provider order.** Phase 2.1 ships OpenAI only. Anthropic, DeepSeek, OpenRouter wiring lands next — but you pasting a key for one specific provider first lets me ship one targeted commit (with cost table + correct auth shape) instead of a megacommit for all four. Which one do you actually have a key for?
+2. **"Test connection" button.** Still holding. Now that real-LLM lands, this is a meaningful UX win (don't burn quota on a typo'd key) — but it still costs ~1 cheap request per test. Add it now with explicit-trigger + warning, or after multi-provider so each provider's test path is wired in one go?
+3. **OpenAI OAuth flow.** Same gating as before. Scaffold now or wait until you've used the API key path enough to know if OAuth is worth the complexity?
+4. **Secrets export / import.** Speculative without your machine-migration story. Do you want a Settings → About "Export encrypted secrets" / "Import on new machine" pair? If yes, what's the threat model — same machine recovery, or actual cross-machine portability?
+5. **Phase 5 part 2: Alpaca data + broker.** Needs your Alpaca paper-trading key + a decision on whether the broker abstraction goes in the engine (Python) or the renderer (Electron main, since Alpaca's broker SDK has a JS variant too). Engine is consistent with the rest of the architecture; renderer would let the broker live closer to the secrets keychain.
+6. **Phase 6: Clawless gateway tap.** Probe (`tools/clawless-probe.mjs`) is the working reference. Worth wiring before or after multi-provider? It changes the LLM transport, so logically belongs in the same area as Phase 2.1.
+
+**Acted on with blanket authorization:**
+
+- Q1 (first LLM provider) — chose **OpenAI / gpt-4o-mini** as the default. Cheapest reasonable model + most established SDK. Easy to swap.
+- Q3 (storage) — **SQLite at `<repo>/data/sessions.db`** per architecture. Sessions + watchlist both live there; gitignored.
+- Q5 from previous block (Alpaca data) — held; needs your key.
 
 ### What founder should do first when they return
 

@@ -163,16 +163,17 @@ Initial implementation: `AlpacaBroker`. Live trading gated behind explicit user 
 
 ## 7. Settings page — built independently
 
-**Strategy:** build our own Settings page from scratch in `desktop/src/renderer/pages/Settings/`. No code copied from Clawless. All tabs treat their providers as equal optional connectors:
+**Strategy:** build our own Settings page from scratch in `desktop/src/pages/Settings.tsx`. No code copied from Clawless. All tabs treat their providers as equal optional connectors:
 
-| Tab | Contents |
-|---|---|
-| `LLMProviders` | Per-provider API key fields. **OpenAI:** API key OR OAuth (both supported). **Anthropic:** API key ONLY (OAuth banned by TOS). Gemini, xAI, DeepSeek, Qwen, GLM, OpenRouter: API key. Keys stored in OS keychain via `keytar`. |
-| `DataProviders` | yfinance (default, free) / Alpaca (paid). User picks default; per-call override possible from Analyze page. |
-| `Broker` | Alpaca paper (default). Live trading gated behind explicit "I understand this is my decision" affordance. |
-| `Connections` | Optional external service connections — including the **"Connect to Clawless"** sub-section: gateway URL + token + "Test connection" button. Same UI pattern as Alpaca config. No special elevation. |
+| Tab | Contents — what currently ships | Future |
+|---|---|---|
+| `LLM Providers` | API key fields for **OpenAI**, **Anthropic**, **DeepSeek**, **OpenRouter**. Anthropic is API-key-only (OAuth banned by TOS). Keys stored encrypted via Electron `safeStorage`. | OAuth flow for OpenAI; additional providers (Gemini, xAI, Qwen, GLM, etc.) added as engine wiring catches up — the secret schema generalizes. |
+| `Data Providers` | yfinance shown as the active free default. Alpaca config field stored but engine wiring pending. | Per-call override from Analyze page; Alpaca live data feed in Phase 5 part 2. |
+| `Broker` | Alpaca paper API key field (storage only — no orders yet). Alpaca live is restricted. | Order placement in Phase 5 part 2 with paper-only enforcement; live trading gated behind an explicit "I understand this is my decision" affordance. |
+| `Clawless` | Gateway URL + token fields stored. | Phase 6 wires the gateway tap with protocol negotiation (`max=4` falling back to `3`, schema constants `client.id: "cli"` + `client.mode: "ui"`). |
+| `About` | Version, license, encryption status, secrets file path, entry count. | — |
 
-**Theme:** TradingAgentsLab picks its own aesthetic. Brand-level coherence with Clawless ecosystem (compatible dark surface, compatible humanist font pairing, complementary accent color — *not* the same Clawless cyan), achieved by independent design choices.
+**Theme:** TradingAgentsLab picks its own aesthetic — warm amber `#f0a830` accent on `#0d1117` dark surface, system humanist + monospace pairing. Brand-level coherence with Clawless ecosystem achieved by independent design choices, not shared CSS.
 
 **OAuth:** Standard OAuth flow for OpenAI follows public OpenAI SDK guidance. Do not reverse-engineer Clawless's implementation.
 
@@ -180,16 +181,18 @@ Initial implementation: `AlpacaBroker`. Live trading gated behind explicit user 
 
 ## 8. Phasing
 
-| Phase | Scope | Outcome |
+| Phase | Scope | Status (2026-05-09) |
 |---|---|---|
-| **0** | Commit gateway probe + this architecture doc | Foundation in repo |
-| **1** | `desktop/` Electron shell with Clawless theme tokens | Visual sister-product confirmed |
-| **2** | `engine/` Python sidecar — FastAPI wrapping `tradingagents`, stub LLM provider | Sidecar speaks |
-| **3** | Wire desktop ↔ sidecar with hardcoded ticker, stream first agent debate | Real demo |
-| **4** | Settings page (inherited) + BYO LLM keys + OS keychain | Founder runs analysis with own keys |
-| **5** | yfinance + Alpaca data provider, paper-trading broker | Founder paper-trades from app |
-| **6** | "Connect to Clawless" tap (settings tab + ClawlessGatewayClient) | Optional gateway routing |
-| **7** | Watchlist + history/P&L pages | Real product surface |
+| **0** | Gateway probe + this architecture doc + license stack | ✅ done |
+| **1** | `desktop/` Electron shell with independent theme tokens | ✅ done |
+| **2** | `engine/` Python sidecar — FastAPI + stub canned debate | ✅ done |
+| **2.1-light** | Real-LLM debate via sequential per-agent OpenAI calls (own prompts, not upstream graph) | ✅ done |
+| **3** | Wire desktop ↔ sidecar with hardcoded ticker, stream agent debate | ✅ done |
+| **4** | Settings page + BYO LLM keys (encrypted via `safeStorage`) | ✅ done (OAuth deferred) |
+| **5 part 1** | yfinance default data + summary strip + news headlines | ✅ done |
+| **5 part 2** | Alpaca data + paper-trading broker | ⚪ pending |
+| **6** | Optional Clawless gateway tap | ⚪ pending |
+| **7** | Watchlist + history pages, paper-trade P&L, distribution | 🟡 watchlist + history shipped; P&L + distribution pending |
 
 Each phase ships a working app. No multi-week black box.
 
