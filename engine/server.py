@@ -59,7 +59,7 @@ def build_app(*, token: str) -> FastAPI:
     # unaffected by CORS but harmless to allow.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=["http://localhost:5174", "http://127.0.0.1:5174"],
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
@@ -102,6 +102,17 @@ def build_app(*, token: str) -> FastAPI:
             "live_default_models": dict(_DEFAULT_MODELS),
             "storage_path": storage.db_path(),
         }
+
+    @app.get("/providers/ollama/health", dependencies=bearer)
+    async def ollama_health_endpoint(base_url: str = "") -> dict[str, Any]:
+        """Probe a local Ollama daemon. Used by the settings UI to confirm
+        connectivity and populate the model dropdown with what the user has
+        actually `ollama pull`'d. Never raises — failure modes return
+        `{"ok": False, "error": "..."}`.
+        """
+        from .llm_providers import ollama_health
+
+        return await ollama_health(base_url)
 
     @app.get("/data/summary", dependencies=bearer)
     async def data_summary(ticker: str, trade_date: str) -> dict[str, Any]:

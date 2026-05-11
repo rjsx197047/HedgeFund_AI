@@ -5,11 +5,13 @@ any provider without per-provider branching. Cost caps (`max_tokens`,
 `MAX_AGENTS_PER_SESSION`) are enforced by `live_debate.py`, not here —
 adapters cannot accidentally raise them.
 
-Today's allowlist: `openai`, `anthropic`, `openrouter`, `gemini`. OpenAI
-also has a sibling `OpenAICodexAdapter` for the OAuth/subscription path
-that hits `chatgpt.com/backend-api/codex/responses` instead of the
+Today's allowlist: `openai`, `anthropic`, `openrouter`, `gemini`, `ollama`.
+OpenAI also has a sibling `OpenAICodexAdapter` for the OAuth/subscription
+path that hits `chatgpt.com/backend-api/codex/responses` instead of the
 standard chat-completions endpoint — the factory picks based on
-`config.auth.type`.
+`config.auth.type`. `ollama` is a local-only adapter that piggybacks on
+the OpenAI-compatible endpoint Ollama exposes at `:11434/v1`; no API key
+required, $0 cost since inference runs on the user's own hardware.
 
 Cost rates are local approximations refreshed manually. They are budgeting
 hints for the founder, never billing records — providers update prices
@@ -75,12 +77,18 @@ class ProviderConfig:
 
     Use `bearer_token` to get the value to attach as `Authorization: Bearer ...`
     regardless of which flow is active. Adapters never branch on auth shape.
+
+    `base_url` is an optional override for self-hosted / local providers
+    (today: Ollama). When set, the adapter routes chat-completion calls to
+    this URL instead of the provider's default endpoint. Ignored by cloud
+    providers (OpenAI/Anthropic/Gemini/OpenRouter).
     """
 
     provider: str
     auth: dict[str, Any] = field(default_factory=dict)
     model: str = ""
     max_tokens: int = 400
+    base_url: str = ""
 
     @property
     def bearer_token(self) -> str:
@@ -118,12 +126,20 @@ class ProviderConfig:
         # session silently into the stub path.
         raw_auth = raw.get("auth")
         if isinstance(raw_auth, dict):
-            auth = _normalize_auth(raw_auth)
+            auth = _normalize_auth(raw_auth, provider=provider)
         else:
             api_key = (raw.get("api_key") or "").strip()
             if not api_key:
-                return None
-            auth = {"type": "api_key", "api_key": api_key}
+                # Ollama runs locally — no auth required for the default
+                # localhost setup. Inject a sentinel so the rest of the
+                # pipeline (which insists on a non-empty bearer) stays
+                # uniform; the Ollama daemon ignores Authorization headers.
+                if provider == "ollama":
+                    auth = {"type": "api_key", "api_key": "ollama"}
+                else:
+                    return None
+            else:
+                auth = {"type": "api_key", "api_key": api_key}
 
         if auth is None:
             return None
@@ -139,19 +155,25 @@ class ProviderConfig:
             requested_max = _DEFAULT_MAX_TOKENS
         max_tokens = max(1, min(requested_max, _MAX_TOKENS_HARD_CAP))
 
+        base_url = (raw.get("base_url") or "").strip()
+
         return cls(
             provider=provider,
             auth=auth,
             model=model,
             max_tokens=max_tokens,
+            base_url=base_url,
         )
 
 
-def _normalize_auth(raw: dict) -> Optional[dict[str, Any]]:
+def _normalize_auth(raw: dict, *, provider: str = "") -> Optional[dict[str, Any]]:
     t = (raw.get("type") or "").lower()
     if t == "api_key":
         api_key = (raw.get("api_key") or "").strip()
         if not api_key:
+            # Ollama is the one provider where empty auth is acceptable.
+            if provider == "ollama":
+                return {"type": "api_key", "api_key": "ollama"}
             return None
         return {"type": "api_key", "api_key": api_key}
     if t == "oauth":
@@ -184,7 +206,12 @@ _DEFAULT_MODELS: dict[str, str] = {
     "anthropic": "claude-haiku-4-5",
     "openrouter": "openai/gpt-4o-mini",
     "gemini": "gemini-2.0-flash",
+    "ollama": "llama3.1:8b",
 }
+
+# Default Ollama base URL — overridable per-session via ProviderConfig.base_url
+# for users who run Ollama on a different host (e.g. a GPU box on the LAN).
+OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434/v1"
 
 _ALLOWED_PROVIDERS = frozenset(_DEFAULT_MODELS.keys())
 
@@ -290,6 +317,69 @@ class OpenRouterAdapter(OpenAIAdapter):
         "HTTP-Referer": "https://github.com/jaysidd/TradingAgentsLab",
         "X-Title": "TradingAgentsLab",
     }
+
+
+# ---- Ollama adapter -------------------------------------------------------
+
+
+class OllamaAdapter(OpenAIAdapter):
+    """Ollama exposes an OpenAI-compatible chat-completions endpoint at
+    `http://<host>:11434/v1/chat/completions`. We piggyback on the OpenAI
+    client and override the base URL.
+
+    Ollama runs locally on the user's machine (or a LAN GPU box) so:
+
+    - No API key needed for default localhost; the daemon ignores the
+      Authorization header. We pass a sentinel "ollama" token to satisfy
+      the OpenAI client's non-empty-key requirement.
+    - $0 cost — inference uses the user's own hardware. The model name
+      is whatever the user has `ollama pull`'d (e.g. `llama3.1:8b`,
+      `qwen2.5:14b`, `mistral:7b`). Default `_DEFAULT_MODELS["ollama"]`
+      assumes `llama3.1:8b` is installed; the user can pick another in
+      the renderer.
+    - `_base_url` is set at the class level to the default localhost URL
+      but is overridable per-instance — the factory writes
+      `config.base_url` onto the adapter before `open()` is called.
+    """
+
+    name = "ollama"
+    _base_url = OLLAMA_DEFAULT_BASE_URL
+    _extra_headers: dict[str, str] = {}
+
+
+# ---- Health probe for local providers -------------------------------------
+
+
+async def ollama_health(base_url: str = "") -> dict[str, Any]:
+    """Return a quick liveness probe of a local Ollama daemon.
+
+    Used by the renderer's settings page to show a green "Connected" pill
+    and the list of installed models the user can pick from. Hits Ollama's
+    native `/api/tags` endpoint (NOT the OpenAI-compatible `/v1` surface —
+    `/api/tags` returns the full model list, which is more useful than
+    `/v1/models` for the settings UI).
+
+    Never raises. On failure returns `{"ok": False, "error": "..."}`.
+    """
+    import httpx
+
+    # `base_url` here is the OpenAI-compatible base (`.../v1`); strip the
+    # trailing `/v1` to reach the native API.
+    root = (base_url or OLLAMA_DEFAULT_BASE_URL).rstrip("/")
+    if root.endswith("/v1"):
+        root = root[: -len("/v1")]
+    url = f"{root}/api/tags"
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=2.0, read=5.0, write=2.0, pool=2.0)) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                return {"ok": False, "error": f"http {resp.status_code}"}
+            data = resp.json()
+            models = [m.get("name") for m in (data.get("models") or []) if m.get("name")]
+            return {"ok": True, "models": models, "base_url": root}
+    except Exception as exc:  # noqa: BLE001 — health checks must not raise
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
 # ---- OpenAI Codex adapter (OAuth / ChatGPT-subscription path) -------------
@@ -648,5 +738,18 @@ def adapter_for(config: ProviderConfig) -> LLMAdapter:
         return AnthropicAdapter()
     if config.provider == "gemini":
         return GeminiAdapter()
+    if config.provider == "ollama":
+        adapter = OllamaAdapter()
+        # Allow per-session override of the Ollama base URL (LAN GPU box,
+        # alternate port, etc.). Empty config.base_url keeps the class default.
+        if config.base_url:
+            base = config.base_url.rstrip("/")
+            # Renderer may send either the root (".../11434") or the v1
+            # surface (".../11434/v1"). Normalize to the v1 surface that
+            # the OpenAI client expects.
+            if not base.endswith("/v1"):
+                base = f"{base}/v1"
+            adapter._base_url = base
+        return adapter
     # Allowlist guarantees this is unreachable, but defend anyway.
     raise ValueError(f"unsupported provider: {config.provider!r}")
