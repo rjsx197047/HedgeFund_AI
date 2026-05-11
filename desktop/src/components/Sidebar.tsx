@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useSessionStore } from '@/store/useSessionStore';
+import { loadRunDetail } from '@/lib/session-hydrate';
 import { relativeTime } from '@/lib/utils';
 import { RunStatuses, type Run, type RunStatus } from '@/types';
 import { cn } from '@/lib/utils';
@@ -19,6 +20,14 @@ export function Sidebar() {
   const activeRunId = useSessionStore((s) => s.activeRunId);
   const goHome = useSessionStore((s) => s.goHome);
   const selectRun = useSessionStore((s) => s.selectRun);
+
+  const onPickRun = (id: string) => {
+    selectRun(id);
+    // Lazy-load the full event transcript for historical runs that came from
+    // /sessions (their snapshot only has the decision; events[] is empty).
+    // No-op if events are already present.
+    void loadRunDetail(id);
+  };
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/40">
@@ -51,7 +60,7 @@ export function Sidebar() {
                 key={run.id}
                 run={run}
                 active={run.id === activeRunId}
-                onClick={() => selectRun(run.id)}
+                onClick={() => onPickRun(run.id)}
               />
             ))}
           </ul>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, RefreshCw, Sparkles, StopCircle } from 'lucide-react';
 import { DataCard } from '@/components/DataCard';
 import { DebateStream } from '@/components/DebateStream';
@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { loadHistory } from '@/lib/session-hydrate';
 import { abortDebate, startDebate } from '@/lib/start-debate';
 import { useActiveRun } from '@/store/useSessionStore';
 import { useStore } from '@/store/useStore';
@@ -42,6 +43,12 @@ export function Dashboard() {
   const activeRun = useActiveRun();
   const status = useStore((s) => s.status);
   const errorMessage = useStore((s) => s.errorMessage);
+
+  // Hydrate the sidebar with the engine's persisted /sessions store on first
+  // mount. Subsequent mounts (going Home and back) reuse the cached list.
+  useEffect(() => {
+    void loadHistory(50);
+  }, []);
 
   return (
     <div className="flex h-full w-full flex-col">
