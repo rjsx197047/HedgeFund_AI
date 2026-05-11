@@ -27,5 +27,11 @@ export default defineConfig({
   server: {
     port: 5174,
     strictPort: true,
+    // Bind to all interfaces (IPv4 + IPv6). Without this, Vite defaults to
+    // `localhost` which on macOS binds to ::1 only — Chrome / Playwright
+    // resolve `localhost` to 127.0.0.1 first and get ERR_CONNECTION_REFUSED,
+    // which made external UI testing agents fail with "connection refused"
+    // mid-session. host: true binds 0.0.0.0 + ::, fixing the asymmetry.
+    host: true,
   },
 });
