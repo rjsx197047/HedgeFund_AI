@@ -3,7 +3,12 @@ export interface EngineHandshake {
   token: string;
 }
 
-export type LLMProvider = 'openai' | 'anthropic' | 'openrouter' | 'gemini';
+export type LLMProvider =
+  | 'openai'
+  | 'anthropic'
+  | 'openrouter'
+  | 'gemini'
+  | 'ollama';
 
 /**
  * Auth shape on the WS start frame. Discriminated union so the engine
@@ -14,6 +19,10 @@ export type LLMProvider = 'openai' | 'anthropic' | 'openrouter' | 'gemini';
  * the `chatgpt-account-id` header. pi-ai returns it on the credential
  * blob as `accountId`; we forward it on the wire as `account_id` to keep
  * the engine's snake_case style consistent.
+ *
+ * Ollama runs locally and the daemon ignores Authorization headers; the
+ * engine accepts an empty `api_key` for the `ollama` provider and injects
+ * a sentinel server-side. Renderer can send an empty string here.
  */
 export type ProviderAuth =
   | { type: 'api_key'; api_key: string }
@@ -30,6 +39,9 @@ export interface ProviderConfig {
   auth: ProviderAuth;
   model?: string;
   max_tokens?: number;
+  /** Optional override for the Ollama base URL (default localhost:11434).
+   * Ignored by cloud providers. */
+  base_url?: string;
 }
 
 /** Canonical UI labels for each provider. Used in status cards + transcripts. */
@@ -38,6 +50,7 @@ export const PROVIDER_LABEL: Record<LLMProvider, string> = {
   anthropic: 'Anthropic',
   openrouter: 'OpenRouter',
   gemini: 'Google Gemini',
+  ollama: 'Ollama (Local)',
 };
 
 /** Default model the engine assumes when ProviderConfig.model is not set.
@@ -52,7 +65,12 @@ export const PROVIDER_DEFAULT_MODEL: Record<LLMProvider, string> = {
   anthropic: 'claude-haiku-4-5',
   openrouter: 'openai/gpt-4o-mini',
   gemini: 'gemini-2.0-flash',
+  ollama: 'llama3.1:8b',
 };
+
+/** Default base URL for the local Ollama daemon. Override per-session via
+ * ProviderConfig.base_url when the user runs Ollama on a different host. */
+export const OLLAMA_DEFAULT_BASE_URL = 'http://localhost:11434';
 
 /**
  * Default model when the OpenAI auth flow is OAuth (Codex). Subscription-
@@ -101,6 +119,16 @@ export const PROVIDER_MODELS: Record<LLMProvider, ModelChoice[]> = {
     { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   note: 'Most capable' },
     { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: 'Balanced' },
     { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', note: 'Cheapest', recommended: true },
+  ],
+  // Ollama models are user-installed via `ollama pull` — the canonical list
+  // comes from the local daemon's /api/tags. These entries are baseline
+  // suggestions for users who haven't connected yet; once /providers/ollama/health
+  // returns models the settings UI replaces this list with the real installed set.
+  ollama: [
+    { id: 'llama3.1:8b',  label: 'llama3.1:8b',  note: 'Balanced', recommended: true },
+    { id: 'llama3.2:3b',  label: 'llama3.2:3b',  note: 'Fastest, small RAM' },
+    { id: 'qwen2.5:14b',  label: 'qwen2.5:14b',  note: 'Strong reasoning' },
+    { id: 'mistral:7b',   label: 'mistral:7b',   note: 'Compact alt' },
   ],
 };
 
@@ -173,13 +201,19 @@ export const PROVIDER_PRIORITY: readonly LLMProvider[] = [
   'anthropic',
   'openrouter',
   'gemini',
+  'ollama',
 ];
 
+/** Secret key under which the provider's API key is stored in the OS
+ * keychain. Ollama has no API-key concept for the localhost path, but we
+ * still allocate a slot so users running a remote Ollama with auth enabled
+ * can stash a token. The renderer treats an empty value as "no auth". */
 export const PROVIDER_SECRET_KEY: Record<LLMProvider, string> = {
   openai: 'llm:openai',
   anthropic: 'llm:anthropic',
   openrouter: 'llm:openrouter',
   gemini: 'llm:gemini',
+  ollama: 'llm:ollama',
 };
 
 /** Per-stream data provider override. When present on the WS start frame,
@@ -364,6 +398,35 @@ export async function getHealth(): Promise<HealthInfo> {
     throw new Error(`/health failed: ${res.status} ${res.statusText}`);
   }
   return (await res.json()) as HealthInfo;
+}
+
+export interface OllamaHealth {
+  ok: boolean;
+  models?: string[];
+  base_url?: string;
+  error?: string;
+}
+
+/** Ask the engine to probe a local Ollama daemon. Returns either
+ * `{ok: true, models, base_url}` on success or `{ok: false, error}` if
+ * the daemon isn't running. Never throws. Engine handles the actual HTTP
+ * call to Ollama so the renderer doesn't need to deal with CORS or the
+ * daemon's exact endpoint shape. */
+export async function getOllamaHealth(baseUrl?: string): Promise<OllamaHealth> {
+  try {
+    const { port, token } = await handshake();
+    const qs = baseUrl ? `?base_url=${encodeURIComponent(baseUrl)}` : '';
+    const res = await fetch(
+      `http://127.0.0.1:${port}/providers/ollama/health${qs}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) {
+      return { ok: false, error: `engine /providers/ollama/health → ${res.status}` };
+    }
+    return (await res.json()) as OllamaHealth;
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export async function listSessions(opts: { limit?: number; ticker?: string } = {}): Promise<SessionSummary[]> {
