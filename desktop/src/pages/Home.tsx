@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
+  AlertTriangle,
   ArrowRight,
   ArrowUp,
   Bitcoin,
@@ -10,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SettingsDialog } from '@/components/SettingsDialog';
+import { startDebate } from '@/lib/start-debate';
 import { useSessionStore } from '@/store/useSessionStore';
 import { useStore } from '@/store/useStore';
 import { RunStatuses } from '@/types';
@@ -41,6 +43,7 @@ export function Home() {
   const [ticker, setTicker] = useState('');
   const [isStarting, setIsStarting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const activeRunning =
@@ -52,23 +55,28 @@ export function Home() {
     inputRef.current?.focus();
   }, []);
 
-  const onSubmit = (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const cleaned = ticker.trim().toUpperCase();
     if (!cleaned || isStarting) return;
 
     setIsStarting(true);
-    // Day 1: the WS integration ships Day 2. For now we just transition the
-    // session store; the dashboard will render the run header + a "waiting
-    // for engine wire-up" placeholder.
-    startNewRun({
-      ticker: cleaned,
-      tradeDate: TODAY,
-      provider: null,
-      model: null,
-    });
-    setIsStarting(false);
+    setStartError(null);
+    try {
+      const result = await startDebate({ ticker: cleaned, tradeDate: TODAY });
+      if (!result.ok) {
+        setStartError(result.message);
+      }
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsStarting(false);
+    }
   };
+
+  // Suppress "unused" warning during the period before we add a `Replay`
+  // button or similar that bypasses startDebate. Day 1 wiring used this.
+  void startNewRun;
 
   return (
     <div className="relative min-h-full flex flex-col items-center justify-center px-6 py-16 overflow-hidden flex-1">
@@ -177,6 +185,20 @@ export function Home() {
           to start the debate. Crypto tickers (BTC, ETH, SOL…) auto-route to
           the crypto endpoint.
         </p>
+
+        {startError && (
+          <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200 leading-relaxed">
+            <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+            <span className="flex-1">{startError}</span>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="text-amber-100 underline-offset-2 hover:underline shrink-0"
+            >
+              Open Settings
+            </button>
+          </div>
+        )}
       </form>
 
       {/* Feature pills */}

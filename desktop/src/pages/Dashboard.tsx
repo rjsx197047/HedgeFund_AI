@@ -1,28 +1,40 @@
 import { useState } from 'react';
-import { Activity, AlertTriangle, Sparkles } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Sparkles, StopCircle } from 'lucide-react';
+import { DataCard } from '@/components/DataCard';
+import { DebateStream } from '@/components/DebateStream';
+import { DecisionCard } from '@/components/DecisionCard';
+import { NewsCard } from '@/components/NewsCard';
+import { SettingsDialog } from '@/components/SettingsDialog';
 import { Sidebar } from '@/components/Sidebar';
 import { TopBar } from '@/components/TopBar';
-import { SettingsDialog } from '@/components/SettingsDialog';
-import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { abortDebate, startDebate } from '@/lib/start-debate';
 import { useActiveRun } from '@/store/useSessionStore';
 import { useStore } from '@/store/useStore';
 import { RunStatuses } from '@/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dashboard — main view once a run is active.
+// Dashboard — top-level view while a run is active or being inspected.
 //
-// Day 1 layout:
+// Layout:
 //   ┌──────────────────────────────────────────────────────┐
-//   │ TopBar (drag region, brand, status pills, menus)     │
+//   │ TopBar (drag, brand, status pills, menus)            │
 //   ├───────────────┬──────────────────────────────────────┤
-//   │ Sidebar       │ Main area (debate stream — Day 2)    │
-//   │  • New run    │                                      │
-//   │  • Run list   │  Placeholder card for now.           │
-//   │               │                                      │
+//   │ Sidebar       │ Main panel:                          │
+//   │  • New run    │  Header row (ticker, run controls)   │
+//   │  • Run list   │  DataCard                            │
+//   │               │  NewsCard                            │
+//   │               │  DebateStream                        │
+//   │               │  DecisionCard                        │
 //   └───────────────┴──────────────────────────────────────┘
 //
-// Day 2 replaces the placeholder with the WS-fed `DebateStream` and the
-// data/news cards.
+// Day 2 wires real WS-fed content into all four cards.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function Dashboard() {
@@ -39,7 +51,6 @@ export function Dashboard() {
         <Sidebar />
 
         <main className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
-          {/* Same ambient orbs as Home but dialed down. */}
           <div
             className="pointer-events-none absolute inset-0 -z-10"
             aria-hidden
@@ -56,7 +67,7 @@ export function Dashboard() {
               errorMessage={errorMessage}
             />
           ) : (
-            <EmptyState />
+            <EmptyState onOpenSettings={() => setSettingsOpen(true)} />
           )}
         </main>
       </div>
@@ -69,7 +80,7 @@ export function Dashboard() {
   );
 }
 
-// ── Active run placeholder (Day 2 wires the real stream) ───────────────────
+// ── Active run panel ────────────────────────────────────────────────────────
 
 function ActiveRunPanel({
   ticker,
@@ -82,14 +93,55 @@ function ActiveRunPanel({
   running: boolean;
   errorMessage: string | null;
 }) {
+  const [rerunning, setRerunning] = useState(false);
+  const hasSummary = useStore((s) => Boolean(s.summary));
+  const hasHeadlines = useStore((s) => s.headlines.length > 0);
+  const hasDecision = useStore((s) => Boolean(s.decision));
+
+  const onRerun = async () => {
+    if (rerunning) return;
+    setRerunning(true);
+    try {
+      await startDebate({ ticker, tradeDate });
+    } finally {
+      setRerunning(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 p-6 animate-fade-in-up">
-      <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-50">
-          {ticker}
-        </h1>
-        <span className="text-sm text-zinc-500 font-mono">{tradeDate}</span>
-      </div>
+      <header className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-50">
+            {ticker}
+          </h1>
+          <span className="text-sm text-zinc-500 font-mono">{tradeDate}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {running ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => abortDebate()}
+              title="Stop the debate (Cmd+.)"
+            >
+              <StopCircle className="size-4" />
+              Stop
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onRerun}
+              disabled={rerunning}
+              title="Run the debate again with the same ticker"
+            >
+              <RefreshCw className={rerunning ? 'size-4 animate-spin' : 'size-4'} />
+              Run again
+            </Button>
+          )}
+        </div>
+      </header>
 
       {errorMessage && (
         <Card className="border-red-500/30 bg-red-500/5">
@@ -98,55 +150,45 @@ function ActiveRunPanel({
               <AlertTriangle className="size-4 text-red-300" />
               <CardTitle className="text-red-200">Engine error</CardTitle>
             </div>
-            <CardDescription className="text-red-300/80">
+            <CardDescription className="text-red-300/80 whitespace-pre-wrap">
               {errorMessage}
             </CardDescription>
           </CardHeader>
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-4 text-amber-300" />
-            <CardTitle>Debate stream</CardTitle>
-          </div>
-          <CardDescription>
-            The 12-agent live debate renders here. Day 1 ships the shell;
-            the WebSocket integration that fills this panel with{' '}
-            <code className="px-1 py-0.5 bg-zinc-800/80 rounded text-zinc-300">
-              agent.message
-            </code>{' '}
-            events lands Day 2.
-          </CardDescription>
-        </CardHeader>
-        <div className="p-4 pt-0">
-          <div className="rounded-xl border border-zinc-800/80 bg-zinc-950/40 p-6 text-center">
-            <Activity
-              className={
-                running
-                  ? 'mx-auto size-6 text-amber-300 animate-pulse-soft'
-                  : 'mx-auto size-6 text-zinc-600'
-              }
-            />
-            <p className="mt-3 text-sm text-zinc-300">
-              {running
-                ? 'Debate scheduled — engine wire-up arrives next.'
-                : 'Idle. Pick a ticker from the sidebar or hit New analysis.'}
-            </p>
-            <p className="mt-1 text-xs text-zinc-500">
-              {running
-                ? 'Day 2 stream the 4 phases live (analysts → researchers → trader → risk committee).'
-                : 'Day 2: live agent messages with phase markers and the final decision card.'}
-            </p>
-          </div>
-        </div>
-      </Card>
+      {/* The four cards render themselves null when no data has arrived yet,
+       * so this stays clean during the brief gap between "Running" and the
+       * first data.summary event. */}
+      <DataCard />
+      <NewsCard />
+      <DebateStream />
+      <DecisionCard />
+
+      {/* When the run is still warming up (no summary, no headlines, no
+       * messages, no decision), give the user a friendly waiting state
+       * instead of an empty page. */}
+      {!hasSummary && !hasHeadlines && !hasDecision && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Sparkles className="size-4 text-amber-300" />
+              <CardTitle>Warming up…</CardTitle>
+            </div>
+            <CardDescription>
+              Connecting to the engine and fetching market data for {ticker}.
+              The debate transcript will stream in here as agents finish.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      )}
     </div>
   );
 }
 
-function EmptyState() {
+// ── Empty state ─────────────────────────────────────────────────────────────
+
+function EmptyState({ onOpenSettings }: { onOpenSettings: () => void }) {
   return (
     <div className="flex flex-1 items-center justify-center p-12">
       <div className="text-center max-w-md">
@@ -159,7 +201,15 @@ function EmptyState() {
         <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
           Pick a past run from the sidebar to replay it, or click{' '}
           <span className="text-zinc-300">New analysis</span> to start a new
-          one.
+          one. First time? Open{' '}
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="text-amber-300 underline-offset-2 hover:underline"
+          >
+            Settings
+          </button>{' '}
+          and configure a provider.
         </p>
       </div>
     </div>

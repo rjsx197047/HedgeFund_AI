@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Home } from '@/pages/Home';
 import { Dashboard } from '@/pages/Dashboard';
+import { abortDebate } from '@/lib/start-debate';
 import { useSessionStore, useView } from '@/store/useSessionStore';
 import { Views } from '@/types';
 
@@ -29,6 +30,10 @@ function App() {
       goHome();
     });
 
+    const unsubStop = bridge.onMenuCommand('menu:stop-stream', () => {
+      abortDebate();
+    });
+
     const unsubNav = bridge.onMenuCommand('menu:navigate', (...args) => {
       const target = typeof args[0] === 'string' ? args[0] : '';
       // The old shell had four routes — for the new shell, anything that
@@ -39,6 +44,7 @@ function App() {
 
     return () => {
       unsubNew();
+      unsubStop();
       unsubNav();
     };
   }, [goHome]);
