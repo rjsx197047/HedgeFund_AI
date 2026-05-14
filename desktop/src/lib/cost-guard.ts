@@ -49,7 +49,7 @@ export interface CostGuardReserveResult {
   reservation_id: string;
   est_cost_usd: number;
   expires_at: string;
-  auth_kind: 'api_key' | 'oauth';
+  auth_kind: 'api_key' | 'oauth' | 'local';
   override: boolean;
 }
 
@@ -63,7 +63,7 @@ export interface CostGuardConfigUpdate {
 
 export interface CostGuardCheckRequest {
   model: string;
-  auth_kind: 'api_key' | 'oauth';
+  auth_kind: 'api_key' | 'oauth' | 'local';
   max_tokens: number;
 }
 

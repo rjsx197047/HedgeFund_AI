@@ -5,11 +5,13 @@ any provider without per-provider branching. Cost caps (`max_tokens`,
 `MAX_AGENTS_PER_SESSION`) are enforced by `live_debate.py`, not here —
 adapters cannot accidentally raise them.
 
-Today's allowlist: `openai`, `anthropic`, `openrouter`, `gemini`. OpenAI
-also has a sibling `OpenAICodexAdapter` for the OAuth/subscription path
-that hits `chatgpt.com/backend-api/codex/responses` instead of the
+Today's allowlist: `openai`, `anthropic`, `openrouter`, `gemini`, `local`.
+OpenAI also has a sibling `OpenAICodexAdapter` for the OAuth/subscription
+path that hits `chatgpt.com/backend-api/codex/responses` instead of the
 standard chat-completions endpoint — the factory picks based on
-`config.auth.type`.
+`config.auth.type`. The `local` provider is the generic OpenAI-compatible
+adapter for runtimes like Ollama and LM Studio; the base_url comes from
+the renderer at session time so any localhost runtime works.
 
 Cost rates are local approximations refreshed manually. They are budgeting
 hints for the founder, never billing records — providers update prices
@@ -86,14 +88,19 @@ class ProviderConfig:
     def bearer_token(self) -> str:
         """Token for the `Authorization: Bearer …` header.
 
-        Works for both api_key and oauth auth types. Raises ValueError on
-        an unrecognised auth type so adapter-level mistakes are loud.
+        Works for api_key, oauth, and local auth types. For local runtimes
+        (Ollama, LM Studio) the OpenAI SDK still requires a non-empty value
+        — `"local"` is a sentinel that both Ollama and LM Studio accept.
+        Raises ValueError on an unrecognised auth type so adapter-level
+        mistakes are loud.
         """
         t = self.auth.get("type")
         if t == "api_key":
             return str(self.auth.get("api_key") or "")
         if t == "oauth":
             return str(self.auth.get("access") or "")
+        if t == "local":
+            return "local"
         raise ValueError(f"ProviderConfig.auth has unknown type: {t!r}")
 
     @property
@@ -130,6 +137,16 @@ class ProviderConfig:
 
         # Only OpenAI accepts OAuth at the moment.
         if auth["type"] == "oauth" and provider != "openai":
+            return None
+
+        # Local auth only goes with the `local` provider, and `local` only
+        # accepts the local auth shape. Keeps the two domains from leaking
+        # into each other (e.g. you can't ship a base_url with an api_key
+        # claim for OpenAI, and you can't ship an api_key against the
+        # local runtime adapter — that's a config bug worth dropping).
+        if auth["type"] == "local" and provider != "local":
+            return None
+        if provider == "local" and auth["type"] != "local":
             return None
 
         model = (raw.get("model") or "").strip() or _DEFAULT_MODELS[provider]
@@ -173,6 +190,16 @@ def _normalize_auth(raw: dict) -> Optional[dict[str, Any]]:
         if account_id:
             out["account_id"] = account_id
         return out
+    if t == "local":
+        # `base_url` is the OpenAI-compatible endpoint of the local runtime
+        # — e.g. http://localhost:11434/v1 for Ollama, http://localhost:1234/v1
+        # for LM Studio. We require it explicitly rather than defaulting,
+        # because there's no single "default" local runtime — making the
+        # user pick one upstream surfaces config bugs early.
+        base_url = (raw.get("base_url") or "").strip()
+        if not base_url:
+            return None
+        return {"type": "local", "base_url": base_url}
     return None
 
 
@@ -184,6 +211,13 @@ _DEFAULT_MODELS: dict[str, str] = {
     "anthropic": "claude-haiku-4-5",
     "openrouter": "openai/gpt-4o-mini",
     "gemini": "gemini-2.0-flash",
+    # Local model name is runtime-specific (Ollama: "llama3.2:latest";
+    # LM Studio: whatever the user has loaded). The renderer picks from
+    # the detection result and ships an explicit `model` on the WS frame;
+    # this default is a last-resort fallback that won't actually work
+    # against an arbitrary runtime — keep it obvious so a misconfigured
+    # request errors visibly rather than runs against the wrong model.
+    "local": "local-model",
 }
 
 _ALLOWED_PROVIDERS = frozenset(_DEFAULT_MODELS.keys())
@@ -290,6 +324,38 @@ class OpenRouterAdapter(OpenAIAdapter):
         "HTTP-Referer": "https://github.com/jaysidd/TradingAgentsLab",
         "X-Title": "TradingAgentsLab",
     }
+
+
+# ---- Local LLM adapter (Ollama / LM Studio / generic OpenAI-compat) -------
+
+
+class LocalLLMAdapter(OpenAIAdapter):
+    """Generic OpenAI-compatible adapter for a user-supplied base_url.
+
+    Works against any local runtime that exposes the OpenAI Chat Completions
+    shape — verified targets are Ollama (`http://localhost:11434/v1`) and
+    LM Studio (`http://localhost:1234/v1`). Both accept any non-empty value
+    in the `Authorization: Bearer …` header by default.
+
+    Unlike `OpenRouterAdapter` (which fixes `_base_url` at class level
+    because the URL is constant), the local base URL comes from the
+    renderer per session, so we override at instance level via
+    `__init__(base_url=...)`.
+
+    Cost note: local LLM cost is treated as $0 by the engine (CostGuard
+    short-circuits the same way as OAuth). The estimate table in
+    `_COST_PER_M_TOKENS` doesn't carry an entry for the dynamic model
+    string a runtime returns, so `estimate_cost` returns 0.0 naturally.
+    """
+
+    name = "local"
+
+    def __init__(self, *, base_url: str) -> None:
+        super().__init__()
+        # Instance-level override of the class-var. Python attribute lookup
+        # checks the instance dict first, so `open()` reading `self._base_url`
+        # picks this up without further changes.
+        self._base_url = base_url
 
 
 # ---- OpenAI Codex adapter (OAuth / ChatGPT-subscription path) -------------
@@ -648,5 +714,9 @@ def adapter_for(config: ProviderConfig) -> LLMAdapter:
         return AnthropicAdapter()
     if config.provider == "gemini":
         return GeminiAdapter()
+    if config.provider == "local":
+        # `from_dict` guarantees `auth["type"] == "local"` and `base_url`
+        # is present and non-empty when provider == "local".
+        return LocalLLMAdapter(base_url=str(config.auth["base_url"]))
     # Allowlist guarantees this is unreachable, but defend anyway.
     raise ValueError(f"unsupported provider: {config.provider!r}")

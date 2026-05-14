@@ -23,6 +23,17 @@ import {
   type CostGuardConfig,
   type SpendState,
 } from '../lib/cost-guard';
+import {
+  getLocalRuntimes,
+  LOCAL_MODEL_SECRET_KEY,
+  PROVIDER_SECRET_KEY,
+  type LocalRuntime,
+} from '../lib/engine-client';
+import {
+  loadLocalConfig,
+  saveLocalConfig,
+  type LocalLLMConfig,
+} from '../lib/local-llm';
 
 type Tab = 'llm' | 'data' | 'clawless' | 'costguard' | 'about';
 
@@ -37,7 +48,7 @@ const TABS: TabDef[] = [
     id: 'llm',
     label: 'LLM Providers',
     description:
-      'Bring your own API key. OpenAI also supports OAuth (Anthropic API key only — OAuth is banned by their TOS).',
+      'Bring your own API key, sign in with OpenAI OAuth, or auto-detect a local runtime (Ollama / LM Studio). Anthropic API key only — OAuth is banned by their TOS.',
   },
   {
     id: 'data',
@@ -269,6 +280,10 @@ function Settings() {
                 disabled={!availability?.available}
                 onChange={refresh}
               />
+              <LocalLLMRow
+                disabled={!availability?.available}
+                onChange={refresh}
+              />
             </>
           )}
           {active === 'data' && (
@@ -459,6 +474,291 @@ function YfinanceRow() {
       </div>
       <div className={styles.rowAside}>
         <span className={`${styles.pill} ${styles.pill_success}`}>Active · default</span>
+      </div>
+    </div>
+  );
+}
+
+interface LocalLLMRowProps {
+  disabled: boolean;
+  onChange: () => void;
+}
+
+/**
+ * Local LLM row — auto-detects running Ollama / LM Studio / llama.cpp
+ * runtimes on localhost, and saves the user's (base_url, model) choice
+ * as a pair of safeStorage entries.
+ *
+ * Detection runs once on mount + on demand via the Refresh button.
+ * Empty detection is a normal state (user hasn't installed a runtime
+ * yet); the manual-entry fallback covers anyone with a custom OpenAI-
+ * compatible server on a non-standard port.
+ *
+ * No "Connect" button — once a runtime is detected, picking a model from
+ * the dropdown saves the (URL, model) pair atomically. Cost is $0 by
+ * design (the engine treats local sessions the same as OAuth for
+ * CostGuard purposes).
+ */
+function LocalLLMRow({ disabled, onChange }: LocalLLMRowProps) {
+  const [runtimes, setRuntimes] = useState<LocalRuntime[] | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [probeError, setProbeError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<LocalLLMConfig | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savingFor, setSavingFor] = useState<string | null>(null); // base_url being saved
+  /** Manual entry form state (used when nothing detected or user wants
+   * a non-standard runtime). */
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualUrl, setManualUrl] = useState('http://localhost:11434/v1');
+  const [manualModel, setManualModel] = useState('');
+
+  const probe = useCallback(async () => {
+    setProbing(true);
+    setProbeError(null);
+    try {
+      const detected = await getLocalRuntimes();
+      setRuntimes(detected);
+    } catch (err) {
+      // /llm/local-runtimes returns empty arrays cleanly; a thrown error
+      // here means the engine is unreachable or returned a non-200. Show
+      // it so the user knows detection isn't running silently broken.
+      setProbeError(err instanceof Error ? err.message : 'probe failed');
+      setRuntimes([]);
+    } finally {
+      setProbing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void probe();
+  }, [probe]);
+
+  // Load the saved (base_url, model) pair so the UI can highlight what's
+  // currently active. Re-runs on every Settings refresh so saves from
+  // sibling rows don't leave stale state.
+  useEffect(() => {
+    let cancelled = false;
+    void loadLocalConfig().then((cfg) => {
+      if (!cancelled) setSaved(cfg);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [savingFor]);
+
+  const onPickModel = useCallback(
+    async (baseUrl: string, model: string) => {
+      if (disabled) return;
+      setSavingFor(baseUrl);
+      setSaveError(null);
+      try {
+        await saveLocalConfig({ base_url: baseUrl, model });
+        setSaved({ base_url: baseUrl, model });
+        onChange();
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'save failed');
+      } finally {
+        setSavingFor(null);
+      }
+    },
+    [disabled, onChange],
+  );
+
+  const onSaveManual = useCallback(async () => {
+    const url = manualUrl.trim();
+    const model = manualModel.trim();
+    if (!url || !model) {
+      setSaveError('Both base URL and model are required.');
+      return;
+    }
+    await onPickModel(url, model);
+    if (!saveError) {
+      setManualOpen(false);
+    }
+  }, [manualUrl, manualModel, onPickModel, saveError]);
+
+  const onClear = useCallback(async () => {
+    if (!saved) return;
+    if (!confirm('Clear the saved local LLM configuration?')) return;
+    try {
+      await Promise.all([
+        deleteSecret(PROVIDER_SECRET_KEY.local),
+        deleteSecret(LOCAL_MODEL_SECRET_KEY),
+      ]);
+      setSaved(null);
+      onChange();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'clear failed');
+    }
+  }, [saved, onChange]);
+
+  return (
+    <div className={styles.row}>
+      <div className={styles.rowMain}>
+        <div className={styles.rowName}>Local LLM (Ollama / LM Studio)</div>
+        <div className={styles.rowNote}>
+          Auto-detects running OpenAI-compatible local runtimes on this
+          machine. Free to run, fully private — model quality depends on
+          what you have installed. Cost guard treats local sessions as $0
+          (same as OAuth subscription).
+        </div>
+
+        {saved && (
+          <div className={styles.rowMeta}>
+            Active: <strong>{saved.model}</strong> at <code>{saved.base_url}</code>
+          </div>
+        )}
+
+        {probing && !runtimes && (
+          <div className={styles.rowMeta}>Probing localhost…</div>
+        )}
+
+        {probeError && (
+          <div className={styles.editorError} role="alert">
+            Detection error: {probeError}
+          </div>
+        )}
+
+        {runtimes && runtimes.length === 0 && (
+          <div className={styles.rowMeta}>
+            No local runtime detected. Install <a
+              href="https://ollama.com"
+              target="_blank"
+              rel="noopener noreferrer"
+            >Ollama</a> or <a
+              href="https://lmstudio.ai"
+              target="_blank"
+              rel="noopener noreferrer"
+            >LM Studio</a> and click Refresh — or use manual entry below.
+          </div>
+        )}
+
+        {runtimes && runtimes.length > 0 && (
+          <ul className={styles.list} style={{ marginTop: 8 }}>
+            {runtimes.map((rt) => (
+              <li key={rt.base_url} className={styles.staticRow}>
+                <div className={styles.rowMain}>
+                  <div className={styles.rowName}>
+                    {rt.runtime}
+                    {saved?.base_url === rt.base_url && (
+                      <span
+                        className={`${styles.pill} ${styles.pill_success}`}
+                        style={{ marginLeft: 8 }}
+                      >
+                        Connected
+                      </span>
+                    )}
+                  </div>
+                  <div className={styles.rowNote}>
+                    <code>{rt.base_url}</code> · {rt.models.length} model{rt.models.length === 1 ? '' : 's'}
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    <label style={{ fontSize: 12, marginRight: 6 }}>
+                      Model:
+                    </label>
+                    <select
+                      disabled={disabled || savingFor === rt.base_url}
+                      value={
+                        saved?.base_url === rt.base_url ? saved.model : ''
+                      }
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          void onPickModel(rt.base_url, e.target.value);
+                        }
+                      }}
+                    >
+                      <option value="">— pick a model —</option>
+                      {rt.models.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {manualOpen && (
+          <div style={{ marginTop: 12, padding: 12, background: 'var(--tal-bg-overlay)', borderRadius: 6 }}>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                Base URL (OpenAI-compatible)
+              </label>
+              <input
+                type="text"
+                value={manualUrl}
+                onChange={(e) => setManualUrl(e.target.value)}
+                placeholder="http://localhost:11434/v1"
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                Model
+              </label>
+              <input
+                type="text"
+                value={manualModel}
+                onChange={(e) => setManualModel(e.target.value)}
+                placeholder="llama3.2:latest"
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={onSaveManual}
+                disabled={disabled}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => setManualOpen(false)}
+                disabled={disabled}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {saveError && (
+          <div className={styles.editorError} role="alert">
+            {saveError}
+          </div>
+        )}
+      </div>
+
+      <div className={styles.rowAside} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <button
+          type="button"
+          onClick={() => void probe()}
+          disabled={disabled || probing}
+        >
+          {probing ? 'Probing…' : 'Refresh'}
+        </button>
+        {!manualOpen && (
+          <button
+            type="button"
+            onClick={() => setManualOpen(true)}
+            disabled={disabled}
+          >
+            Manual entry
+          </button>
+        )}
+        {saved && (
+          <button
+            type="button"
+            onClick={onClear}
+            disabled={disabled}
+          >
+            Clear
+          </button>
+        )}
       </div>
     </div>
   );

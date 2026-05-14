@@ -38,7 +38,7 @@ from .data_providers import (
     provider_from_data_config,
 )
 from .live_debate import ProviderConfig, live_debate
-from . import cost_guard, storage
+from . import cost_guard, local_llm_detect, storage
 from .stub_debate import canned_debate
 
 
@@ -223,6 +223,20 @@ def build_app(*, token: str) -> FastAPI:
             max_tokens=req.max_tokens,
         )
         return cost_guard.check_result_to_dict(result)
+
+    @app.get("/llm/local-runtimes", dependencies=bearer)
+    async def llm_local_runtimes() -> dict[str, Any]:
+        """Probe localhost for OpenAI-compatible LLM runtimes.
+
+        Empty `runtimes` array is a normal response, NOT an error — it
+        means the user has no Ollama / LM Studio / llama.cpp server
+        running. The renderer surfaces that as "Not detected" with a
+        manual-entry fallback, not a failed fetch.
+        """
+        detected = await local_llm_detect.detect_runtimes()
+        return {
+            "runtimes": [local_llm_detect.runtime_to_dict(r) for r in detected],
+        }
 
     @app.post("/cost-guard/reserve", dependencies=bearer)
     async def cost_guard_reserve(req: CostGuardReserveRequest) -> dict[str, Any]:

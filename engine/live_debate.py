@@ -431,10 +431,14 @@ async def live_debate(
             "model": config.model,
             "input_tokens": state.input_tokens,
             "output_tokens": state.output_tokens,
-            # OAuth sessions bill via subscription — record 0 so the cost
-            # ledger only reflects per-token API spend. Tokens still recorded
-            # above for telemetry.
-            "estimated_cost_usd": 0.0 if config.auth_kind == "oauth" else round(cost, 4),
+            # OAuth (subscription) and local LLM runs both record 0 so the
+            # cost ledger only reflects per-token API spend. Tokens still
+            # recorded above for telemetry.
+            "estimated_cost_usd": (
+                0.0
+                if config.auth_kind in ("oauth", "local")
+                else round(cost, 4)
+            ),
         }
         yielded_complete = True
     finally:

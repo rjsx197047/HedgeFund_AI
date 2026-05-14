@@ -155,6 +155,19 @@ function StatusStrip() {
         oauth = true;
       } else {
         for (const p of PROVIDER_PRIORITY) {
+          // Local needs BOTH `local:base-url` and `local:model` to count
+          // as configured. Single-key check (the default branch) would
+          // over-report local as ready when only the URL is saved.
+          if (p === 'local') {
+            if (
+              stored.has(PROVIDER_SECRET_KEY.local) &&
+              stored.has('local:model')
+            ) {
+              resolved = p;
+              break;
+            }
+            continue;
+          }
           if (stored.has(PROVIDER_SECRET_KEY[p])) {
             resolved = p;
             break;

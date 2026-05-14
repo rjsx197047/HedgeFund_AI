@@ -26,6 +26,7 @@ import {
 import { buildTranscriptMarkdown } from '../lib/transcript';
 import { getSecret, listSecrets } from '../lib/secrets';
 import { consumePendingTicker } from '../lib/handoff';
+import { loadLocalConfig } from '../lib/local-llm';
 import {
   getOpenAICredentialsForRequest,
   getOpenAIOAuthStatus,
@@ -297,7 +298,10 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         for (const p of PROVIDER_PRIORITY) {
           const hasKey = stored.has(PROVIDER_SECRET_KEY[p]);
           if (p === 'openai' && (oauth.connected || hasKey)) next.add(p);
-          else if (p !== 'openai' && hasKey) next.add(p);
+          // Local needs BOTH base_url AND model — the secrets:list result
+          // is keyed by individual entries, so we check both directly.
+          else if (p === 'local' && stored.has(PROVIDER_SECRET_KEY.local) && stored.has('local:model')) next.add(p);
+          else if (p !== 'openai' && p !== 'local' && hasKey) next.add(p);
         }
         setConfiguredProviders(next);
         // OAuth wins over API key when both are present (founder
@@ -456,6 +460,22 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
                 max_tokens: 400,
               };
             }
+          }
+        } else if (provider === 'local') {
+          // Local is a (base_url, model) pair, not a single key. Load both
+          // from secrets via the helper; the model on the WS frame comes
+          // from the stored pair, not the renderer's `model` variable
+          // (which holds the priority-resolver's static recommendation —
+          // meaningless for local runtimes since the model list is
+          // dynamic per-runtime).
+          const localCfg = await loadLocalConfig();
+          if (localCfg) {
+            providerConfig = {
+              provider: 'local',
+              auth: { type: 'local', base_url: localCfg.base_url },
+              model: localCfg.model,
+              max_tokens: 400,
+            };
           }
         } else if (provider) {
           const apiKey = await getSecret(PROVIDER_SECRET_KEY[provider]);

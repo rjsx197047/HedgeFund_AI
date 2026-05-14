@@ -3,7 +3,12 @@ export interface EngineHandshake {
   token: string;
 }
 
-export type LLMProvider = 'openai' | 'anthropic' | 'openrouter' | 'gemini';
+export type LLMProvider =
+  | 'openai'
+  | 'anthropic'
+  | 'openrouter'
+  | 'gemini'
+  | 'local';
 
 /**
  * Auth shape on the WS start frame. Discriminated union so the engine
@@ -23,6 +28,14 @@ export type ProviderAuth =
       refresh: string;
       expires: number;
       account_id?: string;
+    }
+  | {
+      /** Local OpenAI-compatible runtime (Ollama, LM Studio, llama.cpp).
+       * The `base_url` is what the OpenAI SDK accepts as `base_url=` —
+       * e.g. `"http://localhost:11434/v1"`. No token; local runtimes
+       * accept any non-empty Authorization header value. */
+      type: 'local';
+      base_url: string;
     };
 
 export interface ProviderConfig {
@@ -38,6 +51,7 @@ export const PROVIDER_LABEL: Record<LLMProvider, string> = {
   anthropic: 'Anthropic',
   openrouter: 'OpenRouter',
   gemini: 'Google Gemini',
+  local: 'Local LLM',
 };
 
 /** Default model the engine assumes when ProviderConfig.model is not set.
@@ -52,6 +66,11 @@ export const PROVIDER_DEFAULT_MODEL: Record<LLMProvider, string> = {
   anthropic: 'claude-haiku-4-5',
   openrouter: 'openai/gpt-4o-mini',
   gemini: 'gemini-2.0-flash',
+  // Local default is dynamic — the actual choice comes from the detected
+  // runtime's model list. Empty string here forces the renderer to pick
+  // a real model before submitting (the Analyze button disables when
+  // local is selected and no model is stored).
+  local: '',
 };
 
 /**
@@ -102,6 +121,11 @@ export const PROVIDER_MODELS: Record<LLMProvider, ModelChoice[]> = {
     { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: 'Balanced' },
     { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', note: 'Cheapest', recommended: true },
   ],
+  // Local model list is empty here because it's populated dynamically
+  // from the detected runtime's `/v1/models` response. `getAvailableModels`
+  // special-cases this provider to return the renderer-side runtime
+  // selection's models instead of consulting this static table.
+  local: [],
 };
 
 /** OpenAI Codex (OAuth path) — list mirrors what the user's ChatGPT
@@ -132,20 +156,31 @@ export const OPENAI_CODEX_MODELS: ModelChoice[] = [
 ];
 
 /** Returns the model list to show in the picker for a given provider +
- * OpenAI auth flow. The OAuth path picks from the Codex-specific list. */
+ * OpenAI auth flow. The OAuth path picks from the Codex-specific list.
+ *
+ * For `provider === 'local'`, this returns an empty list — callers must
+ * source the model list from the live runtime detection (the dynamic
+ * model set is the user's locally-installed models, not a static table).
+ * The Analyze page composes the local dropdown from the runtime's
+ * detected models directly. */
 export function getAvailableModels(
   provider: LLMProvider,
-  authKind: 'oauth' | 'api_key' | null,
+  authKind: 'oauth' | 'api_key' | 'local' | null,
 ): ModelChoice[] {
   if (provider === 'openai' && authKind === 'oauth') return OPENAI_CODEX_MODELS;
   return PROVIDER_MODELS[provider];
 }
 
-/** Returns the recommended model id for a provider + auth flow. */
+/** Returns the recommended model id for a provider + auth flow.
+ *
+ * For local, returns the empty string — the caller (Analyze page) is
+ * responsible for falling back to the runtime's first detected model
+ * when the user hasn't explicitly picked one. */
 export function getRecommendedModel(
   provider: LLMProvider,
-  authKind: 'oauth' | 'api_key' | null,
+  authKind: 'oauth' | 'api_key' | 'local' | null,
 ): string {
+  if (provider === 'local') return '';
   const list = getAvailableModels(provider, authKind);
   return (list.find((m) => m.recommended) ?? list[0]).id;
 }
@@ -155,7 +190,7 @@ export function getRecommendedModel(
  * each provider's last manual choice independently. */
 export function getModelStorageKey(
   provider: LLMProvider,
-  authKind: 'oauth' | 'api_key' | null,
+  authKind: 'oauth' | 'api_key' | 'local' | null,
 ): string {
   if (provider === 'openai' && authKind === 'oauth') {
     return 'tal:analyze:selected-model:openai-oauth';
@@ -173,6 +208,11 @@ export const PROVIDER_PRIORITY: readonly LLMProvider[] = [
   'anthropic',
   'openrouter',
   'gemini',
+  // Local last: when paid keys are present we default to those (better
+  // analyst quality than most local models). User can still flip to
+  // local via the Analyze "Run with" dropdown override. Reorder this
+  // tuple if the project posture shifts toward local-first.
+  'local',
 ];
 
 export const PROVIDER_SECRET_KEY: Record<LLMProvider, string> = {
@@ -180,7 +220,15 @@ export const PROVIDER_SECRET_KEY: Record<LLMProvider, string> = {
   anthropic: 'llm:anthropic',
   openrouter: 'llm:openrouter',
   gemini: 'llm:gemini',
+  // Local stores TWO secrets — base_url and model — because the runtime
+  // identity is the (URL, model) pair. The "key" tracked here is the
+  // base_url; the chosen model lives at `local:model`. Settings UI reads
+  // both keys; isLocalConfigured() in lib/local-llm.ts checks both.
+  local: 'local:base-url',
 };
+
+/** Companion secret key for the local provider's model selection. */
+export const LOCAL_MODEL_SECRET_KEY = 'local:model';
 
 /** Per-stream data provider override. When present on the WS start frame,
  * the engine instantiates the named provider for this debate's data fetches
@@ -464,6 +512,36 @@ export async function removeWatchlist(ticker: string): Promise<void> {
   if (!res.ok) {
     throw new Error(`removeWatchlist failed: ${res.status} ${res.statusText}`);
   }
+}
+
+/** Detected local LLM runtime + the models it exposes.
+ *
+ * `base_url` is what the OpenAI SDK accepts as `base_url=`. The engine
+ * sends this exact string back; renderer ships it unchanged on the WS
+ * start frame as `provider_config.auth.base_url`. */
+export interface LocalRuntime {
+  runtime: string;
+  base_url: string;
+  models: string[];
+}
+
+/** Probe localhost for running OpenAI-compatible LLM runtimes.
+ *
+ * Empty array is a normal response — it means the user has nothing
+ * running. Settings UI surfaces that as "Not detected" with a manual-
+ * entry fallback, not a failed fetch. */
+export async function getLocalRuntimes(): Promise<LocalRuntime[]> {
+  const { port, token } = await handshake();
+  const res = await fetch(`http://127.0.0.1:${port}/llm/local-runtimes`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `getLocalRuntimes failed: ${res.status} ${res.statusText}`,
+    );
+  }
+  const body = (await res.json()) as { runtimes: LocalRuntime[] };
+  return body.runtimes;
 }
 
 export async function analyze(req: AnalyzeRequest): Promise<AnalyzeResponse> {

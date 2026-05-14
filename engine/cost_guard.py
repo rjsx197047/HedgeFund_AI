@@ -211,7 +211,10 @@ def worst_case_reservation(
     cap (the expensive direction) AND the input transcript grows
     triangularly across agents (later agents see all prior turns).
     """
-    if auth_kind == "oauth":
+    # OAuth (subscription) and local LLM runs are both effectively $0 from
+    # the engine's perspective — OAuth bills via the user's ChatGPT plan,
+    # local runs entirely on the user's machine. Skip the USD math.
+    if auth_kind in ("oauth", "local"):
         return 0.0
     rates = _COST_PER_M_TOKENS.get(model)
     if rates is None:
@@ -583,11 +586,12 @@ def _exceeds_any_cap(
 ) -> Optional[str]:
     """Return the first cap dimension exceeded by adding `est_cost` to spend.
 
-    OAuth sessions skip the three USD caps (cost is $0) but still hit the
-    rate cap. A USD cap of 0 means "disabled" (skipped), per UI convention.
-    Same for sessions_per_day = 0.
+    OAuth and local sessions skip the three USD caps (cost is $0) but still
+    hit the rate cap — even free LLM runs benefit from quota discipline on
+    runaway debate counts. A USD cap of 0 means "disabled" (skipped), per
+    UI convention. Same for sessions_per_day = 0.
     """
-    if auth_kind != "oauth":
+    if auth_kind not in ("oauth", "local"):
         if config.cap_daily_usd > 0 and spend.daily_usd + est_cost > config.cap_daily_usd:
             return "daily"
         if config.cap_weekly_usd > 0 and spend.weekly_usd + est_cost > config.cap_weekly_usd:
