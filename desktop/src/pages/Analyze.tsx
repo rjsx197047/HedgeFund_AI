@@ -13,6 +13,7 @@ import {
   getAvailableModels,
   getModelStorageKey,
   getRecommendedModel,
+  type ModelChoice,
   PROVIDER_LABEL,
   PROVIDER_PRIORITY,
   PROVIDER_SECRET_KEY,
@@ -26,7 +27,8 @@ import {
 import { buildTranscriptMarkdown } from '../lib/transcript';
 import { getSecret, listSecrets } from '../lib/secrets';
 import { consumePendingTicker } from '../lib/handoff';
-import { loadLocalConfig } from '../lib/local-llm';
+import { loadLocalConfig, saveLocalConfig } from '../lib/local-llm';
+import { getLocalRuntimes } from '../lib/engine-client';
 import {
   getOpenAICredentialsForRequest,
   getOpenAIOAuthStatus,
@@ -136,13 +138,39 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   }, [openaiAuthKind]);
 
   /**
+   * Local LLM dynamic state. The model list is whatever the saved runtime
+   * exposes right now — populated by probing `/llm/local-runtimes` and
+   * filtering to the runtime whose base_url matches the saved config.
+   * `localSavedBaseUrl` is the (URL) half of the saved pair so we know
+   * which runtime to filter the detection result against and so we can
+   * persist a new model choice back to safeStorage without re-loading.
+   */
+  const [localModels, setLocalModels] = useState<string[]>([]);
+  const [localSavedBaseUrl, setLocalSavedBaseUrl] = useState<string | null>(null);
+  const [localSavedModel, setLocalSavedModel] = useState<string | null>(null);
+
+  /**
    * Available models for the current provider+auth combo. Recomputed
-   * whenever the active provider or OpenAI auth flow changes.
+   * whenever the active provider, OpenAI auth flow, or local-runtime
+   * model list changes. For local, the list is dynamic (per-runtime);
+   * for everyone else it's the static `PROVIDER_MODELS` table.
    */
   const availableModels = useMemo(() => {
     if (!activeProvider) return [];
+    if (activeProvider === 'local') {
+      // Build ModelChoice entries from the detected runtime. If the
+      // saved model isn't in the detected list (runtime offline or
+      // model was uninstalled), prepend it so the dropdown still shows
+      // the user's last choice — better than silently swapping models.
+      const ids = new Set(localModels);
+      const seed: ModelChoice[] = localSavedModel && !ids.has(localSavedModel)
+        ? [{ id: localSavedModel, label: `${localSavedModel} (last used, runtime offline)` }]
+        : [];
+      const detected: ModelChoice[] = localModels.map((m) => ({ id: m, label: m }));
+      return [...seed, ...detected];
+    }
     return getAvailableModels(activeProvider, openaiAuthKind);
-  }, [activeProvider, openaiAuthKind]);
+  }, [activeProvider, openaiAuthKind, localModels, localSavedModel]);
 
   /**
    * The model that will run the next debate. Pulls from per-(provider,auth)
@@ -155,9 +183,22 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
 
   // Resync the model selection whenever the (provider, authKind) tuple
   // changes. Reads from localStorage; falls back to recommended.
+  //
+  // For local: source-of-truth is safeStorage (`local:model`), not
+  // localStorage — the same value the Settings "Active:" line shows.
+  // We mirror it into `activeModel` so the dropdown initializes
+  // correctly when switching to local.
   useEffect(() => {
     if (!activeProvider) {
       setActiveModel(null);
+      return;
+    }
+    if (activeProvider === 'local') {
+      // localSavedModel was just hydrated by the refreshLocal effect
+      // above. If the saved model is in the live detected list, use
+      // it; if not, still use it (the dropdown surfaces "runtime
+      // offline" inline via the seed entry in `availableModels`).
+      setActiveModel(localSavedModel ?? null);
       return;
     }
     const key = getModelStorageKey(activeProvider, openaiAuthKind);
@@ -169,7 +210,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     }
     const inList = saved && availableModels.some((m) => m.id === saved);
     setActiveModel(inList ? saved : getRecommendedModel(activeProvider, openaiAuthKind));
-  }, [activeProvider, openaiAuthKind, availableModels]);
+  }, [activeProvider, openaiAuthKind, availableModels, localSavedModel]);
 
   /** Ref mirror so onAnalyze sees the right model under racing state. */
   const activeModelRef = useRef<string | null>(null);
@@ -181,6 +222,23 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     (modelId: string) => {
       if (!activeProvider) return;
       setActiveModel(modelId);
+      if (activeProvider === 'local') {
+        // For local, the canonical store is safeStorage so the Settings
+        // "Active:" line and the WS frame agree on the same model.
+        // Write back immediately so a subsequent Analyze run picks it up
+        // even before the refreshLocal effect re-fires.
+        if (localSavedBaseUrl) {
+          setLocalSavedModel(modelId);
+          void saveLocalConfig({
+            base_url: localSavedBaseUrl,
+            model: modelId,
+          }).catch(() => {
+            // safeStorage offline — the activeModel state still reflects
+            // the choice for the current session but persistence failed.
+          });
+        }
+        return;
+      }
       try {
         const key = getModelStorageKey(activeProvider, openaiAuthKind);
         localStorage.setItem(key, modelId);
@@ -188,7 +246,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         // ignore
       }
     },
-    [activeProvider, openaiAuthKind],
+    [activeProvider, openaiAuthKind, localSavedBaseUrl],
   );
   const handleRef = useRef<StreamHandle | null>(null);
   const isStreamingRef = useRef(false);
@@ -325,6 +383,52 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
       cancelled = true;
     };
   }, [resetSignal, isStreaming]);
+
+  // Refresh local runtime detection + saved-model state whenever the
+  // Settings tab might have updated them. Probes /llm/local-runtimes and
+  // filters to the saved base_url so the Analyze model dropdown shows
+  // exactly the models for the user's chosen runtime. Empty list when
+  // runtime is offline is the realistic state; we still seed the dropdown
+  // with the saved model so the user can see what's about to run.
+  useEffect(() => {
+    if (isStreaming) return;
+    if (!configuredProviders.has('local')) {
+      setLocalModels([]);
+      setLocalSavedBaseUrl(null);
+      setLocalSavedModel(null);
+      return;
+    }
+    let cancelled = false;
+    const refreshLocal = async () => {
+      try {
+        const cfg = await loadLocalConfig();
+        if (cancelled) return;
+        if (!cfg) {
+          setLocalSavedBaseUrl(null);
+          setLocalSavedModel(null);
+          setLocalModels([]);
+          return;
+        }
+        setLocalSavedBaseUrl(cfg.base_url);
+        setLocalSavedModel(cfg.model);
+        // Probe the engine for the live model list. If the runtime is
+        // offline this returns an empty array — the saved model is
+        // surfaced via the seed in `availableModels`.
+        const runtimes = await getLocalRuntimes().catch(() => []);
+        if (cancelled) return;
+        const match = runtimes.find((r) => r.base_url === cfg.base_url);
+        setLocalModels(match?.models ?? []);
+      } catch {
+        if (!cancelled) {
+          setLocalModels([]);
+        }
+      }
+    };
+    void refreshLocal();
+    return () => {
+      cancelled = true;
+    };
+  }, [resetSignal, isStreaming, configuredProviders]);
 
   // When the saved manual choice no longer has credentials (user deleted
   // the key in Settings), drop it so the priority resolver takes over.

@@ -579,7 +579,11 @@ class CostGuardConfigRequest(BaseModel):
 
 class CostGuardCheckRequest(BaseModel):
     model: str = Field(min_length=1, max_length=120)
-    auth_kind: str = Field(pattern=r"^(api_key|oauth)$")
+    # Allowed auth kinds: api_key, oauth, local. Local runs are $0 and
+    # bypass the USD caps the same way OAuth does (see cost_guard.py
+    # `_exceeds_any_cap`); validating it here keeps the pattern + the
+    # downstream cost-guard logic in agreement.
+    auth_kind: str = Field(pattern=r"^(api_key|oauth|local)$")
     max_tokens: int = Field(default=400, ge=1, le=8000)
 
 
