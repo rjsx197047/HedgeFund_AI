@@ -12,7 +12,44 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-09 end-of-day — comprehensive update)
+## Where we are right now (as of 2026-05-14 overnight session — local LLM + sentiment port + KB sweep)
+
+### Overnight commits (NOT yet pushed — push gate on founder per CLAUDE.md §4)
+
+- `adc9380` — **KB sweep:** 4 new pages (local-llm, cost-guard, crypto-tickers, sentiment) + index + cross-links
+- `6d514e8` — **Sentiment_analyst grounded in StockTwits + Reddit** (ported from upstream `0fcf136`). Pre-fetches public no-auth social data, injects into sentiment_analyst's prompt only. Asset-class-aware subreddit routing.
+- `2ab4be1` — **Local LLM support (Ollama / LM Studio / generic OpenAI-compat):** new engine adapter + detection probe + `/llm/local-runtimes` endpoint + Settings UI with auto-detect. CostGuard treats local as $0.
+
+### Verification at end of overnight
+
+- 113/113 engine pytests pass (28 new tests across the two ports)
+- `bash tools/dev-smoke.sh` 17/17
+- `npm --prefix desktop run type-check` + `build` clean
+- `/llm/local-runtimes` returns `{"runtimes":[]}` cleanly (founder doesn't have Ollama installed; empty-detection path works)
+- Live probe confirmed StockTwits + Reddit endpoints return real data for NVDA
+
+### What founder should do first when they return on 2026-05-14
+
+1. **Review the three overnight commits.** `git log --oneline -3`. All three are well-tested locally; review summaries in WORKLOG.md entry for 2026-05-14.
+2. **Push when ready:** `git push origin main` (pushes all three at once). Per CLAUDE.md §4, I deliberately held off pushing until founder confirms.
+3. **Optional manual smoke** — if you have Ollama installed, click **Refresh** in Settings → LLM Providers → Local LLM and confirm a model appears. Then run an Analyze with provider = local to confirm end-to-end. (No automated test covers the live-Ollama path; we only tested the empty-detection + adapter wiring.)
+4. **Optional sentiment smoke** — run any Analyze with your OAuth account (cost = $0). Check engine stderr for the `[ws] sentiment fetched ticker=...` log line, and confirm the sentiment_analyst turn references actual StockTwits ratios / specific subreddits in its commentary.
+
+### Upstream check (2026-05-14)
+
+We were 26 commits behind upstream's `main`. **One commit ported** (`0fcf136` sentiment_analyst + StockTwits + Reddit). Everything else evaluated and skipped — see WORKLOG.md entry for the decision rationale per upstream commit. Notable: our Local LLM implementation is meaningfully richer than upstream's Ollama work (we auto-detect across 3 runtimes + manual entry; upstream only has env-var configuration in the CLI).
+
+### What's pending (priority list, founder picks)
+
+1. **Phase 7b launch-prep items** (ToS, Privacy Policy, Cookie Policy, brochure site, DMG distribution) — needs founder direction on jurisdiction + scope.
+2. **Playwright UI tests** — closes the "UI not click-tested autonomously" gap that's been carried since the autonomous block days.
+3. **Phase 6 Clawless gateway tap** OR **Phase 8 webhooks** — both unblocked; founder's call which feels more valuable.
+4. **Streaming progress UX** — phase chip + completion badge in DebateStream (improves "is it still running?" perception during 60-90s gpt-5.4 debates).
+5. **CostGuard 5/6 + 6/6 polish** — task #37 still in_progress, basic features all shipped, remaining is cosmetic.
+
+---
+
+## Previous state (as of 2026-05-09 end-of-day — comprehensive update)
 
 ### Major shipping milestones since the previous Handover
 

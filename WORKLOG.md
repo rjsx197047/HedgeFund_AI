@@ -6,6 +6,48 @@
 
 ---
 
+## 2026-05-14 — Overnight autonomous block: local LLM + upstream port + KB sweep
+
+**Goal:** Founder asked for local LLM support ("auto-detect Ollama / LM Studio"), then went to sleep. Per his direction, also verified upstream and ported good new features. Three commits, all local — push deferred to morning per CLAUDE.md §4.
+
+**Headline shipped:**
+
+- `2ab4be1` — **Local LLM support (Ollama / LM Studio / generic OpenAI-compat).** Engine: new `LocalLLMAdapter` subclasses `OpenAIAdapter` with instance-level `base_url` override. `ProviderConfig` accepts a third auth branch `{type: 'local', base_url}`. New `engine/local_llm_detect.py` probes Ollama (11434), LM Studio (1234), llama.cpp (8080) in parallel (1.5s timeout each). New `GET /llm/local-runtimes` endpoint. CostGuard treats local sessions as $0 (same path as OAuth) — still hit the rate cap. Renderer: `'local'` added to `LLMProvider` type + `PROVIDER_PRIORITY` (last, so paid keys auto-win). Dual-secret storage (`local:base-url` + `local:model`) via new `lib/local-llm.ts` helper. New Settings → LLM Providers → **Local LLM** section auto-probes on mount + Refresh button, model dropdown per detected runtime, manual entry fallback. 14 new pytests; full engine suite still 113/113.
+
+- `6d514e8` — **Sentiment_analyst grounded in StockTwits + Reddit (port from upstream `0fcf136`).** New `engine/sentiment_sources.py` with `fetch_stocktwits_messages` + `fetch_reddit_posts`. Public no-auth endpoints, polite UA, asyncio.to_thread wrappers. Server pre-fetches in parallel with summary + headlines before live debate. New `SentimentBlock` dataclass; `_format_context` parameterized with `include_full_sentiment` — only the sentiment_analyst's prompt gets the full StockTwits + Reddit blocks; other agents read its conclusion via transcript (research-desk pattern, also keeps prompt budget bounded). Asset-class-aware Reddit routing: equity tickers → r/wallstreetbets / r/stocks / r/investing; crypto → r/CryptoCurrency / r/CryptoMarkets / r/Bitcoin. Sentiment_analyst system prompt rewritten to require quoting ratios + naming specific subreddits, and to explicitly say "data missing" rather than fabricate. 14 new pytests. Live probe against NVDA confirmed both public endpoints return real current data (StockTwits: 5 messages with bull/bear tags; Reddit: real posts from r/wallstreetbets and r/stocks).
+
+- `adc9380` — **KB sweep.** Four new pages: `local-llm.md` (auto-detect, Settings flow, manual entry, performance tips), `cost-guard.md` (TOCTOU reservation, modal flow, spend bars, rolling windows), `crypto-tickers.md` (BTC/ETH/SOL normalization, yfinance vs Alpaca crypto routing, what's NOT supported), `sentiment.md` (StockTwits + Reddit pre-fetch design, why only sentiment_analyst gets full blocks, privacy). Index README updated. `configuring-llm-providers.md` extended to 5 providers + priority order. `data-providers.md` gained Crypto + Sentiment cross-links.
+
+**Upstream check findings (TauricResearch/TradingAgents):**
+
+- 26 commits behind upstream's `main` (v0.2.5 + a few past). Inventory in this session's analysis:
+  - **Ported:** `0fcf136` sentiment_analyst + StockTwits + Reddit (above)
+  - **Skipped (already covered, out of scope, or against positioning):** Provider catalog refreshes (we maintain our own), new providers MiniMax/GLM/Qwen (out of v1 scope), Ollama upstream work (our local LLM impl is richer with auto-detect across 3 runtimes), env-var overlay (we use Settings UI by design), i18n researchers (English-only scope), reflection alpha benchmark (we don't run reflection cycles), news config (our news layer already reasonable), Docker/CLI/DeepSeek fixes (not applicable to our engine sidecar architecture).
+
+**Verification at end-of-session:**
+- 113/113 engine pytests pass (14 new for local_llm + 14 new for sentiment_sources)
+- `bash tools/dev-smoke.sh` 17/17 (full backend contract green)
+- `npm --prefix desktop run type-check` clean
+- `npm --prefix desktop run build` clean (155 KB JS gzipped)
+- `/llm/local-runtimes` returns `{"runtimes":[]}` cleanly with no runtime present (empty-detection path works)
+- Live probe of StockTwits + Reddit against NVDA returned real current data — both public endpoints alive
+
+**Live state at session end:**
+- Three commits on local `main`, **NOT** pushed to origin per CLAUDE.md §4. Founder needs to confirm before `git push`.
+- No background processes running (engine + Electron killed cleanly after smoke).
+
+**Next session opens with:**
+- `git push origin main` if founder approves the three overnight commits.
+- End-to-end smoke of sentiment_analyst with a real LLM call (the unit tests cover parsing + degradation, but the LLM-with-sentiment-in-prompt path has only been verified statically). Suggest: AAPL or NVDA on the founder's OAuth account so cost stays $0.
+- End-to-end smoke of local LLM if founder has Ollama installed. Otherwise the empty-detection path is what's tested.
+- Most natural next priorities (founder's call):
+  1. Phase 7b launch-prep items (ToS, Privacy Policy, Cookie Policy, brochure site, DMG distribution)
+  2. Playwright UI tests (closes the "UI not click-tested autonomously" gap)
+  3. Phase 6 Clawless gateway tap or Phase 8 webhooks
+  4. Streaming progress UX backlog item (phase chip + completion badge in DebateStream)
+
+---
+
 ## 2026-05-09 — Daylong session: docs cleanup → CostGuard → Alpaca → crypto → strategic posture
 
 **Goal:** Continue from yesterday's OAuth wrap-up. Founder authorized a long autonomous block plus interactive testing. By end-of-day: 18 commits shipping CostGuard end-to-end, locked positioning + memory, Alpaca data adapter (Phase 5b), full crypto support (auto-routed by ticker), compact app-shell status strip, tightened SEC-aware disclaimers, and an upstream-check tool.
