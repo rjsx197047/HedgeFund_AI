@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import type {
   DebateEvent,
   AnalyzeDecision,
@@ -11,6 +12,90 @@ interface DebateStreamProps {
   events: DebateEvent[];
   isStreaming: boolean;
 }
+
+/**
+ * Agents per phase — must match engine/live_debate.py `_AGENTS`. If the
+ * agent roster changes upstream, update both. The progress strip uses
+ * this to compute "done X of Y" per phase without having to know
+ * individual agent names.
+ */
+const AGENTS_PER_PHASE: Record<string, number> = {
+  analysts: 4,
+  researchers: 3,
+  trader: 1,
+  risk: 4,
+};
+
+const PHASE_ORDER: string[] = ['analysts', 'researchers', 'trader', 'risk'];
+
+const TOTAL_AGENTS = Object.values(AGENTS_PER_PHASE).reduce((a, b) => a + b, 0);
+
+interface PhaseProgress {
+  phase: string;
+  done: number;
+  total: number;
+  state: 'pending' | 'active' | 'done';
+}
+
+/**
+ * Walk the event stream and compute per-phase + aggregate progress.
+ *
+ * - `done` count = agent.message events seen in that phase.
+ * - A phase is `done` once `done >= total`.
+ * - The most recently active phase (latest agent.message or
+ *   phase.transition target) is marked `active`; everything else
+ *   pending. Backward-walking ensures a stalled phase doesn't keep
+ *   showing "active" after the stream moved on.
+ */
+function computeProgress(events: DebateEvent[]): {
+  phases: PhaseProgress[];
+  totalDone: number;
+} {
+  const counts: Record<string, number> = {};
+  let lastActivePhase: string | null = null;
+
+  for (const ev of events) {
+    if (ev.type === 'agent.message') {
+      counts[ev.phase] = (counts[ev.phase] ?? 0) + 1;
+      lastActivePhase = ev.phase;
+    } else if (ev.type === 'phase.transition') {
+      lastActivePhase = ev.to;
+    }
+  }
+
+  const phases: PhaseProgress[] = PHASE_ORDER.map((phase) => {
+    const done = counts[phase] ?? 0;
+    const total = AGENTS_PER_PHASE[phase] ?? 0;
+    let state: 'pending' | 'active' | 'done' = 'pending';
+    if (done >= total) state = 'done';
+    else if (lastActivePhase === phase || done > 0) state = 'active';
+    return { phase, done, total, state };
+  });
+
+  const totalDone = phases.reduce((sum, p) => sum + p.done, 0);
+  return { phases, totalDone };
+}
+
+/** Format elapsed milliseconds for the live clock. Compact: "12s",
+ * "1m 24s", "1h 02m". Long-form (1h+) is for slow local models. */
+function formatElapsed(ms: number): string {
+  if (ms < 0) return '0s';
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const totalMin = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (totalMin < 60) return `${totalMin}m ${String(sec).padStart(2, '0')}s`;
+  const hr = Math.floor(totalMin / 60);
+  const min = totalMin % 60;
+  return `${hr}h ${String(min).padStart(2, '0')}m`;
+}
+
+const PHASE_SHORT_LABEL: Record<string, string> = {
+  analysts: 'Analysts',
+  researchers: 'Researchers',
+  trader: 'Trader',
+  risk: 'Risk',
+};
 
 function findSummary(events: DebateEvent[]): QuoteSummary | null {
   const ev = events.find((e) => e.type === 'data.summary');
@@ -126,10 +211,47 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
   const groups = groupByPhase(events);
   const decision = findDecision(events);
   const meta = findDecisionMeta(events);
+  const progress = computeProgress(events);
+
+  // Live elapsed clock — captured on first event arrival, frozen when
+  // session.complete lands. For History replay (events present from the
+  // start, !isStreaming), we never start the clock — duration was a
+  // server-side concern that didn't make it onto the wire and faking
+  // "0s" would be worse than not showing it.
+  const startedAtRef = useRef<number | null>(null);
+  const endedAtRef = useRef<number | null>(null);
+  const [now, setNow] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    if (events.length === 0) return;
+    if (startedAtRef.current === null && isStreaming) {
+      startedAtRef.current = Date.now();
+    }
+    if (decision !== null && endedAtRef.current === null) {
+      endedAtRef.current = Date.now();
+    }
+  }, [events.length, isStreaming, decision]);
+
+  // Tick the clock while a stream is in flight. 500ms gives a smooth
+  // second-by-second feel without burning render budget. Stopped as
+  // soon as the decision lands (endedAt is set).
+  useEffect(() => {
+    if (!isStreaming) return;
+    if (endedAtRef.current !== null) return;
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [isStreaming]);
 
   if (events.length === 0) {
     return null;
   }
+
+  // Compute the elapsed value for render. While the stream is live we
+  // sample `now`; once the decision lands we freeze on endedAt.
+  const elapsedMs =
+    startedAtRef.current !== null
+      ? (endedAtRef.current ?? now) - startedAtRef.current
+      : null;
 
   return (
     <section className={styles.stream}>
@@ -184,6 +306,51 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
           </div>
         </div>
       )}
+
+      {/* Progress strip — visible from the moment session.start lands.
+          During the live stream it surfaces the 4-phase structure of the
+          debate (Analysts → Researchers → Trader → Risk), telegraphs
+          which agents are done / which phase is currently running, and
+          ticks a live elapsed clock. After the decision lands, it
+          freezes on the final state so the user can see "12 of 12
+          agents · 1m 24s" alongside the conclusion. */}
+      <div className={styles.progress} aria-label="Debate progress">
+        <div className={styles.progressPhases}>
+          {progress.phases.map((p) => (
+            <div
+              key={p.phase}
+              className={`${styles.progressPhase} ${
+                styles[`progressPhase_${p.state}`] ?? ''
+              }`}
+              aria-current={p.state === 'active' ? 'step' : undefined}
+            >
+              <span className={styles.progressPhaseMark}>
+                {p.state === 'done' ? '✓' : p.state === 'active' ? '●' : '○'}
+              </span>
+              <span className={styles.progressPhaseLabel}>
+                {PHASE_SHORT_LABEL[p.phase] ?? p.phase}
+              </span>
+              <span className={styles.progressPhaseCount}>
+                {p.done}/{p.total}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className={styles.progressFooter}>
+          <span>
+            {progress.totalDone} of {TOTAL_AGENTS} agents
+          </span>
+          {elapsedMs !== null && (
+            <>
+              <span className={styles.progressSep}>·</span>
+              <span>
+                {endedAtRef.current !== null ? 'completed in ' : 'elapsed '}
+                {formatElapsed(elapsedMs)}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
 
       {news && news.headlines.length > 0 && (
         <div className={styles.news}>

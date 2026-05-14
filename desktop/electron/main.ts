@@ -37,7 +37,10 @@ const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
 // generated assets live at `build/icon.{icns,png}`. Production builds
 // (electron-builder, Phase 7) will read the same paths.
 const ICON_PNG_PATH = path.join(process.env.APP_ROOT, 'build', 'icon.png');
-const ICON_ICNS_PATH = path.join(process.env.APP_ROOT, 'build', 'icon.icns');
+// build/icon.icns is generated alongside (sips + iconutil) for the
+// production .app bundle. Not referenced from TypeScript today —
+// electron-builder reads it at package time — but kept beside the PNG
+// so the two stay in sync if regenerated.
 
 let win: BrowserWindow | null = null;
 

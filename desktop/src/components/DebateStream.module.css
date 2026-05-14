@@ -416,3 +416,117 @@ a.newsTitle:hover {
   .decisionConfidence { grid-column: 1; grid-row: 3; }
   .decisionReasoning { grid-column: 1; grid-row: 4; }
 }
+
+/* ----- Progress strip --------------------------------------------------
+ *
+ * Compact row of 4 phase chips with a footer summary. Sits between the
+ * news block and the phase groups so it's always within view while the
+ * debate runs. Visual states:
+ *
+ * - done:    muted positive (green), checkmark, slight fade so finished
+ *            work doesn't compete with active work for attention
+ * - active:  warm amber accent, filled dot, subtle pulse
+ * - pending: muted text, hollow circle
+ */
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-3);
+  background: var(--tal-bg-elevated);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-lg);
+  padding: var(--tal-space-3) var(--tal-space-5);
+}
+
+.progressPhases {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--tal-space-3);
+}
+
+.progressPhase {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-2);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+  padding: var(--tal-space-2) var(--tal-space-3);
+  border-radius: var(--tal-radius-md);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background var(--tal-duration-fast) var(--tal-ease-out),
+              color var(--tal-duration-fast) var(--tal-ease-out),
+              border-color var(--tal-duration-fast) var(--tal-ease-out);
+}
+
+.progressPhaseMark {
+  font-size: 10px;
+  line-height: 1;
+  width: 12px;
+  text-align: center;
+}
+
+.progressPhaseLabel {
+  flex: 1;
+  font-weight: 600;
+}
+
+.progressPhaseCount {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+/* Done — muted positive tone. Slight fade keeps finished work
+   from competing with the currently-active phase. */
+.progressPhase_done {
+  color: var(--tal-positive, #2ea043);
+  background: rgba(46, 160, 67, 0.08);
+  border-color: rgba(46, 160, 67, 0.18);
+}
+
+/* Active — amber, the same brand accent used for the streaming pill +
+   the recommendation arrow on the app icon. The pulse loops via
+   `pulse` keyframes already declared higher in this file. */
+.progressPhase_active {
+  color: var(--tal-accent);
+  background: var(--tal-accent-muted);
+  border-color: var(--tal-accent-border);
+}
+
+.progressPhase_active .progressPhaseMark {
+  animation: pulse 1.4s ease-out infinite;
+}
+
+/* Pending — neutral muted. Hollow circle communicates "not yet". */
+.progressPhase_pending {
+  color: var(--tal-text-muted);
+  background: transparent;
+  border-color: var(--tal-border-subtle);
+}
+
+.progressFooter {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-2);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  letter-spacing: 0.04em;
+}
+
+.progressSep {
+  opacity: 0.5;
+}
+
+@media (max-width: 720px) {
+  .progressPhases {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .progressPhase {
+    font-size: 11px;
+  }
+}
