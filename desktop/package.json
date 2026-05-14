@@ -10,7 +10,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "type-check": "tsc -b --noEmit"
+    "type-check": "tsc -b --noEmit",
+    "postinstall": "bash ../tools/patch-electron-info-plist.sh"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.74.0",
