@@ -38,6 +38,26 @@ from .llm_providers import (
 )
 
 
+# ---- Sentiment block ---------------------------------------------------------
+#
+# Pre-fetched social data the sentiment_analyst agent grounds in.
+# `stocktwits` and `reddit` are formatted plaintext blocks from
+# `engine.sentiment_sources`. Both default to the empty string when
+# pre-fetch was skipped (no provider config) or both endpoints failed —
+# the agent prompt then surfaces a clear "no social data" line instead
+# of fabricating.
+
+
+@dataclass
+class SentimentBlock:
+    stocktwits: str = ""
+    reddit: str = ""
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.stocktwits or self.reddit)
+
+
 # ---- Cost / quota guardrails -------------------------------------------------
 
 MAX_AGENTS_PER_SESSION = 12  # same as the canned debate count
@@ -99,10 +119,14 @@ _AGENTS: list[_Agent] = [
         name="sentiment_analyst",
         phase="analysts",
         system_prompt=(
-            "You are a sentiment analyst. Comment in 3-5 sentences on what the "
-            "tape and the headlines collectively imply about market sentiment "
-            "for this ticker (positioning, conviction, retail vs institutional). "
-            "Be specific about confidence."
+            "You are a sentiment analyst. When StockTwits and Reddit blocks "
+            "are present in the context, ground your assessment in the "
+            "actual messages — quote a bullish/bearish ratio, name a "
+            "subreddit where conviction is highest or lowest, flag if "
+            "tone diverges from the price action. When social data is "
+            "missing or sparse, say so explicitly and fall back to what "
+            "the tape and headlines imply. 4-6 sentences. Do not "
+            "fabricate posts you cannot see in the provided blocks."
         ),
     ),
     _Agent(
@@ -202,8 +226,18 @@ def _format_context(
     summary: Optional[QuoteSummary],
     headlines: Optional[list[Headline]],
     state: _DebateState,
+    sentiment: Optional[SentimentBlock] = None,
+    include_full_sentiment: bool = False,
 ) -> str:
-    """Build the user message for a given agent — same structure for all."""
+    """Build the user message for a given agent.
+
+    All agents share the same price + news + transcript context. The
+    full StockTwits / Reddit blocks are routed only to the
+    `sentiment_analyst` agent (via `include_full_sentiment=True`) to
+    keep prompt size bounded — other agents read the sentiment
+    analyst's conclusion via the transcript, the way a research desk
+    would consume a teammate's summary turn.
+    """
     lines: list[str] = []
     lines.append(f"Ticker: {ticker}")
     lines.append(f"Trade date (anchor): {trade_date}")
@@ -226,6 +260,15 @@ def _format_context(
         for h in headlines[:6]:
             pub = f" ({h.publisher})" if h.publisher else ""
             lines.append(f"- {h.title}{pub}")
+    if include_full_sentiment and sentiment is not None and not sentiment.is_empty:
+        if sentiment.stocktwits:
+            lines.append("")
+            lines.append("StockTwits messages (most recent):")
+            lines.append(sentiment.stocktwits)
+        if sentiment.reddit:
+            lines.append("")
+            lines.append("Reddit posts (past 7 days):")
+            lines.append(sentiment.reddit)
     if state.transcript:
         lines.append("")
         lines.append("Prior turns in this debate (most recent last):")
@@ -281,6 +324,7 @@ async def live_debate(
     headlines: Optional[list[Headline]],
     config: ProviderConfig,
     reservation_id: Optional[str] = None,
+    sentiment: Optional[SentimentBlock] = None,
 ) -> AsyncIterator[dict]:
     """Real-LLM debate. Yields the same event shapes as `canned_debate`.
 
@@ -358,6 +402,8 @@ async def live_debate(
                 summary=summary,
                 headlines=headlines,
                 state=state,
+                sentiment=sentiment,
+                include_full_sentiment=(agent.name == "sentiment_analyst"),
             )
             try:
                 content, in_tok, out_tok = await adapter.complete(

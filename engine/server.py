@@ -37,9 +37,10 @@ from .data_providers import (
     default_provider,
     provider_from_data_config,
 )
-from .live_debate import ProviderConfig, live_debate
-from . import cost_guard, local_llm_detect, storage
+from .live_debate import ProviderConfig, SentimentBlock, live_debate
+from . import cost_guard, local_llm_detect, sentiment_sources, storage
 from .stub_debate import canned_debate
+from .ticker import normalize_ticker
 
 
 def build_app(*, token: str) -> FastAPI:
@@ -352,6 +353,38 @@ def build_app(*, token: str) -> FastAPI:
                 await ws.send_json(evt)
                 captured_events.append(evt)
 
+            # Pre-fetch sentiment ONLY when we're about to run a live
+            # debate. Stub mode skips entirely — the canned content
+            # doesn't reference these sources and the fetch would just
+            # burn ~6s of latency for nothing. Fetches run in parallel
+            # via asyncio.gather; either failure surfaces as the
+            # function's placeholder string, never as an exception.
+            sentiment: Optional[SentimentBlock] = None
+            if config is not None:
+                try:
+                    spec = normalize_ticker(ticker)
+                    twits_text, reddit_text = await asyncio.gather(
+                        sentiment_sources.fetch_stocktwits_messages_async(
+                            spec.base
+                        ),
+                        sentiment_sources.fetch_reddit_posts_async(
+                            spec.base, asset_class=spec.asset_class
+                        ),
+                    )
+                    sentiment = SentimentBlock(
+                        stocktwits=twits_text, reddit=reddit_text
+                    )
+                    sys.stderr.write(
+                        f"[ws] sentiment fetched ticker={ticker} "
+                        f"twits_chars={len(twits_text)} reddit_chars={len(reddit_text)}\n"
+                    )
+                except Exception as exc:  # noqa: BLE001 — sentiment is supplemental
+                    sys.stderr.write(
+                        f"[ws] sentiment fetch error ticker={ticker}: "
+                        f"{type(exc).__name__}: {exc}\n"
+                    )
+                    sentiment = None
+
             if config is not None:
                 # CostGuard auto-reserve when the renderer didn't pre-reserve.
                 # Older renderer versions don't send reservation_id; rather
@@ -394,6 +427,7 @@ def build_app(*, token: str) -> FastAPI:
                     headlines=headlines,
                     config=config,
                     reservation_id=reservation_id,
+                    sentiment=sentiment,
                 ):
                     await ws.send_json(event)
                     captured_events.append(event)
