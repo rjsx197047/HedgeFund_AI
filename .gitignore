@@ -9,6 +9,10 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+# ...but desktop/build/ holds icon source assets that should be committed
+# (electron-builder reads them at package time, they're not build outputs).
+!desktop/build/
+!desktop/build/**
 develop-eggs/
 dist/
 downloads/

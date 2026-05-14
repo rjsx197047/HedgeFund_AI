@@ -29,6 +29,16 @@ app.setName('Trading Agents Lab');
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
 
+// App icon resolution.
+// - macOS dock + production .app bundle prefer `build/icon.icns` (multi-
+//   resolution; OS picks the right size per surface).
+// - Linux + Windows + the BrowserWindow `icon` option use `build/icon.png`.
+// In dev mode `process.env.APP_ROOT` resolves to `desktop/`, where the
+// generated assets live at `build/icon.{icns,png}`. Production builds
+// (electron-builder, Phase 7) will read the same paths.
+const ICON_PNG_PATH = path.join(process.env.APP_ROOT, 'build', 'icon.png');
+const ICON_ICNS_PATH = path.join(process.env.APP_ROOT, 'build', 'icon.icns');
+
 let win: BrowserWindow | null = null;
 
 function createWindow() {
@@ -40,6 +50,10 @@ function createWindow() {
     backgroundColor: '#0d1117',
     titleBarStyle: 'hiddenInset',
     title: 'Trading Agents Lab',
+    // BrowserWindow takes a single icon for cross-platform use. macOS reads
+    // it but defers to the app bundle's icon at runtime — `app.dock.setIcon`
+    // below is what actually swaps the dock icon in dev mode.
+    icon: ICON_PNG_PATH,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       contextIsolation: true,
@@ -228,6 +242,17 @@ ipcMain.handle('oauth:openai:credentials', async () => {
 });
 
 app.whenReady().then(() => {
+  // macOS: replace Electron's default dock icon with the Trading Agents
+  // Lab mark. Only needed in dev mode (`npm run dev` runs vanilla
+  // Electron via vite-plugin-electron, which doesn't carry the bundled
+  // .app icon). Production builds bake the icon into the .app bundle
+  // and ignore this call. `app.dock` is undefined on non-darwin
+  // platforms, so the optional chain keeps this cross-platform.
+  // NOTE: `setIcon` accepts PNG-based NativeImage paths only — .icns is
+  // for the bundled .app, not for the dynamic dock-icon API. Production
+  // electron-builder will still read build/icon.icns for the bundle.
+  app.dock?.setIcon(ICON_PNG_PATH);
+
   // Start the sidecar eagerly so the handshake is ready by the time the
   // renderer asks for it. The IPC handler awaits the same promise.
   startEngine().catch((err) => {
