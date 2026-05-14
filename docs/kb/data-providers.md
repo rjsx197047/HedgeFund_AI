@@ -82,6 +82,25 @@ This is a deliberate summary, not a raw dataframe. Raw OHLCV tables are noisy an
 
 ---
 
+## Crypto data
+
+Both yfinance and Alpaca handle crypto, but their coverage differs:
+
+- **yfinance** uses the `BTC-USD` style symbol. Major pairs (BTC, ETH, SOL, etc.) are well covered. Stablecoin-quoted pairs (`USDT`/`USDC` quotes) collapse to the USD pair — yfinance doesn't expose USDT pairs reliably.
+- **Alpaca** uses the exact `BTC/USD` pair format and hits a dedicated endpoint at `/v1beta3/crypto/us/bars`. Better coverage for stablecoin-quoted pairs and altcoins.
+
+The engine **auto-routes** crypto tickers to the right endpoint per provider. The **Data** pill on the Analyze page gains a **"crypto"** badge when the active stream is crypto, so you can confirm the engine routed correctly.
+
+See [crypto-tickers.md](crypto-tickers.md) for how tickers are normalized (`BTC`, `BTC/USD`, `BTC-USD` all work).
+
+---
+
+## Social sentiment data
+
+Separately from market data, the engine fetches public social signal (StockTwits + Reddit) for the **sentiment_analyst** agent. This is no-auth, no-key, and runs in parallel with the market data fetch. See [sentiment.md](sentiment.md) for the full details.
+
+---
+
 ## Deferred providers
 
 **Massive.com / Polygon-class providers** — institutional-grade tick data and alternative data. Deferred until a feature specifically requires it. Alpaca is sufficient for v1.
@@ -91,5 +110,7 @@ This is a deliberate summary, not a raw dataframe. Raw OHLCV tables are noisy an
 ## Further reading
 
 - [How it works](how-it-works.md) — how data fits into the debate flow
+- [Crypto tickers](crypto-tickers.md) — symbol normalization and routing
+- [Sentiment](sentiment.md) — StockTwits + Reddit pre-fetch
 - [Troubleshooting](troubleshooting.md) — yfinance returns no data
 - Engine API reference for data endpoints: [docs/api.md](../api.md)

@@ -8,7 +8,7 @@
 
 ## What ships today
 
-TradingAgentsLab supports four LLM provider families. All four can drive a real-LLM debate end-to-end:
+TradingAgentsLab supports five LLM provider families. All five can drive a real-LLM debate end-to-end:
 
 | Provider | Auth options | Default model | Notes |
 |---|---|---|---|
@@ -16,8 +16,11 @@ TradingAgentsLab supports four LLM provider families. All four can drive a real-
 | **Anthropic** | API key only | `claude-haiku-4-5` | OAuth is **not** supported — banned by Anthropic Terms of Service. |
 | **OpenRouter** | API key | `openrouter/auto` | One key, hundreds of models. Useful as a single-key multi-model fallback. |
 | **Google Gemini** | API key | `gemini-3.0-flash` | Gemini 3.x family. |
+| **Local LLM** | Auto-detect (no key) | Dynamic — whatever your runtime exposes | Ollama, LM Studio, or any OpenAI-compatible localhost server. Free, private, $0. See [local-llm.md](local-llm.md). |
 
 All providers use the same shared `LLMAdapter` Protocol on the engine side, so adding more providers later is a matter of one new adapter class plus an entry in the priority list.
+
+The **priority order** when multiple are configured is: OpenAI → Anthropic → OpenRouter → Gemini → Local. Local is last so paid keys auto-win for analysis quality, but you can override per-debate via the **Run with** dropdown on Analyze.
 
 ---
 
