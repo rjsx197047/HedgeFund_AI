@@ -54,13 +54,18 @@ def build_app(*, token: str) -> FastAPI:
         openapi_url=None,
     )
 
-    # Renderer runs on http://localhost:5173 in dev (Vite). Sidecar binds to
-    # 127.0.0.1 only, so this isn't a security boundary — it's just the browser
-    # CORS preflight requirement for cross-origin fetches. WebSocket /stream is
-    # unaffected by CORS but harmless to allow.
+    # Renderer runs on http://localhost:5173 in dev (Vite) and on `file://`
+    # (Origin: "null") in production-mode Electron — the built bundle loads
+    # `dist/index.html` directly via Electron's file protocol. The sidecar
+    # binds to 127.0.0.1 only and gates every request behind the bearer
+    # token; CORS is not a security boundary here, it's just the browser's
+    # preflight contract for non-simple requests. Use a wildcard so both
+    # dev and prod work — and Playwright's e2e tests (also `file://`-loaded)
+    # surfaced the prior production-mode breakage. WebSocket /stream is
+    # unaffected by CORS but allow_methods covers OPTIONS preflight.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=["*"],
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],

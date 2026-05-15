@@ -114,6 +114,8 @@ function App() {
       <a
         className={`${styles.navItem} ${active ? styles.navItemActive : ''}`}
         href={`#${target}`}
+        data-testid={`nav-${target}`}
+        data-active={active ? 'true' : 'false'}
       >
         <span className={styles.navItemDot} />
         {label}

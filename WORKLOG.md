@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-05-15 (continued) — Playwright + Electron UI smoke suite
+
+**Goal:** Close the long-carried "UI not click-tested autonomously" gap. Founder explicitly asked for Playwright as the next pickup after the morning's CostGuard polish.
+
+**Headline shipped:**
+
+- **test(e2e): Playwright + Electron smoke suite — 5 tests, ~27s wall-clock.** New `desktop/tests/e2e/`:
+  - `launch.spec.ts` — app launches, engine handshake reaches ok, Spend pill flips to ok, LLM pill renders off (no creds in sandbox)
+  - `navigation.spec.ts` — sidebar navigates Analyze ↔ Watchlist ↔ History ↔ Settings, hash updates, active item gets `data-active`
+  - `analyze-stub.spec.ts` — stub debate end-to-end: click Analyze, button flips to Stop, decision card renders HOLD, History page lists the just-completed session
+  - `settings.spec.ts` — all 5 Settings tabs visible (LLM Providers, Data Providers, Clawless, Cost Guard, About)
+  - `watchlist.spec.ts` — add AAPL, see row, click Analyze → ticker pre-fills, navigate back, remove
+- **Two real bugs surfaced + fixed in the same commit:**
+  - `engine/server.py` CORS allowlist was `[http://localhost:5173]` only — production-mode Electron loads `file://`, sending `Origin: null`, so any non-simple request (Content-Type: application/json on GET, PUT, DELETE) got preflight-rejected. Widened to `allow_origins=["*"]` since bearer token + 127.0.0.1 bind are the actual defenses. CORS was just preflight ceremony for an in-process Electron sidecar.
+  - `desktop/src/components/StatusStrip.tsx` Spend pill cold-start: first `pollSpend()` fired before engine ready (~2s window of `ERR_CONNECTION_REFUSED`), and the next attempt was 30s away because of the interval. Pill stayed "pending" up to 30s after engine ready. Added the same fast-retry pattern Engine pill uses (1s ticks during 12s grace window, then back off to 30s).
+
+- Added `data-testid` attributes to ~10 stable selectors (StatusStrip pills, nav items, Analyze input/button, Watchlist row, decision card). Without these the tests would target CSS-module-hashed classnames and break every time CSS changed.
+
+- `desktop/package.json`: new `test:e2e` script (`npm run build && playwright test`) and `test:e2e:ui` (interactive Playwright UI mode for debugging).
+
+- `.gitignore`: `desktop/test-results/`, `desktop/playwright-report/`, `desktop/playwright/.cache/`.
+
+**Process notes (carry forward):**
+
+- Workers: 1 — each test launches its own Electron + Python engine; secrets/DB/userData would collide otherwise. Suite is small so single-worker is the right call.
+- Sandbox per test: each gets a `mkdtemp` userData dir + `TAL_SESSIONS_DB` so the founder's real keyring + history are untouched.
+- Orphan-engine sweep in fixture teardown via `pkill -f "engine/.venv/bin/python -m engine"` — mirrors `electron/main.ts`'s `sweepOrphanEngines`.
+- Pre-existing `npm audit` warning: Electron 33.2.1 has a high-severity "ASAR Integrity Bypass via resource modification" advisory. Not introduced by this PR; we'd need to bump Electron major. Out of scope; flag for the Phase 7 distribution prep.
+
+**Verification at end-of-session:**
+
+- 5/5 Playwright tests pass · 117/117 engine pytests pass · `dev-smoke.sh` 17/17 · type-check clean
+- All processes torn down cleanly before commit
+
+**Picked up next:** Phase 8 webhooks (founder's call this morning), then Phase 6 Clawless gateway tap.
+
+---
+
 ## 2026-05-15 — CostGuard polish: Spend pill in StatusStrip + History sort
 
 **Goal:** Founder asked first-thing what to pick from backlog. Per Handover next-session priorities (daily-driving phase), picked the CostGuard 5/6 + 6/6 polish — two visible improvements he'll see every session, bounded scope.

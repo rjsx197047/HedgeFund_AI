@@ -241,3 +241,14 @@ data/
 # Re-include it explicitly.
 !desktop/src/lib/
 !desktop/src/lib/**
+
+# Playwright artifacts — build outputs of `npm run test:e2e`, never
+# committed. test-results/ holds failure screenshots + traces; the
+# report dir is the static HTML report Playwright generates when you
+# run `playwright show-report`. Allow both root-level (stray invocation
+# from repo root) and desktop/-relative (canonical).
+test-results/
+playwright-report/
+desktop/test-results/
+desktop/playwright-report/
+desktop/playwright/.cache/

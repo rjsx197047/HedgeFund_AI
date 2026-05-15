@@ -819,6 +819,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
             value={activeProvider ?? ''}
             onChange={(e) => onSelectProvider(e.target.value as LLMProvider | '')}
             disabled={isStreaming || engineStatus !== 'running'}
+            data-testid="provider-select"
           >
             {PROVIDER_PRIORITY.map((p) => {
               const configured = configuredProviders.has(p);
@@ -845,6 +846,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
               onChange={(e) => onSelectModel(e.target.value)}
               disabled={isStreaming || engineStatus !== 'running'}
               aria-label="Select model"
+              data-testid="model-select"
             >
               {availableModels.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -885,6 +887,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
               placeholder="NVDA"
               maxLength={8}
               disabled={isStreaming}
+              data-testid="ticker-input"
             />
           </div>
           <div className={styles.field}>
@@ -897,6 +900,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
               max={new Date().toISOString().split('T')[0]}
               onChange={(e) => setDate(e.target.value)}
               disabled={isStreaming}
+              data-testid="date-input"
             />
           </div>
           <div className={styles.fieldButton}>
@@ -905,6 +909,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
                 className={`${styles.button} ${styles.buttonStop}`}
                 onClick={onStop}
                 type="button"
+                data-testid="stop-button"
               >
                 Stop
               </button>
@@ -914,6 +919,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
                 disabled={buttonDisabled}
                 onClick={onAnalyze}
                 type="button"
+                data-testid="analyze-button"
               >
                 Analyze
               </button>

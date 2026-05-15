@@ -411,7 +411,11 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
       ))}
 
       {decision && (
-        <div className={`${styles.decision} ${styles[`decision_${decision.action}`] ?? ''}`}>
+        <div
+          className={`${styles.decision} ${styles[`decision_${decision.action}`] ?? ''}`}
+          data-testid="decision-card"
+          data-action={decision.action}
+        >
           <div className={styles.decisionLabel}>
             Decision
             {meta.live && (
@@ -420,7 +424,9 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
               </span>
             )}
           </div>
-          <div className={styles.decisionAction}>{decision.action}</div>
+          <div className={styles.decisionAction} data-testid="decision-action">
+            {decision.action}
+          </div>
           <div className={styles.decisionConfidence}>
             Confidence{' '}
             <span className={styles.decisionConfidenceValue}>

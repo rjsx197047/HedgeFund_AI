@@ -75,6 +75,8 @@ function Pill({ label, detail, state, title }: PillProps) {
     <span
       className={`${styles.pill} ${styles[`pill_${state}`]}`}
       title={title ?? `${label}${detail ? `: ${detail}` : ''}`}
+      data-testid={`status-pill-${label.toLowerCase()}`}
+      data-state={state}
     >
       <span className={styles.dot} />
       <span className={styles.label}>{label}</span>
@@ -172,9 +174,11 @@ function StatusStrip() {
   // total the moment a debate ends, not 30s later. Cost.usage events from
   // an active stream populate `runCost` for the mid-stream tick.
 
+  const spendEverSucceededRef = useRef(false);
   const pollSpend = useCallback(async () => {
     try {
       const res = await getCostGuardState();
+      spendEverSucceededRef.current = true;
       setSpend(res.spend);
       setCgConfig(res.config);
     } catch {
@@ -182,10 +186,28 @@ function StatusStrip() {
     }
   }, []);
 
+  // Same tight-retry pattern as engine health: cold-start poll the cost-
+  // guard endpoint every second until the FIRST success (engine sidecar
+  // typically reachable within 2-3s of app launch), then back off to the
+  // 30s ambient interval. Without the fast retry the pill stays "pending"
+  // for up to 30s after engine ready — and Playwright's 20s wait window
+  // surfaced that as a flake before any user could see it.
   useEffect(() => {
     void pollSpend();
-    const id = setInterval(() => void pollSpend(), SPEND_POLL_MS);
-    return () => clearInterval(id);
+    const fastInterval = setInterval(() => {
+      if (spendEverSucceededRef.current) return;
+      void pollSpend();
+    }, 1000);
+    const slowInterval = setInterval(() => void pollSpend(), SPEND_POLL_MS);
+    const stopFastTimeout = setTimeout(
+      () => clearInterval(fastInterval),
+      STARTUP_GRACE_MS,
+    );
+    return () => {
+      clearInterval(fastInterval);
+      clearInterval(slowInterval);
+      clearTimeout(stopFastTimeout);
+    };
   }, [pollSpend]);
 
   useEffect(() => {

@@ -12,15 +12,18 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-15 morning — CostGuard polish landed)
+## Where we are right now (as of 2026-05-15 — Playwright UI tests + CostGuard polish landed)
 
-### Today's commit (NOT yet pushed — push gate on founder per CLAUDE.md §4)
-
-One commit stacked on local `main`:
+### Today's commits (pushed)
 
 ```
-<next>   feat(cost-guard): Spend pill in StatusStrip + History sort + mid-stream tick
+6b0d110  feat(cost-guard): Spend pill in StatusStrip + History sort + mid-stream tick
+<next>   test(e2e): Playwright + Electron smoke suite (5 tests) + 2 prod-mode bug fixes
 ```
+
+The Playwright run surfaced two real bugs that affected the production-built bundle:
+1. **CORS rejected non-simple requests** from `file://` origin (Origin: "null"). Widened `allow_origins=["*"]` — bearer token + 127.0.0.1 bind are the actual defense; CORS was just preflight ceremony. Affected `/cost-guard/*`, the OAuth refresh path, anything that triggers preflight.
+2. **Spend pill cold-start delay** — initial poll fired before engine ready and next attempt was 30s later (interval), so the pill stayed "pending" up to 30s after engine ready. Added the same fast-retry pattern Engine pill uses.
 
 What it does:
 - 5th pill in StatusStrip ("Spend") shows daily $ vs daily cap with green/amber/red colour states. Polls `/cost-guard/state` every 30s plus a 500ms-delayed re-poll on `tal:session-complete` (closes the race vs engine's finalize_reservation SQLite UPDATE).
@@ -72,11 +75,11 @@ Headline arcs:
 
 ### What's pending (next-session candidates, priority order)
 
-1. **Playwright UI tests** — regression net for daily use; closes the long-carried "UI not click-tested autonomously" gap. Pays back every commit going forward. Suggested next pickup if not daily-driving.
-2. **CostGuard 6/6 polish** — Spend pill ✅ shipped 2026-05-15. Remaining: background TTL sweep cleanup of stale reservations (engine side, low priority — TTLs already expire, this just GC's the rows).
-3. **Phase 6 Clawless gateway tap** OR **Phase 8 webhooks** — both unblocked; founder's call which feels more valuable.
-4. **Phase 7b launch prep** — blocked on LLC + Apple Developer Program (~2-3 weeks).
-5. **Streaming progress UX** — ✅ DONE 2026-05-14.
+1. **Phase 8 webhooks** — founder-prioritized 2026-05-15. Outbound POST to user-configured URLs on `session.complete`, locked-positioning answer to broker handoff. ~1 day for v1: Settings → Webhooks tab + engine dispatcher + HMAC signature + docs/kb page.
+2. **Phase 6 Clawless gateway tap** — also founder-prioritized. Routes LLM calls through Clawless gateway. ~1-2 days; probe already proven (`tools/clawless-probe.mjs`).
+3. **Playwright UI tests** — ✅ DONE 2026-05-15. 5 tests run in ~27s via `npm --prefix desktop run test:e2e`.
+4. **CostGuard 6/6 polish** — Spend pill ✅ shipped 2026-05-15. Remaining: background TTL sweep cleanup of stale reservations (engine side, low priority — TTLs already expire, this just GC's the rows).
+5. **Phase 7b launch prep** — blocked on LLC + Apple Developer Program (~2-3 weeks).
 
 ---
 

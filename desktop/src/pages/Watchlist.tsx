@@ -121,6 +121,7 @@ function Watchlist() {
               maxLength={8}
               disabled={busy}
               autoFocus
+              data-testid="watchlist-ticker-input"
             />
           </div>
           <div className={styles.field}>
@@ -142,6 +143,7 @@ function Watchlist() {
               type="submit"
               className={styles.addButton}
               disabled={busy || !tickerInput.trim()}
+              data-testid="watchlist-add-button"
             >
               {busy ? 'Adding…' : 'Add'}
             </button>
@@ -170,7 +172,11 @@ function Watchlist() {
       {entries && entries.length > 0 && (
         <ul className={styles.list}>
           {entries.map((entry) => (
-            <li key={entry.ticker} className={styles.row}>
+            <li
+              key={entry.ticker}
+              className={styles.row}
+              data-testid={`watchlist-row-${entry.ticker}`}
+            >
               <div className={styles.rowMain}>
                 <div className={styles.rowHeadline}>
                   <span className={styles.rowTicker}>{entry.ticker}</span>
