@@ -624,3 +624,25 @@
 .refreshLink:hover {
   color: var(--tal-accent-bright, #ffba3c);
 }
+
+/* Webhooks tab */
+.webhooksToolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--tal-space-3);
+}
+
+.webhooksCheckboxes {
+  display: flex;
+  gap: var(--tal-space-4);
+}
+
+.webhooksCheckboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-sm);
+  color: var(--tal-text-primary);
+  cursor: pointer;
+}

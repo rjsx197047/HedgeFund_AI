@@ -256,6 +256,13 @@ export interface AnalyzeRequest {
   /** Optional per-stream data provider override (e.g. Alpaca). Engine
    * falls through to yfinance default when absent. */
   data_config?: DataConfig;
+  /** Webhook configs to fire after session.complete (Phase 8a). Engine
+   * is stateless about webhooks; renderer sends the full list each
+   * stream. Empty / undefined = no webhooks fire. */
+  webhooks?: import('./webhooks').WebhookConfig[];
+  /** Telegram chat_ids per webhook id, since chat_id isn't part of the
+   * Bot API URL. {webhook_id: chat_id}. */
+  telegram_chat_ids?: Record<string, string>;
 }
 
 export interface AnalyzeDecision {
@@ -361,7 +368,8 @@ export type DebateEvent =
   | { type: 'phase.transition'; from: string; to: string }
   | CostUsageEvent
   | SessionCompleteEvent
-  | CostBlockedEvent;
+  | CostBlockedEvent
+  | import('./webhooks').WebhookReportEvent;
 
 export interface StreamHandle {
   close(): void;
@@ -604,6 +612,8 @@ export async function streamDebate(
         provider_config: req.provider_config,
         reservation_id: req.reservation_id,
         data_config: req.data_config,
+        webhooks: req.webhooks,
+        telegram_chat_ids: req.telegram_chat_ids,
       }),
     );
   });

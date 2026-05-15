@@ -12,18 +12,38 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-15 — Playwright UI tests + CostGuard polish landed)
+## Where we are right now (as of 2026-05-15 — Phase 8a webhooks landed)
 
-### Today's commits (pushed)
+### Today's commits
 
+Pushed:
 ```
 6b0d110  feat(cost-guard): Spend pill in StatusStrip + History sort + mid-stream tick
-<next>   test(e2e): Playwright + Electron smoke suite (5 tests) + 2 prod-mode bug fixes
+bf2217d  test(e2e): Playwright + Electron smoke suite (5 tests) + 2 prod-mode bug fixes
 ```
 
-The Playwright run surfaced two real bugs that affected the production-built bundle:
-1. **CORS rejected non-simple requests** from `file://` origin (Origin: "null"). Widened `allow_origins=["*"]` — bearer token + 127.0.0.1 bind are the actual defense; CORS was just preflight ceremony. Affected `/cost-guard/*`, the OAuth refresh path, anything that triggers preflight.
-2. **Spend pill cold-start delay** — initial poll fired before engine ready and next attempt was 30s later (interval), so the pill stayed "pending" up to 30s after engine ready. Added the same fast-retry pattern Engine pill uses.
+Stacked locally (NOT pushed — push gate on founder):
+```
+<next>   feat(webhooks): Phase 8a — Telegram/Slack/Discord/Generic webhooks v1
+```
+
+**Phase 8a — Webhooks v1.** Engine dispatcher (`engine/webhooks.py`) fires HTTP POST to user-configured receivers after `session.complete`. Four presets:
+- **Telegram** — bot API; renders short Markdown summary with ticker/action/confidence/reasoning. User configures URL + chat_id.
+- **Slack** — incoming-webhook URL. Posts text-only summary.
+- **Discord** — webhook URL. Posts text-only summary.
+- **Generic JSON** — full decision schema (`tradingagentslab.webhook.v1`) with optional HMAC-SHA256 signature sent as `X-TAL-Signature`.
+
+Filter per receiver: action allowlist (BUY/SELL/HOLD) + min confidence. Empty filter = fire on everything. Settings → Webhooks tab manages add/edit/delete. Post-debate report card in DebateStream shows fire/filter/fail status per receiver — URLs NEVER displayed (Telegram URLs contain bot tokens).
+
+**Security posture (load-bearing):**
+- Webhook URLs are secrets — stored in safeStorage, never logged, never echoed in `webhook.report` event (so they never end up in persisted History).
+- Engine dispatcher uses asyncio.gather + 5s per-receiver timeout. No retry queue in v1 — failures are reported and the user re-runs if they care.
+- Locked positioning maintained: no broker presets shipped. Users who want broker bridging write their own Cloudflare Worker / Lambda receiving the Generic payload and calling their broker's API with their own credentials.
+
+**Verification:**
+- 17 new pytests in `engine/tests/test_webhooks.py` (payload shape per kind, HMAC math, filter logic, error mapping, parallel dispatch, URL-leak guard)
+- 1 new Playwright test (`webhooks.spec.ts`) — Settings round-trip add → save → reopen
+- 134/134 engine pytests · 6/6 Playwright · dev-smoke 17/17 · type-check + build clean
 
 What it does:
 - 5th pill in StatusStrip ("Spend") shows daily $ vs daily cap with green/amber/red colour states. Polls `/cost-guard/state` every 30s plus a 500ms-delayed re-poll on `tal:session-complete` (closes the race vs engine's finalize_reservation SQLite UPDATE).
@@ -75,11 +95,12 @@ Headline arcs:
 
 ### What's pending (next-session candidates, priority order)
 
-1. **Phase 8 webhooks** — founder-prioritized 2026-05-15. Outbound POST to user-configured URLs on `session.complete`, locked-positioning answer to broker handoff. ~1 day for v1: Settings → Webhooks tab + engine dispatcher + HMAC signature + docs/kb page.
-2. **Phase 6 Clawless gateway tap** — also founder-prioritized. Routes LLM calls through Clawless gateway. ~1-2 days; probe already proven (`tools/clawless-probe.mjs`).
-3. **Playwright UI tests** — ✅ DONE 2026-05-15. 5 tests run in ~27s via `npm --prefix desktop run test:e2e`.
-4. **CostGuard 6/6 polish** — Spend pill ✅ shipped 2026-05-15. Remaining: background TTL sweep cleanup of stale reservations (engine side, low priority — TTLs already expire, this just GC's the rows).
-5. **Phase 7b launch prep** — blocked on LLC + Apple Developer Program (~2-3 weeks).
+1. **Phase 8b — multi-ticker batch runner.** "Analyze all" button on Watchlist that sequentially runs each ticker through the existing single-ticker stream. Engine doesn't change; renderer just queues. Each debate fires its own webhook naturally. Plus optional summary webhook at the end ("3 of 5 BUY") for Telegram daily-driver use. ~half-day.
+2. **Phase 6 Clawless gateway tap** — founder-prioritized. Routes LLM calls through Clawless gateway. ~1-2 days; probe already proven (`tools/clawless-probe.mjs`).
+3. **Phase 8a webhooks** — ✅ DONE 2026-05-15.
+4. **Playwright UI tests** — ✅ DONE 2026-05-15. 6 tests run in ~25s via `npm --prefix desktop run test:e2e`.
+5. **CostGuard 6/6 polish** — Spend pill ✅ shipped 2026-05-15. Remaining: background TTL sweep cleanup of stale reservations (engine side, low priority — TTLs already expire, this just GC's the rows).
+6. **Phase 7b launch prep** — blocked on LLC + Apple Developer Program (~2-3 weeks).
 
 ---
 

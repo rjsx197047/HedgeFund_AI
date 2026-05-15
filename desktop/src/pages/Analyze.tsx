@@ -28,6 +28,7 @@ import { buildTranscriptMarkdown } from '../lib/transcript';
 import { getSecret, listSecrets } from '../lib/secrets';
 import { consumePendingTicker } from '../lib/handoff';
 import { loadLocalConfig, saveLocalConfig } from '../lib/local-llm';
+import { loadWebhooks } from '../lib/webhooks';
 import { getLocalRuntimes } from '../lib/engine-client';
 import {
   getOpenAICredentialsForRequest,
@@ -703,6 +704,23 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         }
       }
 
+      // Load webhooks for this stream. Engine is stateless about them; we
+      // attach the full list to every WS start frame. Failing to load
+      // (safeStorage offline) silently falls through to no webhooks
+      // rather than blocking the debate — webhooks are additive.
+      let webhookConfigs: import('../lib/webhooks').WebhookConfig[] = [];
+      let telegramChatIds: Record<string, string> = {};
+      try {
+        webhookConfigs = await loadWebhooks();
+        for (const w of webhookConfigs) {
+          if (w.kind === 'telegram' && w.telegram_chat_id) {
+            telegramChatIds[w.id] = w.telegram_chat_id;
+          }
+        }
+      } catch {
+        // safeStorage offline — no webhooks this run.
+      }
+
       const handle = await streamDebate(
         {
           ticker,
@@ -710,6 +728,9 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
           provider_config: providerConfig,
           reservation_id: reservationId,
           data_config: dataConfig,
+          webhooks: webhookConfigs.length > 0 ? webhookConfigs : undefined,
+          telegram_chat_ids:
+            Object.keys(telegramChatIds).length > 0 ? telegramChatIds : undefined,
         },
         (event) => setEvents((prev) => [...prev, event]),
         (err) => {

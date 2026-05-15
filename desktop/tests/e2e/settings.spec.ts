@@ -22,6 +22,7 @@ test('Settings tabs render', async ({ window }) => {
   for (const label of [
     'LLM Providers',
     'Data Providers',
+    'Webhooks',
     'Clawless',
     'Cost Guard',
     'About',

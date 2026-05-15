@@ -266,6 +266,26 @@ Sent by the client immediately after `open`:
 
 Backwards-compat: the legacy shape `{api_key: "..."}` at the top level (no `auth` field) is still accepted and converted internally to `{type: "api_key", api_key}`. New renderer builds always send the discriminated union.
 
+**Optional fields on the start frame:**
+
+- `reservation_id` — pre-reserved CostGuard slot (renderer-side reservation succeeded). Engine skips its server-side auto-reserve when present.
+- `data_config` — per-stream data provider override, e.g. `{provider: "alpaca", key_id, secret}`. Absent → engine uses its default (yfinance unless module-level swap).
+- `webhooks` — list of `WebhookConfig` to fire after `session.complete`. Schema:
+  ```jsonc
+  {
+    "id": "wh1",
+    "name": "Telegram me",
+    "url": "https://api.telegram.org/bot<TOKEN>/sendMessage",
+    "kind": "telegram",        // "telegram" | "slack" | "discord" | "generic"
+    "secret": "shh",           // optional — only used for kind=generic (HMAC-SHA256)
+    "filter": {                // optional, defaults to fire-on-everything
+      "actions": ["BUY", "SELL"],     // empty array = all
+      "min_confidence": 0.7            // 0..1, inclusive floor
+    }
+  }
+  ```
+- `telegram_chat_ids` — `{webhook_id: chat_id}` map, since Telegram chat_id isn't part of the bot-API URL.
+
 The server reads exactly one start frame, then becomes write-only. If `provider` is not in the allowlist OR `auth.type` is unrecognised OR an OAuth `auth` arrives for a non-OpenAI provider, the engine falls through to the stub path rather than erroring — this lets the renderer ship UI-side support for new providers ahead of engine-side wiring.
 
 #### Server → client: event stream
@@ -328,7 +348,24 @@ Emitted between phases.
 
 Emitted immediately after every `agent.message` during a live debate so the renderer can tick a real-time spend pill without waiting for `session.complete`. Token counts are running totals across the session, not per-message deltas. `free=true` for OAuth subscription runs and local-LLM runs — both bill at $0 and `est_cost_usd` is `0.0` regardless of token count (the renderer should render "subscription" / "on-device" rather than the literal zero). Stub-mode sessions never emit this event.
 
-##### 7. `session.complete`
+##### 7. `webhook.report` (live + stub, only when webhooks configured)
+
+```jsonc
+{
+  "type": "webhook.report",
+  "results": [
+    { "id": "wh1", "name": "Telegram me", "status": "fired", "http_status": 200 },
+    { "id": "wh2", "name": "Slack channel", "status": "filtered" },
+    { "id": "wh3", "name": "My CF Worker", "status": "failed", "error": "timeout" }
+  ]
+}
+```
+
+Emitted ONCE after `session.complete`, only when the start frame carried a non-empty `webhooks` list. Each result has `status: 'fired' | 'filtered' | 'failed'`. `fired` includes `http_status` (2xx); `failed` includes `http_status` (non-2xx) OR `error` (network/timeout/exception). `filtered` means the receiver's action/confidence filter excluded this decision — not a failure.
+
+**Security**: results NEVER carry the webhook URL. Telegram/Discord URLs embed bot tokens. Receivers are identified by `id` + `name` only.
+
+##### 8. `session.complete`
 
 ```jsonc
 {

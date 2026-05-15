@@ -6,6 +6,53 @@
 
 ---
 
+## 2026-05-15 (continued) — Phase 8a webhooks (Telegram / Slack / Discord / Generic)
+
+**Goal:** Founder-prioritized after morning Playwright work. Push completed debates to user-configured webhooks so daily-driving doesn't require babysitting the app. Locked-positioning answer to broker integration: TAL hands the analysis to user's own systems; execution happens on the regulated platform via the user's own auth.
+
+**Headline shipped (single commit):**
+
+- **feat(webhooks): Phase 8a — Telegram/Slack/Discord/Generic webhooks v1.**
+  - Engine: new `engine/webhooks.py` dispatcher. 4 presets — Telegram (Bot API with chat_id), Slack (incoming-webhook), Discord (webhook URL), Generic (full decision JSON + optional HMAC-SHA256). Filter per receiver (action allowlist + min_confidence). asyncio.gather with 5s per-receiver timeout. No retry queue (v1). NEVER logs URLs (Telegram URLs contain bot tokens). 17 hermetic pytests with mocked httpx.
+  - Server: WS start frame accepts `webhooks: WebhookConfig[]` + `telegram_chat_ids: {webhook_id: chat_id}`. After persist + before ws.close, dispatches via `webhooks.dispatch_all` and emits a `webhook.report` event with per-receiver fire/filter/fail status. The event NEVER carries URLs (security: URLs leak via History replay otherwise). `_persist_session_safe` now returns the session_id so it can be embedded in the generic payload for correlation.
+  - Renderer types: new `desktop/src/lib/webhooks.ts` with `WebhookConfig`, presets, kind labels/hints. Single-blob safeStorage under `webhooks:configs` — URLs + HMAC secrets are sensitive (Telegram URLs embed bot tokens), so OS keychain is the right home. `DebateEvent` union extended with `WebhookReportEvent`.
+  - Settings → Webhooks tab: full add/edit/delete UI. Per-kind form (Telegram exposes chat_id; Generic exposes HMAC secret; Slack/Discord just URL). Action checkboxes + confidence slider for the filter. URL field is `type=password` so token-bearing URLs aren't visible at rest. The list view shows hostname only — never the path with the bot token.
+  - DebateStream: new "Webhooks" card below the decision card. Compact list with status icon (✓ fired / ○ filtered / ✗ failed) + name + detail (HTTP status or error text). URLs intentionally absent.
+  - Analyze.tsx: loads webhooks before WS open, attaches to start frame, builds `telegram_chat_ids` map from configured Telegram receivers.
+
+- **Documentation:**
+  - `docs/api.md`: cost.usage renumbered to event #6; webhook.report added as #7; session.complete is now #8. Start frame docs gained the `webhooks` + `telegram_chat_ids` shape.
+  - `docs/kb/webhooks.md`: new user-facing page. Telegram setup walkthrough (BotFather → @userinfobot → chat_id), Slack/Discord steps, generic JSON shape + HMAC verification example, Cloudflare Worker broker-bridge illustrative example. Privacy + mechanics + "what v1 doesn't do" sections.
+  - KB index updated.
+
+- **Tests:**
+  - 17 new pytests in `test_webhooks.py` cover payload shape per kind, HMAC sig math, filter (actions + min_confidence), 2xx/4xx/timeout/exception mapping, parallel dispatch, the URL-leak guard (error string never contains the URL), `from_dict` validation.
+  - 1 new Playwright test (`webhooks.spec.ts`) — Settings round-trip: add a generic webhook → save → row visible → click Edit → name+URL still present. Per advisor: we do NOT actually fire a webhook in Playwright (would either spam a real receiver or require a local listener). The 17 hermetic pytests cover dispatch correctness.
+
+**Security posture (load-bearing — keep this in mind for any v2):**
+
+1. **Webhook URLs are SECRETS.** Telegram URL embeds bot token (`/bot<TOKEN>/sendMessage`). Discord URL embeds channel token (`/webhooks/<id>/<token>`). Slack URL embeds team+channel signature. Therefore:
+   - Stored via safeStorage (OS keychain), never plain SQLite.
+   - Engine never logs the URL — only `[webhooks] dispatched ticker=X fired=2 filtered=1 failed=0`.
+   - `webhook.report` event sent over WS carries `{id, name, status, http_status?, error?}` — NO URL field. (Persisted into History along with all other events; URL must never end up there.)
+   - Error strings carry the exception type+message, not the URL (mock test asserts this with a token-bearing URL).
+   - Settings list view shows hostname only via `URL(url).host`. Edit form uses `type=password` for the URL input.
+
+2. **Locked positioning enforced.** Four presets ONLY. No "Alpaca live trade" / "IBKR order" preset. KB explicitly tells users who want broker bridging to write their own receiver consuming the Generic payload. We are not shipping broker payload shapes even if asked — that crosses the regulatory firewall.
+
+**Verification at end-of-session:**
+
+- 134/134 engine pytests (17 new for webhooks)
+- 6/6 Playwright tests (1 new)
+- bash tools/dev-smoke.sh 17/17
+- npm --prefix desktop run type-check clean
+- npm --prefix desktop run build clean
+- Dev stack torn down before commit
+
+**Picked up next:** Phase 8b multi-ticker batch runner (Watchlist "Analyze all" button + optional summary webhook) OR Phase 6 Clawless gateway tap. Founder's call.
+
+---
+
 ## 2026-05-15 (continued) — Playwright + Electron UI smoke suite
 
 **Goal:** Close the long-carried "UI not click-tested autonomously" gap. Founder explicitly asked for Playwright as the next pickup after the morning's CostGuard polish.

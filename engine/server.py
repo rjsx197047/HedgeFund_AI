@@ -39,6 +39,7 @@ from .data_providers import (
 )
 from .live_debate import ProviderConfig, SentimentBlock, live_debate
 from . import cost_guard, local_llm_detect, sentiment_sources, storage
+from . import webhooks as webhook_dispatcher
 from .stub_debate import canned_debate
 from .ticker import normalize_ticker
 
@@ -316,6 +317,19 @@ def build_app(*, token: str) -> FastAPI:
             # check. If absent on a live debate, the WS handler auto-reserves
             # below for backward compatibility.
             reservation_id = start.get("reservation_id") or None
+            # Optional. Per-stream webhook configs (Phase 8a). Renderer sends
+            # the full list each time; engine fires them after persist + before
+            # ws.close(1000). URLs ARE secrets (Telegram/Discord embed bot
+            # tokens), so never log them and never include in events.
+            raw_hooks = start.get("webhooks") or []
+            telegram_chat_ids = start.get("telegram_chat_ids") or {}
+            webhooks: list[webhook_dispatcher.WebhookConfig] = []
+            if isinstance(raw_hooks, list):
+                for h in raw_hooks:
+                    if isinstance(h, dict):
+                        parsed = webhook_dispatcher.WebhookConfig.from_dict(h)
+                        if parsed is not None:
+                            webhooks.append(parsed)
             # Optional. When the renderer has Alpaca data keys configured,
             # it sends them as data_config = {provider: "alpaca", key_id, secret}.
             # Engine instantiates a per-stream AlpacaProvider; otherwise falls
@@ -452,11 +466,52 @@ def build_app(*, token: str) -> FastAPI:
 
             # Persist the completed session — best-effort, never fails the
             # stream. The user already saw the debate; persistence is bonus.
-            _persist_session_safe(
+            session_id = _persist_session_safe(
                 ticker=ticker,
                 trade_date=trade_date,
                 events=captured_events,
             )
+
+            # Phase 8a — fire webhooks. After persist (so we have a session_id)
+            # and before ws.close(1000) (so the renderer is still listening for
+            # the `webhook.report` event). Best-effort: dispatch errors never
+            # fail the stream. Total wall-clock cap is ~5s via per-receiver
+            # timeout in dispatcher.
+            if webhooks:
+                complete_evt = next(
+                    (e for e in captured_events if isinstance(e, dict) and e.get("type") == "session.complete"),
+                    None,
+                )
+                if complete_evt:
+                    raw_decision = complete_evt.get("decision") or {}
+                    decision = raw_decision if isinstance(raw_decision, dict) else {}
+                    try:
+                        results = await webhook_dispatcher.dispatch_all(
+                            configs=webhooks,
+                            ticker=ticker,
+                            trade_date=trade_date,
+                            decision=decision,
+                            session_id=session_id,
+                            live=bool(complete_evt.get("live", False)),
+                            provider=complete_evt.get("provider"),
+                            model=complete_evt.get("model"),
+                            estimated_cost_usd=complete_evt.get("estimated_cost_usd"),
+                            telegram_chat_ids=(
+                                {str(k): str(v) for k, v in telegram_chat_ids.items()}
+                                if isinstance(telegram_chat_ids, dict)
+                                else None
+                            ),
+                        )
+                        report_evt = {
+                            "type": "webhook.report",
+                            "results": [r.to_dict() for r in results],
+                        }
+                        await ws.send_json(report_evt)
+                        captured_events.append(report_evt)
+                    except Exception as exc:  # noqa: BLE001 — webhooks must never break the stream
+                        sys.stderr.write(
+                            f"[webhooks] dispatch crashed: {type(exc).__name__}: {exc}\n"
+                        )
 
             sys.stderr.write(
                 f"[ws] CLOSE ticker={ticker} events={len(captured_events)} code=1000\n"
@@ -471,10 +526,15 @@ def build_app(*, token: str) -> FastAPI:
 
 def _persist_session_safe(
     *, ticker: str, trade_date: str, events: list[dict]
-) -> None:
-    """Find session.complete in the captured events and write a row."""
+) -> str | None:
+    """Find session.complete in the captured events and write a row.
+
+    Returns the new session id on success, None if the stream was aborted
+    or the write failed. Caller uses this as the `session_id` in webhook
+    payloads so receivers can correlate alerts to History rows.
+    """
     if not events:
-        return
+        return None
     complete: dict | None = None
     for ev in events:
         if isinstance(ev, dict) and ev.get("type") == "session.complete":
@@ -482,14 +542,14 @@ def _persist_session_safe(
             break
     if complete is None:
         # Stream was aborted (Stop button) — don't persist a partial session.
-        return
+        return None
     raw_decision = complete.get("decision")
     decision = raw_decision if isinstance(raw_decision, dict) else {
         "action": "HOLD",
         "confidence": 0.0,
         "reasoning": "Session ended without a well-formed decision payload.",
     }
-    storage.write_session(
+    return storage.write_session(
         ticker=ticker,
         trade_date=trade_date,
         events=events,

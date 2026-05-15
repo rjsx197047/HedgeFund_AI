@@ -166,6 +166,18 @@ function findDecision(events: DebateEvent[]): AnalyzeDecision | null {
   return null;
 }
 
+interface WebhookReport {
+  results: import('../lib/webhooks').WebhookResult[];
+}
+
+function findWebhookReport(events: DebateEvent[]): WebhookReport | null {
+  const evt = events.find((e) => e.type === 'webhook.report');
+  if (evt && evt.type === 'webhook.report') {
+    return { results: evt.results };
+  }
+  return null;
+}
+
 interface DecisionMeta {
   live: boolean;
   provider?: string;
@@ -212,6 +224,7 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
   const decision = findDecision(events);
   const meta = findDecisionMeta(events);
   const progress = computeProgress(events);
+  const webhookReport = findWebhookReport(events);
 
   // Live elapsed clock — captured on first event arrival, frozen when
   // session.complete lands. For History replay (events present from the
@@ -452,6 +465,47 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
             Not investment advice · LLM output may be inaccurate · Verify
             independently before any action
           </div>
+        </div>
+      )}
+
+      {webhookReport && webhookReport.results.length > 0 && (
+        <div className={styles.webhooks} data-testid="webhook-report">
+          <div className={styles.webhooksHeader}>
+            <span className={styles.webhooksLabel}>Webhooks</span>
+            <span className={styles.webhooksSummary}>
+              {(() => {
+                const fired = webhookReport.results.filter((r) => r.status === 'fired').length;
+                const filtered = webhookReport.results.filter((r) => r.status === 'filtered').length;
+                const failed = webhookReport.results.filter((r) => r.status === 'failed').length;
+                const parts: string[] = [];
+                if (fired) parts.push(`${fired} fired`);
+                if (filtered) parts.push(`${filtered} filtered`);
+                if (failed) parts.push(`${failed} failed`);
+                return parts.join(' · ') || 'none';
+              })()}
+            </span>
+          </div>
+          <ul className={styles.webhooksList}>
+            {webhookReport.results.map((r) => (
+              <li
+                key={r.id}
+                className={`${styles.webhookItem} ${
+                  styles[`webhookItem_${r.status}`] ?? ''
+                }`}
+              >
+                <span className={styles.webhookStatus}>
+                  {r.status === 'fired' ? '✓' : r.status === 'filtered' ? '○' : '✗'}
+                </span>
+                <span className={styles.webhookName}>{r.name}</span>
+                <span className={styles.webhookDetail}>
+                  {r.status === 'filtered' && 'filter did not match'}
+                  {r.status === 'fired' && r.http_status && `HTTP ${r.http_status}`}
+                  {r.status === 'failed' &&
+                    (r.error || (r.http_status ? `HTTP ${r.http_status}` : 'failed'))}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </section>

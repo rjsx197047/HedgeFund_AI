@@ -34,8 +34,18 @@ import {
   saveLocalConfig,
   type LocalLLMConfig,
 } from '../lib/local-llm';
+import {
+  loadWebhooks,
+  saveWebhooks,
+  newWebhookId,
+  newWebhookFilter,
+  KIND_LABEL,
+  KIND_HINT,
+  type WebhookConfig,
+  type WebhookKind,
+} from '../lib/webhooks';
 
-type Tab = 'llm' | 'data' | 'clawless' | 'costguard' | 'about';
+type Tab = 'llm' | 'data' | 'webhooks' | 'clawless' | 'costguard' | 'about';
 
 interface TabDef {
   id: Tab;
@@ -55,6 +65,12 @@ const TABS: TabDef[] = [
     label: 'Data Providers',
     description:
       'Where market data comes from. yfinance is the free default — no key required. Optionally connect Alpaca Markets for higher-quality real-time data.',
+  },
+  {
+    id: 'webhooks',
+    label: 'Webhooks',
+    description:
+      'Push the decision to Telegram, Slack, Discord, or any HTTPS endpoint when a debate finishes. Analysis only — TradingAgentsLab never executes trades; users bridge to their own brokerage on the receiving side.',
   },
   {
     id: 'clawless',
@@ -305,6 +321,7 @@ function Settings() {
               onChange={refresh}
             />
           )}
+          {active === 'webhooks' && <WebhooksTab availability={availability} />}
           {active === 'costguard' && <CostGuardTab />}
           {active === 'about' && (
             <AboutTab availability={availability} secretsCount={listings.length} />
@@ -1071,6 +1088,388 @@ function formatRelative(iso: string): string {
   if (diffSec < 3600) return `${Math.round(diffSec / 60)}m ago`;
   if (diffSec < 86400) return `${Math.round(diffSec / 3600)}h ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+// ---- Webhooks tab ---------------------------------------------------------
+//
+// Single-key safeStorage backed. The full config list is serialized to one
+// JSON blob (`webhooks:configs`) so a refresh round-trips in two IPC calls
+// instead of one-per-webhook. URLs + secrets are sensitive (Telegram URLs
+// embed bot tokens) — the OS keychain is the right home.
+
+interface WebhooksTabProps {
+  availability: SecretsAvailability | null;
+}
+
+function WebhooksTab({ availability }: WebhooksTabProps) {
+  const [webhooks, setWebhooksState] = useState<WebhookConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<WebhookConfig | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      setWebhooksState(await loadWebhooks());
+    } catch {
+      setWebhooksState([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const onPersist = useCallback(
+    async (next: WebhookConfig[]) => {
+      try {
+        await saveWebhooks(next);
+        setWebhooksState(next);
+        setSaveError(null);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'save failed');
+      }
+    },
+    [],
+  );
+
+  const onAddNew = useCallback(() => {
+    setEditing({
+      id: newWebhookId(),
+      name: '',
+      url: '',
+      kind: 'telegram',
+      filter: newWebhookFilter(),
+    });
+  }, []);
+
+  const onSave = useCallback(
+    async (cfg: WebhookConfig) => {
+      const trimmed: WebhookConfig = {
+        ...cfg,
+        name: cfg.name.trim() || 'Untitled webhook',
+        url: cfg.url.trim(),
+        secret: cfg.secret?.trim() || undefined,
+        telegram_chat_id: cfg.telegram_chat_id?.trim() || undefined,
+      };
+      if (!trimmed.url.startsWith('https://') && !trimmed.url.startsWith('http://')) {
+        setSaveError('URL must start with http:// or https://');
+        return;
+      }
+      const existing = webhooks.findIndex((w) => w.id === trimmed.id);
+      const next =
+        existing >= 0
+          ? webhooks.map((w) => (w.id === trimmed.id ? trimmed : w))
+          : [...webhooks, trimmed];
+      await onPersist(next);
+      setEditing(null);
+    },
+    [webhooks, onPersist],
+  );
+
+  const onDelete = useCallback(
+    async (id: string) => {
+      if (!confirm('Delete this webhook? Configured receivers will stop firing.')) {
+        return;
+      }
+      await onPersist(webhooks.filter((w) => w.id !== id));
+    },
+    [webhooks, onPersist],
+  );
+
+  if (availability && !availability.available) {
+    return (
+      <div className={styles.placeholder}>
+        Webhook configs require encrypted storage. safeStorage is not available
+        on this system.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className={styles.webhooksToolbar}>
+        <button
+          type="button"
+          className={styles.actionPrimary}
+          onClick={onAddNew}
+          disabled={loading}
+          data-testid="webhooks-add-button"
+        >
+          + Add webhook
+        </button>
+      </div>
+
+      {saveError && <p className={styles.formError}>{saveError}</p>}
+
+      {loading && <p className={styles.hint}>Loading…</p>}
+
+      {!loading && webhooks.length === 0 && !editing && (
+        <div className={styles.phaseGuard}>
+          <strong>No webhooks configured.</strong> Push every completed debate
+          to Telegram, Slack, Discord, or your own HTTPS endpoint. Filter by
+          action (BUY / SELL / HOLD) or confidence so you only get pinged on
+          what matters.
+          <br />
+          <br />
+          Webhooks are an analysis handoff — they push the decision JSON to
+          your receivers. They never execute trades. If you want to bridge to
+          a broker, your receiver (Cloudflare Worker, Lambda, etc.) calls the
+          broker API.
+        </div>
+      )}
+
+      {webhooks.length > 0 && (
+        <ul className={styles.list} data-testid="webhooks-list">
+          {webhooks.map((w) => (
+            <li
+              key={w.id}
+              className={styles.row}
+              data-testid={`webhook-row-${w.id}`}
+            >
+              <div className={styles.rowMain}>
+                <div className={styles.rowName}>
+                  {w.name}{' '}
+                  <span className={styles.pill}>{KIND_LABEL[w.kind]}</span>
+                  {w.filter.actions.length > 0 && (
+                    <span className={styles.pill}>
+                      {w.filter.actions.join(' / ')}
+                    </span>
+                  )}
+                  {w.filter.min_confidence > 0 && (
+                    <span className={styles.pill}>
+                      ≥ {Math.round(w.filter.min_confidence * 100)}%
+                    </span>
+                  )}
+                </div>
+                <div className={styles.rowNote}>
+                  {hostFromUrl(w.url) || '(invalid URL)'}
+                </div>
+              </div>
+              <div className={styles.rowAside}>
+                <button
+                  type="button"
+                  className={styles.rowAction}
+                  onClick={() => setEditing({ ...w })}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className={styles.rowActionDanger}
+                  onClick={() => void onDelete(w.id)}
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {editing && (
+        <WebhookEditor
+          config={editing}
+          onCancel={() => setEditing(null)}
+          onSave={onSave}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Show just the hostname in the row preview so the bot token (Telegram /
+ * Discord URLs) never appears in the UI even briefly. The Editor shows
+ * the full URL in the password field for editing. */
+function hostFromUrl(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '';
+  }
+}
+
+interface WebhookEditorProps {
+  config: WebhookConfig;
+  onCancel: () => void;
+  onSave: (cfg: WebhookConfig) => void;
+}
+
+function WebhookEditor({ config, onCancel, onSave }: WebhookEditorProps) {
+  const [draft, setDraft] = useState<WebhookConfig>(config);
+
+  const setKind = (kind: WebhookKind) => {
+    setDraft((d) => ({
+      ...d,
+      kind,
+      // Reset Telegram-specific fields when switching away.
+      telegram_chat_id: kind === 'telegram' ? d.telegram_chat_id : undefined,
+      // HMAC only meaningful for generic.
+      secret: kind === 'generic' ? d.secret : undefined,
+    }));
+  };
+
+  return (
+    <div className={styles.editor} data-testid="webhook-editor">
+      <div className={styles.field}>
+        <label className={styles.label}>Name</label>
+        <input
+          className={styles.input}
+          value={draft.name}
+          onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+          placeholder="Telegram me on BUY"
+          data-testid="webhook-name-input"
+        />
+      </div>
+
+      <div className={styles.field}>
+        <label className={styles.label}>Kind</label>
+        <select
+          className={styles.input}
+          value={draft.kind}
+          onChange={(e) => setKind(e.target.value as WebhookKind)}
+          data-testid="webhook-kind-select"
+        >
+          {(['telegram', 'slack', 'discord', 'generic'] as WebhookKind[]).map((k) => (
+            <option key={k} value={k}>
+              {KIND_LABEL[k]}
+            </option>
+          ))}
+        </select>
+        <p className={styles.hint}>{KIND_HINT[draft.kind]}</p>
+      </div>
+
+      <div className={styles.field}>
+        <label className={styles.label}>URL</label>
+        <input
+          type="password"
+          className={styles.input}
+          value={draft.url}
+          onChange={(e) => setDraft({ ...draft, url: e.target.value })}
+          placeholder={
+            draft.kind === 'telegram'
+              ? 'https://api.telegram.org/bot<token>/sendMessage'
+              : draft.kind === 'slack'
+                ? 'https://hooks.slack.com/services/...'
+                : draft.kind === 'discord'
+                  ? 'https://discord.com/api/webhooks/<id>/<token>'
+                  : 'https://your-receiver.example.com/hook'
+          }
+          data-testid="webhook-url-input"
+        />
+      </div>
+
+      {draft.kind === 'telegram' && (
+        <div className={styles.field}>
+          <label className={styles.label}>Chat ID</label>
+          <input
+            className={styles.input}
+            value={draft.telegram_chat_id ?? ''}
+            onChange={(e) =>
+              setDraft({ ...draft, telegram_chat_id: e.target.value })
+            }
+            placeholder="12345678 or -100123456789 for groups"
+            data-testid="webhook-chat-id-input"
+          />
+          <p className={styles.hint}>
+            Numeric Telegram chat id. Get yours by messaging{' '}
+            <code className={styles.code}>@userinfobot</code> on Telegram. For
+            group chats the id starts with a minus.
+          </p>
+        </div>
+      )}
+
+      {draft.kind === 'generic' && (
+        <div className={styles.field}>
+          <label className={styles.label}>HMAC shared secret (optional)</label>
+          <input
+            type="password"
+            className={styles.input}
+            value={draft.secret ?? ''}
+            onChange={(e) => setDraft({ ...draft, secret: e.target.value })}
+            placeholder="any string"
+          />
+          <p className={styles.hint}>
+            When set, requests carry{' '}
+            <code className={styles.code}>X-TAL-Signature: sha256=&lt;hex&gt;</code>{' '}
+            so your receiver can verify the body.
+          </p>
+        </div>
+      )}
+
+      <div className={styles.field}>
+        <label className={styles.label}>Fire on actions</label>
+        <div className={styles.webhooksCheckboxes}>
+          {(['BUY', 'SELL', 'HOLD'] as const).map((a) => {
+            const checked = draft.filter.actions.includes(a);
+            return (
+              <label key={a} className={styles.webhooksCheckboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      filter: {
+                        ...draft.filter,
+                        actions: e.target.checked
+                          ? [...draft.filter.actions, a]
+                          : draft.filter.actions.filter((x) => x !== a),
+                      },
+                    })
+                  }
+                />
+                {a}
+              </label>
+            );
+          })}
+        </div>
+        <p className={styles.hint}>
+          Leave all unchecked to fire on every action.
+        </p>
+      </div>
+
+      <div className={styles.field}>
+        <label className={styles.label}>
+          Minimum confidence: {Math.round(draft.filter.min_confidence * 100)}%
+        </label>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={Math.round(draft.filter.min_confidence * 100)}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              filter: { ...draft.filter, min_confidence: Number(e.target.value) / 100 },
+            })
+          }
+        />
+      </div>
+
+      <div className={styles.editorActions}>
+        <button
+          type="button"
+          className={styles.actionGhost}
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className={styles.actionPrimary}
+          onClick={() => onSave(draft)}
+          disabled={!draft.url.trim()}
+          data-testid="webhook-save-button"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ---- Cost Guard tab --------------------------------------------------------

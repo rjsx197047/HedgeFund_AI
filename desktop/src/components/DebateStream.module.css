@@ -530,3 +530,80 @@ a.newsTitle:hover {
     font-size: 11px;
   }
 }
+
+/* Webhook report — sits below the decision card. Compact list, one
+   line per receiver, status icon + name + detail. Compact monospace
+   styling matches the other secondary blocks (progress strip, news). */
+.webhooks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-2);
+  padding: var(--tal-space-3) var(--tal-space-4);
+  background: var(--tal-bg-elevated);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-md);
+}
+
+.webhooksHeader {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tal-space-2);
+}
+
+.webhooksLabel {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+}
+
+.webhooksSummary {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-secondary);
+}
+
+.webhooksList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.webhookItem {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  align-items: center;
+  gap: var(--tal-space-2);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-secondary);
+}
+
+.webhookStatus {
+  text-align: center;
+  font-weight: 600;
+}
+
+.webhookItem_fired .webhookStatus {
+  color: var(--tal-positive, #3fb950);
+}
+
+.webhookItem_filtered .webhookStatus {
+  color: var(--tal-text-muted);
+}
+
+.webhookItem_failed .webhookStatus {
+  color: var(--tal-negative, #f85149);
+}
+
+.webhookName {
+  color: var(--tal-text-primary);
+}
+
+.webhookDetail {
+  color: var(--tal-text-muted);
+}
