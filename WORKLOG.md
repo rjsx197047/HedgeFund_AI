@@ -32,19 +32,48 @@
 - `/llm/local-runtimes` returns `{"runtimes":[]}` cleanly with no runtime present (empty-detection path works)
 - Live probe of StockTwits + Reddit against NVDA returned real current data — both public endpoints alive
 
+## 2026-05-14 (continued) — Founder woke up, smoke + ship cycle
+
+After the overnight block landed, founder daily-tested everything live. Five more commits landed in the afternoon/evening, plus one final polish.
+
+**Headline shipped (this block):**
+
+- `1abf604` — **fix(local-llm): two bugs from live smoke.** (1) Engine's `CostGuardCheckRequest` pydantic model rejected `auth_kind='local'` with 422 (pattern was `(api_key|oauth)$`). Extended to include `local`. (2) Analyze page didn't show a model dropdown when **Local LLM** was the active provider — `PROVIDER_MODELS.local` is empty by design (dynamic per runtime). Wired Analyze to probe `/llm/local-runtimes` on mount/refresh, filter to the saved base_url, and surface those models in the dropdown. Changing the model on Analyze writes back to safeStorage so Settings stays in sync. If the saved model isn't in the live detected list (runtime offline / model uninstalled), it's still surfaced as a seed entry labeled "(last used, runtime offline)" so the dropdown doesn't blank out.
+
+- `1094865` — **feat(icon): Trading Agents Lab app icon — amber compass on dark navy.** Founder generated icon via Grok image gen → Figma reframed to 1024×1024 square PNG with alpha. We generated multi-resolution `.icns` via `sips` + `iconutil`. Wired into `main.ts`: `BrowserWindow.icon` points at PNG, macOS dev mode `app.dock.setIcon(icon.png)` swaps Electron's default for the new mark. Caught a footgun: `dock.setIcon` rejects `.icns` paths — wants PNG-based NativeImage. Both paths kept; the wire-up uses the right one per surface. `.gitignore` updated to whitelist `desktop/build/` (global Python `build/` ignore was hiding icon assets). Design: amber compass needle (decision direction) + white perimeter markers (multi-agent voices) on dark navy rounded square — sister-product family resemblance to Clawless but distinct color (amber vs Clawless green) and metaphor (compass vs C-letterform).
+
+- `ce0207f` — **fix(dev): dock tooltip + Force Quit + Spotlight read "Trading Agents Lab".** Founder noticed dock tooltip still showed "Electron" even though the menu bar said "Trading Agents Lab". Root cause: `app.setName()` only catches the menu bar — Launch-Services-cached surfaces (dock tooltip, Force Quit list, Spotlight) read `CFBundleName` from the vanilla Electron.app's `Info.plist` BEFORE main.ts runs. Fix: `tools/patch-electron-info-plist.sh` patches `CFBundleName` + `CFBundleDisplayName` via PlistBuddy, wired as a `desktop/package.json` `postinstall` so it survives `npm install`. Bails cleanly on non-Darwin (PlistBuddy is macOS-specific) and when electron's binary hasn't downloaded yet. Caveat noted to founder: Launch Services caches stickily even after touch — full effect needs `killall Dock` or a log-out. Founder OK with leaving the cache imperfect since production builds (Phase 7) sidestep this entirely (fresh .app bundle, no cache hit).
+
+- `25bd7e3` — **feat(analyze): streaming progress strip — phase chips + agent counter + live clock.** Founder's 2026-05-09 ask, sharpened by local LLM support (slow models = 5-10 min debates). Sits between News block and phase groups, visible from the first event onward. 4 chips show the debate's phase structure (Analysts/Researchers/Trader/Risk) with done/active/pending states (✓ green / pulsing amber / hollow gray). Footer shows aggregate "X of 12 agents · elapsed/completed in Ym Zs". Live clock ticks every 500ms during streaming, freezes on decision land. Uses existing `pulse` keyframes for single-source-of-rhythm with the streaming pill. AGENTS_PER_PHASE mirrors engine/live_debate.py `_AGENTS` table (no runtime cross-check; both must move together). Founder signed off ("Looks great. I like it.").
+
+**Live testing during this block:**
+
+- Local LLM end-to-end against founder's Ollama (3 models detected: deepseek-v3.1:671b-cloud, deepseek-r1:8b, qwen2.5-coder:14b). After fix `1abf604`, model dropdown works and Cost Guard reserve clears.
+- New app icon visible in dock alongside Clawless — clear distinguishability (amber-compass vs green-C). Solves the original founder complaint ("hard to find which Electron app is which when three or four are open").
+- Streaming progress strip verified rendering live during NVDA analysis. Phase chips light up left-to-right as expected.
+
+**Strategic context captured this block:**
+- Founder is awaiting LLC + Apple Developer Program registration (2-3 weeks) before production DMG builds. Distribution gated on that. Phase 7b launch-prep correctly blocked — perfect timing window for daily-driver UX discovery.
+- Founder will daily-drive the app for ~2-3 weeks; expects to surface real usability issues that should drive the next round of polish.
+
+**Verification at session end:**
+- All commits type-check clean
+- 113/113 engine pytests passing
+- `bash tools/dev-smoke.sh` 17/17
+- Live UI verified: local LLM + new icon + new progress strip
+- Dev stack stopped cleanly (no orphan processes)
+
 **Live state at session end:**
-- Three commits on local `main`, **NOT** pushed to origin per CLAUDE.md §4. Founder needs to confirm before `git push`.
-- No background processes running (engine + Electron killed cleanly after smoke).
+- 8 commits on local `main`, **NOT pushed to origin**. CLAUDE.md §4 push gate respected.
+- No background processes running.
 
 **Next session opens with:**
-- `git push origin main` if founder approves the three overnight commits.
-- End-to-end smoke of sentiment_analyst with a real LLM call (the unit tests cover parsing + degradation, but the LLM-with-sentiment-in-prompt path has only been verified statically). Suggest: AAPL or NVDA on the founder's OAuth account so cost stays $0.
-- End-to-end smoke of local LLM if founder has Ollama installed. Otherwise the empty-detection path is what's tested.
-- Most natural next priorities (founder's call):
-  1. Phase 7b launch-prep items (ToS, Privacy Policy, Cookie Policy, brochure site, DMG distribution)
-  2. Playwright UI tests (closes the "UI not click-tested autonomously" gap)
-  3. Phase 6 Clawless gateway tap or Phase 8 webhooks
-  4. Streaming progress UX backlog item (phase chip + completion badge in DebateStream)
+- Founder daily-driving the app — capturing usability notes for the next round.
+- Outstanding autonomous-friendly work, in priority order:
+  1. **Playwright UI tests** — regression net for daily use; closes the long-carried "UI not click-tested autonomously" gap. Pays back every commit going forward.
+  2. **CostGuard 5/6 + 6/6 polish** — spend pill on Analyze header (real-time cost during runs), History page cost column with sort, background TTL sweep cleanup. Closes task #37 thread that's been in_progress forever.
+  3. **Phase 6 Clawless gateway tap** OR **Phase 8 webhooks** — both unblocked; founder's call.
+  4. **Phase 7b launch prep** — blocked on LLC + Apple Developer Program (~2-3 weeks). Will resume when ready.
 
 ---
 

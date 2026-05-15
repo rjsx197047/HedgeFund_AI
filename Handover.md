@@ -12,40 +12,57 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-14 overnight session — local LLM + sentiment port + KB sweep)
+## Where we are right now (as of 2026-05-14 end-of-day — 8 commits stacked locally)
 
-### Overnight commits (NOT yet pushed — push gate on founder per CLAUDE.md §4)
+### Today's commits (NOT yet pushed — push gate on founder per CLAUDE.md §4)
 
-- `adc9380` — **KB sweep:** 4 new pages (local-llm, cost-guard, crypto-tickers, sentiment) + index + cross-links
-- `6d514e8` — **Sentiment_analyst grounded in StockTwits + Reddit** (ported from upstream `0fcf136`). Pre-fetches public no-auth social data, injects into sentiment_analyst's prompt only. Asset-class-aware subreddit routing.
-- `2ab4be1` — **Local LLM support (Ollama / LM Studio / generic OpenAI-compat):** new engine adapter + detection probe + `/llm/local-runtimes` endpoint + Settings UI with auto-detect. CostGuard treats local as $0.
+Eight commits stacked on local `main`, in order:
 
-### Verification at end of overnight
+```
+25bd7e3  feat(analyze): streaming progress strip — phase chips + agent counter + live clock
+ce0207f  fix(dev): dock tooltip + Force Quit + Spotlight read "Trading Agents Lab"
+1094865  feat(icon): Trading Agents Lab app icon — amber compass on dark navy
+1abf604  fix(local-llm): model picker on Analyze + accept auth_kind=local in cost-guard
+206027f  docs: refresh Handover.md + WORKLOG.md for 2026-05-14 overnight session
+adc9380  docs(kb): sweep — add pages for local LLM, cost guard, crypto, sentiment
+6d514e8  feat: sentiment_analyst grounded in StockTwits + Reddit (port from upstream)
+2ab4be1  feat: local LLM support (Ollama / LM Studio / generic OpenAI-compat)
+```
 
-- 113/113 engine pytests pass (28 new tests across the two ports)
+Headline arcs:
+- **Local LLM support end-to-end** — Ollama / LM Studio auto-detect, Settings UI, model picker on Analyze, $0 CostGuard path. Founder daily-tested with 3 Ollama models.
+- **Sentiment_analyst port from upstream** (`0fcf136`) — StockTwits + Reddit pre-fetch grounds the sentiment_analyst in real social data instead of fabricating. Asset-class-aware subreddit routing.
+- **App icon end-to-end** — amber compass on navy, distinct from Clawless (green C) so multiple Electron windows in the dock are distinguishable. PNG + multi-resolution `.icns`. Dock tooltip + Force Quit name patched via Info.plist postinstall script.
+- **Streaming progress strip** — phase chips + agent counter + live elapsed clock in DebateStream. Founder signed off ("Looks great. I like it.").
+- **KB sweep** — 4 new pages (local-llm, cost-guard, crypto-tickers, sentiment).
+
+### Verification at end-of-day
+
+- 113/113 engine pytests pass
 - `bash tools/dev-smoke.sh` 17/17
-- `npm --prefix desktop run type-check` + `build` clean
-- `/llm/local-runtimes` returns `{"runtimes":[]}` cleanly (founder doesn't have Ollama installed; empty-detection path works)
-- Live probe confirmed StockTwits + Reddit endpoints return real data for NVDA
+- `npm --prefix desktop run type-check` clean
+- Live UI tested: local LLM debate with model dropdown, new icon visible in dock, progress strip animating through all 4 phases
+- Dev stack cleanly stopped (no orphan processes at session end)
 
-### What founder should do first when they return on 2026-05-14
+### Strategic context (for the morning)
 
-1. **Review the three overnight commits.** `git log --oneline -3`. All three are well-tested locally; review summaries in WORKLOG.md entry for 2026-05-14.
-2. **Push when ready:** `git push origin main` (pushes all three at once). Per CLAUDE.md §4, I deliberately held off pushing until founder confirms.
-3. **Optional manual smoke** — if you have Ollama installed, click **Refresh** in Settings → LLM Providers → Local LLM and confirm a model appears. Then run an Analyze with provider = local to confirm end-to-end. (No automated test covers the live-Ollama path; we only tested the empty-detection + adapter wiring.)
-4. **Optional sentiment smoke** — run any Analyze with your OAuth account (cost = $0). Check engine stderr for the `[ws] sentiment fetched ticker=...` log line, and confirm the sentiment_analyst turn references actual StockTwits ratios / specific subreddits in its commentary.
+- Founder is daily-driving the app for the next ~2-3 weeks while waiting for LLC + Apple Developer Program registration.
+- Phase 7b launch prep is correctly gated on that — by the time LLC lands, daily-driving will have surfaced real UX issues to fix first.
+- Suggested workflow: founder keeps notes during daily use; triage them in priority order at the end of the cycle.
 
-### Upstream check (2026-05-14)
+### First moves when picking back up
 
-We were 26 commits behind upstream's `main`. **One commit ported** (`0fcf136` sentiment_analyst + StockTwits + Reddit). Everything else evaluated and skipped — see WORKLOG.md entry for the decision rationale per upstream commit. Notable: our Local LLM implementation is meaningfully richer than upstream's Ollama work (we auto-detect across 3 runtimes + manual entry; upstream only has env-var configuration in the CLI).
+1. **Review the 8 commits.** `git log --oneline -8`. Each commit message is self-explanatory; WORKLOG.md 2026-05-14 has the full session report.
+2. **Push when ready:** `git push origin main` pushes all 8 at once. Held off per CLAUDE.md §4.
+3. **Resume daily-driving** OR pick from the work queue below.
 
-### What's pending (priority list, founder picks)
+### What's pending (next-session candidates, priority order)
 
-1. **Phase 7b launch-prep items** (ToS, Privacy Policy, Cookie Policy, brochure site, DMG distribution) — needs founder direction on jurisdiction + scope.
-2. **Playwright UI tests** — closes the "UI not click-tested autonomously" gap that's been carried since the autonomous block days.
+1. **Playwright UI tests** — regression net for daily use; closes the long-carried "UI not click-tested autonomously" gap. Pays back every commit going forward. Suggested next pickup if not daily-driving.
+2. **CostGuard 5/6 + 6/6 polish** — spend pill on Analyze header (real-time cost during runs), History page cost column with sort, background TTL sweep cleanup. Closes task #37.
 3. **Phase 6 Clawless gateway tap** OR **Phase 8 webhooks** — both unblocked; founder's call which feels more valuable.
-4. **Streaming progress UX** — phase chip + completion badge in DebateStream (improves "is it still running?" perception during 60-90s gpt-5.4 debates).
-5. **CostGuard 5/6 + 6/6 polish** — task #37 still in_progress, basic features all shipped, remaining is cosmetic.
+4. **Phase 7b launch prep** — blocked on LLC + Apple Developer Program (~2-3 weeks).
+5. **Streaming progress UX** — ✅ DONE this session.
 
 ---
 
