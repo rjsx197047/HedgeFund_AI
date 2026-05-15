@@ -54,8 +54,10 @@
 .detail {
   color: var(--tal-text-primary);
   font-weight: 400;
-  /* Truncate gracefully if user has very long provider names */
-  max-width: 14ch;
+  /* Truncate gracefully if user has very long provider names. The Spend
+     pill needs more room because its detail can read e.g.
+     "$0.42 / $5.00 + $0.0012" — ~24 chars. */
+  max-width: 28ch;
   overflow: hidden;
   text-overflow: ellipsis;
 }

@@ -342,12 +342,24 @@ export interface CostBlockedEvent {
   message: string;
 }
 
+/** Running-total cost ticker emitted after every agent.message. `free=true`
+ * marks OAuth subscription + local LLM runs which bill at $0 — the renderer
+ * shows "subscription" / "on-device" rather than the cost number. */
+export interface CostUsageEvent {
+  type: 'cost.usage';
+  input_tokens: number;
+  output_tokens: number;
+  est_cost_usd: number;
+  free: boolean;
+}
+
 export type DebateEvent =
   | { type: 'session.start'; ticker: string; trade_date: string }
   | ({ type: 'data.summary' } & QuoteSummary)
   | NewsHeadlinesEvent
   | { type: 'agent.message'; agent: string; phase: string; content: string }
   | { type: 'phase.transition'; from: string; to: string }
+  | CostUsageEvent
   | SessionCompleteEvent
   | CostBlockedEvent;
 

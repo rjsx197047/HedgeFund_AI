@@ -446,6 +446,27 @@ async def live_debate(
                 "content": content,
             }
 
+            # Emit a running-total cost.usage event after every agent message
+            # so the renderer can tick a live spend pill mid-stream. OAuth +
+            # local runs are billed at $0 (subscription / on-device); flag
+            # via `free=true` so the UI can render "$0.0000 · subscription"
+            # instead of an alarmingly-static number.
+            free = config.auth_kind in ("oauth", "local")
+            running_cost = (
+                0.0
+                if free
+                else estimate_cost(
+                    config.model, state.input_tokens, state.output_tokens
+                )
+            )
+            yield {
+                "type": "cost.usage",
+                "input_tokens": state.input_tokens,
+                "output_tokens": state.output_tokens,
+                "est_cost_usd": round(running_cost, 4),
+                "free": free,
+            }
+
         cost = estimate_cost(config.model, state.input_tokens, state.output_tokens)
         duration = time.time() - started_at
         sys.stderr.write(

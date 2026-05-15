@@ -306,6 +306,12 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   // here once the first data.summary arrives. Also dispatches a
   // window-level CustomEvent so the App-shell <StatusStrip> can reflect
   // per-stream changes without us having to lift state.
+  //
+  // While we're here, dispatch cost.usage + session.complete to the strip
+  // so the Spend pill can tick mid-stream and re-poll the daily total the
+  // instant a debate ends. The idx ref avoids re-firing the same event
+  // when this effect re-runs on unrelated state changes.
+  const lastDispatchedIdxRef = useRef(0);
   useEffect(() => {
     for (let i = events.length - 1; i >= 0; i--) {
       const evt = events[i];
@@ -324,7 +330,26 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         break;
       }
     }
+    for (let i = lastDispatchedIdxRef.current; i < events.length; i++) {
+      const evt = events[i];
+      if (evt.type === 'cost.usage') {
+        window.dispatchEvent(
+          new CustomEvent('tal:cost-usage', {
+            detail: { est_cost_usd: evt.est_cost_usd, free: evt.free },
+          }),
+        );
+      } else if (evt.type === 'session.complete') {
+        window.dispatchEvent(new CustomEvent('tal:session-complete'));
+      }
+    }
+    lastDispatchedIdxRef.current = events.length;
   }, [events, dataProvider, assetClass]);
+
+  // When the stream resets (new analysis), reset the dispatched-idx so the
+  // first event of the next run isn't skipped.
+  useEffect(() => {
+    if (events.length === 0) lastDispatchedIdxRef.current = 0;
+  }, [events.length]);
 
   // Reset state when the menu fires "New analysis".
   useEffect(() => {

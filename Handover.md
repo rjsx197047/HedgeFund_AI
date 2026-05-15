@@ -12,13 +12,27 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-14 end-of-day — 8 commits stacked locally)
+## Where we are right now (as of 2026-05-15 morning — CostGuard polish landed)
 
-### Today's commits (NOT yet pushed — push gate on founder per CLAUDE.md §4)
+### Today's commit (NOT yet pushed — push gate on founder per CLAUDE.md §4)
 
-Eight commits stacked on local `main`, in order:
+One commit stacked on local `main`:
 
 ```
+<next>   feat(cost-guard): Spend pill in StatusStrip + History sort + mid-stream tick
+```
+
+What it does:
+- 5th pill in StatusStrip ("Spend") shows daily $ vs daily cap with green/amber/red colour states. Polls `/cost-guard/state` every 30s plus a 500ms-delayed re-poll on `tal:session-complete` (closes the race vs engine's finalize_reservation SQLite UPDATE).
+- Engine yields a new `cost.usage` event after every `agent.message` carrying running token totals + USD estimate. `free=true` for OAuth subscription + local-LLM runs (both bill at $0 — pill inlines "subscription" / "on-device" instead of a static zero).
+- History page gains a sort dropdown (Most recent / Most expensive / Ticker A-Z), choice persisted in localStorage. Per-row cost was already there; this surfaces it sortably.
+- 4 new pytests + `docs/api.md` cost.usage shape added.
+- 117/117 engine pytests · `dev-smoke.sh` 17/17 · type-check clean.
+
+### Previous day's commits (already pushed 2026-05-14 evening)
+
+```
+36fbcb8  docs: 2026-05-14 end-of-day wrap — 8 commits + daily-driver context
 25bd7e3  feat(analyze): streaming progress strip — phase chips + agent counter + live clock
 ce0207f  fix(dev): dock tooltip + Force Quit + Spotlight read "Trading Agents Lab"
 1094865  feat(icon): Trading Agents Lab app icon — amber compass on dark navy
@@ -59,10 +73,10 @@ Headline arcs:
 ### What's pending (next-session candidates, priority order)
 
 1. **Playwright UI tests** — regression net for daily use; closes the long-carried "UI not click-tested autonomously" gap. Pays back every commit going forward. Suggested next pickup if not daily-driving.
-2. **CostGuard 5/6 + 6/6 polish** — spend pill on Analyze header (real-time cost during runs), History page cost column with sort, background TTL sweep cleanup. Closes task #37.
+2. **CostGuard 6/6 polish** — Spend pill ✅ shipped 2026-05-15. Remaining: background TTL sweep cleanup of stale reservations (engine side, low priority — TTLs already expire, this just GC's the rows).
 3. **Phase 6 Clawless gateway tap** OR **Phase 8 webhooks** — both unblocked; founder's call which feels more valuable.
 4. **Phase 7b launch prep** — blocked on LLC + Apple Developer Program (~2-3 weeks).
-5. **Streaming progress UX** — ✅ DONE this session.
+5. **Streaming progress UX** — ✅ DONE 2026-05-14.
 
 ---
 

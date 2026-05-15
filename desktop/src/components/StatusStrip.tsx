@@ -26,19 +26,39 @@ import {
   getHealth,
   type LLMProvider,
 } from '../lib/engine-client';
+import {
+  getCostGuardState,
+  type CostGuardConfig,
+  type SpendState,
+} from '../lib/cost-guard';
 import { listSecrets } from '../lib/secrets';
 import { getOpenAIOAuthStatus } from '../lib/oauth';
 import styles from './StatusStrip.module.css';
 
 const HEALTH_POLL_MS = 10_000;
+const SPEND_POLL_MS = 30_000;
 
 // Custom-event channel Analyze (or any future page) uses to notify the
 // strip of per-stream data-provider changes (alpaca · crypto, etc.).
 export const DATA_PROVIDER_EVENT = 'tal:data-provider';
 
+// Per-stream running cost from `cost.usage` WS events. Dispatched by
+// Analyze; consumed by the Spend pill so it can tick mid-stream.
+export const COST_USAGE_EVENT = 'tal:cost-usage';
+
+// Fired by Analyze (or any future stream owner) on `session.complete` so
+// the Spend pill can immediately re-poll /cost-guard/state instead of
+// waiting for the 30s tick.
+export const SESSION_COMPLETE_EVENT = 'tal:session-complete';
+
 export interface DataProviderEventDetail {
   source: string;          // "yfinance" | "alpaca" | ...
   asset_class?: 'equity' | 'crypto';
+}
+
+export interface CostUsageEventDetail {
+  est_cost_usd: number;
+  free: boolean;
 }
 
 type PillState = 'ok' | 'warn' | 'error' | 'off' | 'pending';
@@ -71,6 +91,14 @@ function StatusStrip() {
   const [llmProvider, setLlmProvider] = useState<LLMProvider | null>(null);
   const [llmIsOauth, setLlmIsOauth] = useState(false);
   const [clawlessConfigured, setClawlessConfigured] = useState(false);
+  // CostGuard spend state — polled from /cost-guard/state and refreshed on
+  // session.complete dispatch. `runCost`/`runIsFree` track the in-flight
+  // running total from cost.usage events so the pill can tick mid-stream
+  // without waiting for the next poll.
+  const [spend, setSpend] = useState<SpendState | null>(null);
+  const [cgConfig, setCgConfig] = useState<CostGuardConfig | null>(null);
+  const [runCost, setRunCost] = useState<number | null>(null);
+  const [runIsFree, setRunIsFree] = useState<boolean>(false);
 
   // ---- Engine health polling ---------------------------------------------
   //
@@ -136,6 +164,59 @@ function StatusStrip() {
     window.addEventListener(DATA_PROVIDER_EVENT, handler as EventListener);
     return () => window.removeEventListener(DATA_PROVIDER_EVENT, handler as EventListener);
   }, []);
+
+  // ---- CostGuard spend polling + in-flight tick --------------------------
+  //
+  // Poll /cost-guard/state on mount + every 30s. Also refresh immediately
+  // when Analyze fires `tal:session-complete` so the pill jumps to the new
+  // total the moment a debate ends, not 30s later. Cost.usage events from
+  // an active stream populate `runCost` for the mid-stream tick.
+
+  const pollSpend = useCallback(async () => {
+    try {
+      const res = await getCostGuardState();
+      setSpend(res.spend);
+      setCgConfig(res.config);
+    } catch {
+      // Engine offline or cost-guard not initialized — leave previous values.
+    }
+  }, []);
+
+  useEffect(() => {
+    void pollSpend();
+    const id = setInterval(() => void pollSpend(), SPEND_POLL_MS);
+    return () => clearInterval(id);
+  }, [pollSpend]);
+
+  useEffect(() => {
+    const onUsage = (e: Event) => {
+      const ce = e as CustomEvent<CostUsageEventDetail>;
+      if (ce.detail) {
+        setRunCost(ce.detail.est_cost_usd);
+        setRunIsFree(ce.detail.free);
+      }
+    };
+    const onComplete = () => {
+      // Clear the in-flight tick; the new persisted total comes from
+      // the immediate re-poll below.
+      setRunCost(null);
+      setRunIsFree(false);
+      // The session.complete WS frame can land before the engine's
+      // finally block has run finalize_reservation() against SQLite.
+      // The immediate poll wins that race ~50% of the time on a warm
+      // machine, leaving the pill showing the pre-debate total for 30s
+      // until the next interval tick. A delayed re-poll closes the
+      // window: by 500ms the finally block has finished its UPDATE.
+      void pollSpend();
+      setTimeout(() => void pollSpend(), 500);
+    };
+    window.addEventListener(COST_USAGE_EVENT, onUsage as EventListener);
+    window.addEventListener(SESSION_COMPLETE_EVENT, onComplete as EventListener);
+    return () => {
+      window.removeEventListener(COST_USAGE_EVENT, onUsage as EventListener);
+      window.removeEventListener(SESSION_COMPLETE_EVENT, onComplete as EventListener);
+    };
+  }, [pollSpend]);
 
   // ---- LLM + Clawless from secrets ---------------------------------------
 
@@ -267,11 +348,49 @@ function StatusStrip() {
     />
   );
 
+  // Spend pill — daily $ spent vs cap. Green under 50% / amber 50-90% / red
+  // >90% of the daily cap. With cap_daily_usd=0 (cap disabled), shows the
+  // bare daily total with neutral colour. During a stream, runCost is shown
+  // inline (e.g. "$0.42 + $0.0012"); free runs show "subscription" so the
+  // tick doesn't read as alarmingly static.
+  let spendDetail = 'pending';
+  let spendState: PillState = 'pending';
+  let spendTitle = 'Loading cost-guard state…';
+  if (spend && cgConfig) {
+    const daily = spend.daily_usd;
+    const cap = cgConfig.cap_daily_usd;
+    const base = `$${daily.toFixed(2)}`;
+    const live =
+      runCost !== null
+        ? runIsFree
+          ? ' · subscription'
+          : ` + $${runCost.toFixed(4)}`
+        : '';
+    if (!cgConfig.enabled || cap <= 0) {
+      spendDetail = `${base}${live}`;
+      spendState = 'ok';
+      spendTitle = `Spent today: ${base}${
+        runCost !== null && !runIsFree ? ` (in-flight: $${runCost.toFixed(4)})` : ''
+      } · no daily cap`;
+    } else {
+      const pct = cap > 0 ? daily / cap : 0;
+      spendDetail = `${base} / $${cap.toFixed(2)}${live}`;
+      spendState = pct >= 0.9 ? 'error' : pct >= 0.5 ? 'warn' : 'ok';
+      spendTitle = `Spent today: ${base} of $${cap.toFixed(2)} cap (${Math.round(
+        pct * 100,
+      )}%)${runCost !== null && !runIsFree ? ` · in-flight $${runCost.toFixed(4)}` : ''}`;
+    }
+  }
+  const spendPill = (
+    <Pill label="Spend" detail={spendDetail} state={spendState} title={spendTitle} />
+  );
+
   return (
     <div className={styles.strip}>
       {enginePill}
       {dataPill}
       {llmPill}
+      {spendPill}
       {clawlessPill}
     </div>
   );

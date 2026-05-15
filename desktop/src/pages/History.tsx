@@ -12,6 +12,20 @@ import { buildTranscriptMarkdown } from '../lib/transcript';
 
 type View = 'list' | 'detail';
 
+/** Sort modes for the History list. Default 'recent' matches the engine's
+ * created_at DESC ordering — we apply the sort client-side so a future
+ * switch (e.g. cost DESC) doesn't require a round-trip and the user gets
+ * instant feedback. */
+type SortMode = 'recent' | 'cost' | 'ticker';
+
+const SORT_STORAGE_KEY = 'tal:history:sort';
+
+const SORT_LABEL: Record<SortMode, string> = {
+  recent: 'Most recent',
+  cost: 'Most expensive',
+  ticker: 'Ticker A–Z',
+};
+
 function formatRelative(iso: string): string {
   const ts = new Date(iso).getTime();
   if (Number.isNaN(ts)) return iso;
@@ -38,6 +52,17 @@ function History() {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>(() => {
+    try {
+      const saved = localStorage.getItem(SORT_STORAGE_KEY);
+      if (saved === 'recent' || saved === 'cost' || saved === 'ticker') {
+        return saved;
+      }
+    } catch {
+      // localStorage offline — fall through to default
+    }
+    return 'recent';
+  });
   // Generation counter — guards against rapid row clicks where an earlier
   // (slower) fetch could land after a later one and stomp the UI.
   const detailGenRef = useRef(0);
@@ -126,6 +151,40 @@ function History() {
     );
     return { total, live, totalCost };
   }, [sessions]);
+
+  // Sorted view of the engine's list. Engine returns created_at DESC by
+  // default which matches 'recent'; the other two modes re-sort the array
+  // in place of a re-fetch. Tiebreaker is always created_at DESC so two
+  // free runs at the same cost don't shuffle on every render.
+  const sortedSessions = useMemo(() => {
+    if (!sessions) return null;
+    if (sortMode === 'recent') return sessions;
+    const arr = [...sessions];
+    if (sortMode === 'cost') {
+      arr.sort((a, b) => {
+        const ac = a.estimated_cost_usd ?? 0;
+        const bc = b.estimated_cost_usd ?? 0;
+        if (bc !== ac) return bc - ac;
+        return b.created_at.localeCompare(a.created_at);
+      });
+    } else if (sortMode === 'ticker') {
+      arr.sort((a, b) => {
+        const cmp = a.ticker.localeCompare(b.ticker);
+        if (cmp !== 0) return cmp;
+        return b.created_at.localeCompare(a.created_at);
+      });
+    }
+    return arr;
+  }, [sessions, sortMode]);
+
+  const onSortChange = useCallback((mode: SortMode) => {
+    setSortMode(mode);
+    try {
+      localStorage.setItem(SORT_STORAGE_KEY, mode);
+    } catch {
+      // ignore — sort still applies for the current session
+    }
+  }, []);
 
   if (view === 'detail') {
     return (
@@ -248,9 +307,29 @@ function History() {
         </div>
       )}
 
-      {sessions && sessions.length > 0 && (
+      {sortedSessions && sortedSessions.length > 0 && (
+        <div className={styles.toolbar}>
+          <label className={styles.toolbarLabel} htmlFor="history-sort">
+            Sort by
+          </label>
+          <select
+            id="history-sort"
+            className={styles.toolbarSelect}
+            value={sortMode}
+            onChange={(e) => onSortChange(e.target.value as SortMode)}
+          >
+            {(['recent', 'cost', 'ticker'] as SortMode[]).map((m) => (
+              <option key={m} value={m}>
+                {SORT_LABEL[m]}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {sortedSessions && sortedSessions.length > 0 && (
         <ul className={styles.list}>
-          {sessions.map((s) => (
+          {sortedSessions.map((s) => (
             <li key={s.id} className={styles.row}>
               <button
                 className={styles.rowMain}

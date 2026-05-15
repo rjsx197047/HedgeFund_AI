@@ -6,6 +6,31 @@
 
 ---
 
+## 2026-05-15 — CostGuard polish: Spend pill in StatusStrip + History sort
+
+**Goal:** Founder asked first-thing what to pick from backlog. Per Handover next-session priorities (daily-driving phase), picked the CostGuard 5/6 + 6/6 polish — two visible improvements he'll see every session, bounded scope.
+
+**Headline shipped:**
+
+- **feat(cost-guard): Spend pill on StatusStrip with mid-stream tick + History sort.**
+  - Engine: `live_debate.py` now yields a `cost.usage` event immediately after every `agent.message` with running total tokens + USD estimate. `free=true` for OAuth subscription + local LLM runs (both bill at $0 — pill renders "subscription" / "on-device" inline instead of an alarming static number). Stub-mode sessions never emit it.
+  - Renderer: 5th pill in `StatusStrip` ("Spend $0.42 / $5.00"). Polls `/cost-guard/state` on mount + every 30s + immediately + 500ms after every `tal:session-complete` (closes race vs engine's SQLite finalize_reservation UPDATE). Mid-stream tick from `tal:cost-usage` events Analyze dispatches. Colour states: green <50% of daily cap / amber 50-90% / red ≥90%. Disabled-cap mode shows bare daily total with neutral colour.
+  - History: sort dropdown ("Most recent" / "Most expensive" / "Ticker A-Z") above the list. Choice persists to `localStorage` (`tal:history:sort`). Tiebreaker is always created_at DESC so two free runs at the same cost don't shuffle between renders.
+  - `docs/api.md`: added `cost.usage` event shape between `phase.transition` and `session.complete`. Renumbered.
+  - 4 new pytests in `test_live_debate_cost_usage.py` covering: cost.usage after every agent.message, monotonic running totals, free=true for oauth+local with cost=0.0.
+
+**Verification at end-of-session:**
+
+- 117/117 engine pytests pass (4 new for cost.usage)
+- `bash tools/dev-smoke.sh` 17/17
+- `npm --prefix desktop run type-check` clean
+- Dev stack launched cleanly, all pills render on first paint
+- Dev stack torn down (no orphans) before commit
+
+**Picked up next:** TBD — daily-driving continues; remaining next-session candidates: Playwright UI tests, Phase 6 Clawless tap, Phase 8 webhooks.
+
+---
+
 ## 2026-05-14 — Overnight autonomous block: local LLM + upstream port + KB sweep
 
 **Goal:** Founder asked for local LLM support ("auto-detect Ollama / LM Studio"), then went to sleep. Per his direction, also verified upstream and ported good new features. Three commits, all local — push deferred to morning per CLAUDE.md §4.

@@ -124,6 +124,47 @@
   color: var(--tal-accent-strong);
 }
 
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-3);
+  margin-top: calc(-1 * var(--tal-space-2));
+}
+
+.toolbarLabel {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+}
+
+.toolbarSelect {
+  appearance: none;
+  background: var(--tal-bg-elevated);
+  color: var(--tal-text-primary);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  padding: 4px 28px 4px 10px;
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--tal-text-muted) 50%),
+    linear-gradient(135deg, var(--tal-text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.toolbarSelect:hover {
+  border-color: var(--tal-accent-border);
+}
+
+.toolbarSelect:focus {
+  outline: none;
+  border-color: var(--tal-accent);
+}
+
 .list {
   list-style: none;
   margin: 0;

@@ -314,7 +314,21 @@ Phase canonical values: `"analysts" | "researchers" | "trader" | "risk"`. Agents
 
 Emitted between phases.
 
-##### 6. `session.complete`
+##### 6. `cost.usage` × N (live only)
+
+```jsonc
+{
+  "type": "cost.usage",
+  "input_tokens": 1840,
+  "output_tokens": 612,
+  "est_cost_usd": 0.0012,
+  "free": false
+}
+```
+
+Emitted immediately after every `agent.message` during a live debate so the renderer can tick a real-time spend pill without waiting for `session.complete`. Token counts are running totals across the session, not per-message deltas. `free=true` for OAuth subscription runs and local-LLM runs — both bill at $0 and `est_cost_usd` is `0.0` regardless of token count (the renderer should render "subscription" / "on-device" rather than the literal zero). Stub-mode sessions never emit this event.
+
+##### 7. `session.complete`
 
 ```jsonc
 {
