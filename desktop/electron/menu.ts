@@ -9,7 +9,7 @@ import {
 /** Routes the renderer hash router knows about. */
 type Route = 'analyze' | 'watchlist' | 'history' | 'settings';
 
-const REPO_URL = 'https://github.com/jaysidd/TradingAgentsLab';
+const REPO_URL = 'https://github.com/RBJGlobal/TradingAgentsLab';
 
 function send(win: BrowserWindow | null, channel: string, ...args: unknown[]): void {
   if (!win || win.isDestroyed()) return;

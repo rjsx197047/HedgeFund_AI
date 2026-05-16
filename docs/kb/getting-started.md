@@ -18,13 +18,13 @@
 ## Step 1: Clone the repository
 
 ```bash
-git clone https://github.com/jaysidd/TradingAgentsLab.git
+git clone https://github.com/RBJGlobal/TradingAgentsLab.git
 cd TradingAgentsLab
 ```
 
 The repo has two main remotes:
 
-- `origin` — `https://github.com/jaysidd/TradingAgentsLab.git` (this fork, AGPL-3.0)
+- `origin` — `https://github.com/RBJGlobal/TradingAgentsLab.git` (this fork, AGPL-3.0)
 - `upstream` — `https://github.com/TauricResearch/TradingAgents.git` (Apache 2.0 source)
 
 You only need `origin` to run the app.

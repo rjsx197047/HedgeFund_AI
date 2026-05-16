@@ -200,7 +200,7 @@ For a deeper conceptual walkthrough, see [`docs/kb/how-it-works.md`](docs/kb/how
 
 ```bash
 # 1. Clone
-git clone https://github.com/jaysidd/TradingAgentsLab.git
+git clone https://github.com/RBJGlobal/TradingAgentsLab.git
 cd TradingAgentsLab
 
 # 2. Install Python engine dependencies
@@ -321,7 +321,7 @@ The combined work is distributed under **AGPL-3.0**. The Apache 2.0 portions rem
 
 ## Contributing
 
-Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and sign the [`CLA`](CLA.md) before opening a pull request. Bug reports and feature requests via [GitHub Issues](https://github.com/jaysidd/TradingAgentsLab/issues).
+Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and sign the [`CLA`](CLA.md) before opening a pull request. Bug reports and feature requests via [GitHub Issues](https://github.com/RBJGlobal/TradingAgentsLab/issues).
 
 ## Disclaimer
 

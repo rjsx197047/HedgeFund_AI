@@ -321,7 +321,7 @@ class OpenRouterAdapter(OpenAIAdapter):
     # OpenRouter recommends an HTTP-Referer + X-Title for analytics. These
     # don't gate access — they're courtesy headers.
     _extra_headers = {
-        "HTTP-Referer": "https://github.com/jaysidd/TradingAgentsLab",
+        "HTTP-Referer": "https://github.com/RBJGlobal/TradingAgentsLab",
         "X-Title": "TradingAgentsLab",
     }
 

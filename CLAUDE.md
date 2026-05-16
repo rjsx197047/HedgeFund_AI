@@ -129,7 +129,7 @@ When messaging Clawless Advisor:
 
 ### Git remotes
 
-- `origin` → `https://github.com/jaysidd/TradingAgentsLab.git` (push here)
+- `origin` → `https://github.com/RBJGlobal/TradingAgentsLab.git` (push here)
 - `upstream` → `https://github.com/TauricResearch/TradingAgents.git` (read-only — pull updates with `git fetch upstream && git merge upstream/main`)
 
 ### Secrets

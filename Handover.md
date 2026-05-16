@@ -4,7 +4,7 @@
 
 ## What this project is
 
-**TradingAgentsLab** — github.com/jaysidd/TradingAgentsLab. AGPL-3.0 fork of Tauric Research's TradingAgents (multi-agent LLM trading research framework). Positioned as the **"standalone trading companion for Clawless"**.
+**TradingAgentsLab** — github.com/RBJGlobal/TradingAgentsLab. AGPL-3.0 fork of Tauric Research's TradingAgents (multi-agent LLM trading research framework). Positioned as the **"standalone trading companion for Clawless"**.
 
 **Connection, not integration.** TradingAgentsLab connects to Clawless the same way it connects to Alpaca or Yahoo Finance — one of N optional connectors. **No code inheritance from Clawless.** No shared CSS, no copied components. Brand-level coherence achieved through independent design.
 

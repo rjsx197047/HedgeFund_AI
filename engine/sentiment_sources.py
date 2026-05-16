@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # and Reddit serve any UA; the courtesy header lets them rate-limit us
 # specifically if we misbehave, instead of taking down the user-agent
 # class globally.
-_UA = "TradingAgentsLab/0.1 (+https://github.com/jaysidd/TradingAgentsLab)"
+_UA = "TradingAgentsLab/0.1 (+https://github.com/RBJGlobal/TradingAgentsLab)"
 
 # Short timeouts — sentiment is supplemental signal; a slow fetch must
 # never block the debate. The agent prompt always sees the placeholder

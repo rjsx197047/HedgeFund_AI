@@ -1013,11 +1013,11 @@ function AboutTab({ availability, secretsCount }: AboutTabProps) {
           <dd className={styles.aboutValue}>
             <a
               className={styles.link}
-              href="https://github.com/jaysidd/TradingAgentsLab"
+              href="https://github.com/RBJGlobal/TradingAgentsLab"
               target="_blank"
               rel="noreferrer"
             >
-              jaysidd/TradingAgentsLab
+              RBJGlobal/TradingAgentsLab
             </a>
           </dd>
         </div>
