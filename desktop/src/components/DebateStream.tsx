@@ -279,7 +279,7 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
           {isStreaming && (
             <div className={styles.streamingBadge}>
               <span className={styles.streamingDot} />
-              Streaming
+              Diligence
             </div>
           )}
         </header>
@@ -357,8 +357,9 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
             <>
               <span className={styles.progressSep}>·</span>
               <span>
-                {endedAtRef.current !== null ? 'completed in ' : 'elapsed '}
-                {formatElapsed(elapsedMs)}
+                {endedAtRef.current !== null
+                  ? `Diligence complete in ${formatElapsed(elapsedMs)}`
+                  : `Diligence in progress · ${formatElapsed(elapsedMs)}`}
               </span>
             </>
           )}

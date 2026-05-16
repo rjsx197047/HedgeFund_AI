@@ -6,6 +6,39 @@
 
 ---
 
+## 2026-05-16 — Brand the multi-agent process "The Diligence"
+
+**Goal:** Founder wanted to name the multi-agent debate process with a trademark-able term that distinguishes from algorithmic trading + the overused "agentic AI" buzzword. Done.
+
+**Decision:** **The Diligence.** Captures institutional "due diligence" — multi-angle vetting before commitment. Trademark-able single word. Verb-friendly ("run Diligence on TSLA"). Shortlisted alternatives rejected: The Floor (cinematic but trades on trading-pit nostalgia), The Symposium / Quorum / Concordance (academic / democratic / esoteric), Polylogue (coined, needs learning), GPT's suggestions (The Neural Floor / Exchange / Syndicate / Nexus / Forge all either dated, generic, off-metaphor, or unownable). Locked in memory: `project_diligence_brand_name.md`.
+
+**UX touches landed (uncommitted, queued for push tomorrow after Settings bug is sorted):**
+- `desktop/src/pages/Analyze.tsx` — subtitle now reads "Run **the Diligence** on a ticker — twelve AI agents…"
+- `desktop/src/components/DebateStream.tsx` — streaming badge reads "Diligence" not "Streaming"
+- `desktop/src/components/DebateStream.tsx` — progress strip footer reads "Diligence in progress · 12s" / "Diligence complete in 54s"
+
+Deliberately NOT touched yet (defer):
+- README, docs/kb/* — full brand sweep
+- Engine code internals (`live_debate.py`, WS event names like `session.complete`) — keep wire contract stable
+- Webhook payload schema field names — same
+- Marketing copy / tagline — needs founder eye
+
+**🟡 Open bug — blank Settings page in dev mode.** Founder noticed during a live spin of the Phase 8a build that the Settings page renders as a black blank in dev mode (Vite + Electron). Production build is fine — Playwright e2e suite passes 6/6 including the Settings tab list assertion. Vite serves Settings.tsx with HTTP 200, no compile errors in the dev log, type-check + build both clean. Most likely a runtime exception that React swallows silently.
+
+Founder said "push it anyway, we'll roll back if needed" — so `3480ee8` (Phase 8a) is live on origin/main. Rollback path: `git revert 3480ee8 && git push origin main` (clean, no history rewrite) OR hide just the Webhooks tab by removing the TabDef entry. Both preserve the dispatcher + tests.
+
+Next-session first action: open DevTools in dev mode (Cmd+Opt+I), click Settings, capture the Console error text. That'll point at the exact module / line.
+
+**Picked up next:** (1) fix the blank-Settings bug, (2) push the Diligence UX commit, (3) optionally start Phase 8b (multi-ticker Watchlist batch runner) or Phase 6 (Clawless gateway tap) — founder's call.
+
+**Verification at end-of-session:**
+- Memory saved: `project_diligence_brand_name.md` + MEMORY.md index updated
+- Type-check clean
+- Dev stack torn down cleanly (no orphan engines)
+- Branch ahead of origin by 0 commits (Phase 8a pushed; Diligence UX changes uncommitted, in working tree)
+
+---
+
 ## 2026-05-15 (continued) — Phase 8a webhooks (Telegram / Slack / Discord / Generic)
 
 **Goal:** Founder-prioritized after morning Playwright work. Push completed debates to user-configured webhooks so daily-driving doesn't require babysitting the app. Locked-positioning answer to broker integration: TAL hands the analysis to user's own systems; execution happens on the regulated platform via the user's own auth.

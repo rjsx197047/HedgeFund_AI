@@ -825,9 +825,10 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         <div className={styles.pageHeaderTitleBlock}>
           <h1 className={styles.pageTitle}>Analyze</h1>
           <p className={styles.pageSubtitle}>
-            Run a multi-agent analysis of a ticker on a specific date. The
-            analyst, researcher, trader, and risk-manager agents debate and
-            produce a recommendation.
+            Run <strong>the Diligence</strong> on a ticker — twelve AI agents
+            (analyst, researcher, trader, risk-manager) deliberate from
+            independent angles and converge on a recommendation. Educational
+            research only; not investment advice.
           </p>
         </div>
         <div className={styles.pageHeaderProvider}>

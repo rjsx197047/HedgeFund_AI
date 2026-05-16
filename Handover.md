@@ -12,20 +12,44 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-15 — Phase 8a webhooks landed)
+## Where we are right now (as of 2026-05-16 end-of-day)
 
-### Today's commits
+### Recent commits (all pushed)
 
-Pushed:
 ```
-6b0d110  feat(cost-guard): Spend pill in StatusStrip + History sort + mid-stream tick
+3480ee8  feat(webhooks): Phase 8a — Telegram / Slack / Discord / Generic webhooks v1
 bf2217d  test(e2e): Playwright + Electron smoke suite (5 tests) + 2 prod-mode bug fixes
+6b0d110  feat(cost-guard): Spend pill in StatusStrip + History sort + mid-stream tick
 ```
 
-Stacked locally (NOT pushed — push gate on founder):
+### Stacked locally (NOT pushed)
+
 ```
-<next>   feat(webhooks): Phase 8a — Telegram/Slack/Discord/Generic webhooks v1
+<next>   ui: "The Diligence" — brand the multi-agent process across visible UX touches
 ```
+
+Small, targeted UX-only commit. Locks in the chosen process name. Engine wire protocol untouched (session.complete stays).
+
+### 🟡 Open issue from tonight — Settings page blanks in dev mode
+
+Founder reported "Settings is opening a blank black page" during a live spin of the Phase 8a build. Confirmed details:
+- Production build (Playwright e2e) — Settings renders all 6 tabs correctly, 6/6 tests pass
+- Dev mode in Electron — blank
+- Vite serves Settings.tsx successfully (HTTP 200); no compile errors in the dev log
+- Type-check clean, build clean
+
+Most likely a runtime exception thrown during Settings render that React swallowed. Next-session first-action: open DevTools in dev mode (Cmd+Opt+I), click Settings, capture the Console error. Likely culprits to check first (no proof yet, just where I'd look):
+- The new `WebhooksTab` import chain — `desktop/src/lib/webhooks.ts` imports `getSecret/setSecret/deleteSecret` from `./secrets`. Verify those names still exist (they do per earlier grep). Verify `crypto.getRandomValues` works in renderer.
+- The inline `import('./webhooks').WebhookConfig[]` type reference in `engine-client.ts` could be tickling a Vite HMR edge case.
+- Settings.tsx default tab `'llm'` → could be the LLM tab itself failing now, not Webhooks.
+
+Production was already pushed (`3480ee8`) at founder's "push now, we'll roll back if needed" call. If users hit the same blank Settings, rollback path is `git revert 3480ee8 && git push origin main` — clean, no history rewrite. Or hide just the Webhooks tab by deleting the TabDef entry — keeps engine + dispatcher live.
+
+### Today's headline (2026-05-16)
+
+- **Phase 8a webhooks** shipped + pushed. Telegram/Slack/Discord/Generic presets, per-receiver filter, HMAC for generic, no broker presets (positioning firewall). Webhook URLs treated as secrets end-to-end (never logged, never in WS events, never in History replay).
+- **"The Diligence" brand name** chosen for the multi-agent process. Trademark-able single word. Captures the institutional "due diligence" meaning. Memory locked at `project_diligence_brand_name.md`. Three UX touches landed (uncommitted, will push tomorrow after the Settings bug is sorted): Analyze subtitle, streaming badge ("Diligence" not "Streaming"), progress footer ("Diligence complete in 54s").
+- **Settings blank-page bug** surfaced during the spin. Pushed Phase 8a anyway at founder's call. Investigation queued for tomorrow.
 
 **Phase 8a — Webhooks v1.** Engine dispatcher (`engine/webhooks.py`) fires HTTP POST to user-configured receivers after `session.complete`. Four presets:
 - **Telegram** — bot API; renders short Markdown summary with ticker/action/confidence/reasoning. User configures URL + chat_id.
