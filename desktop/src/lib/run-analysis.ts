@@ -59,16 +59,26 @@ export interface RunAnalysisCallbacks {
 
 export type RunAnalysisResult =
   | { kind: 'streaming'; handle: StreamHandle }
-  | { kind: 'cancelled'; reason: 'cost_guard' }
-  | { kind: 'no_provider' };
+  | { kind: 'cancelled'; reason: 'cost_guard' };
 
 /**
  * Build the request, optionally negotiate CostGuard, and open the WS.
  * Caller awaits `result.handle.done` for the streaming case.
  *
+ * When `opts.provider` is null OR no credentials are stored for the
+ * selected provider, providerConfig is left undefined and the engine
+ * falls through to its stub debate path. The helper does NOT distinguish
+ * this from a configured run on the return value — callers see the same
+ * `{kind: 'streaming'}` either way. (Earlier drafts had a `no_provider`
+ * variant; removed as dead code since the stub path is the right
+ * fallback for both Analyze and BatchRunner.)
+ *
  * Throws on unexpected errors (handshake failure, unrecognised CostGuard
- * error). Routine "no provider configured" returns `no_provider` so the
- * caller can decide whether to fall through to stub or skip.
+ * error). Side effects beyond the WS open: dispatches a
+ * `tal:session-complete` window event when the engine emits
+ * `session.complete` so global subscribers (StatusStrip spend pill,
+ * History page refresh) update in real time. Owning the dispatch here
+ * means every caller of runAnalysis gets the same observable behaviour.
  */
 export async function runAnalysis(
   opts: RunAnalysisOptions,
@@ -107,6 +117,18 @@ export async function runAnalysis(
 
   const { webhookConfigs, telegramChatIds } = await loadWebhooksForStream();
 
+  // Wrap the caller's onEvent so the global tal:session-complete signal
+  // fires regardless of caller. StatusStrip's spend pill + History
+  // refresh listen on this event; without it the spend pill stays stale
+  // for up to 30s after session.complete (the StatusStrip's 30s poll
+  // interval).
+  const wrappedOnEvent = (event: DebateEvent) => {
+    callbacks.onEvent(event);
+    if (event.type === 'session.complete') {
+      window.dispatchEvent(new CustomEvent('tal:session-complete'));
+    }
+  };
+
   const handle = await streamDebate(
     {
       ticker: opts.ticker,
@@ -118,7 +140,7 @@ export async function runAnalysis(
       telegram_chat_ids:
         Object.keys(telegramChatIds).length > 0 ? telegramChatIds : undefined,
     },
-    callbacks.onEvent,
+    wrappedOnEvent,
     callbacks.onError,
   );
   return { kind: 'streaming', handle };

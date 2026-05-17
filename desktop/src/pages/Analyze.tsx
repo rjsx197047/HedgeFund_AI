@@ -602,15 +602,6 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         );
         return;
       }
-      if (result.kind === 'no_provider') {
-        // Defensive: runAnalysis currently doesn't return this for the
-        // "no provider configured" case (it falls through to stub mode
-        // by passing an undefined providerConfig). Kept so a future
-        // helper change that does block on no-provider surfaces here
-        // instead of silently breaking.
-        setStreamError('Provider configuration unavailable.');
-        return;
-      }
 
       handleRef.current = result.handle;
       await result.handle.done;
