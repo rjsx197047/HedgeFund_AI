@@ -58,31 +58,31 @@ const TABS: TabDef[] = [
     id: 'llm',
     label: 'LLM Providers',
     description:
-      'Bring your own API key, sign in with OpenAI OAuth, or auto-detect a local runtime (Ollama / LM Studio). Anthropic API key only — OAuth is banned by their TOS.',
+      'Bring your own API key, sign in with OpenAI OAuth, or auto-detect a local runtime (Ollama / LM Studio). Anthropic API key only (OAuth is banned by their TOS).',
   },
   {
     id: 'data',
     label: 'Data Providers',
     description:
-      'Where market data comes from. yfinance is the free default — no key required. Optionally connect Alpaca Markets for higher-quality real-time data.',
+      'Where market data comes from. yfinance is the free default, no key required. Optionally connect Alpaca Markets for higher-quality real-time data.',
   },
   {
     id: 'webhooks',
     label: 'Webhooks',
     description:
-      'Push the decision to Telegram, Slack, Discord, or any HTTPS endpoint when a debate finishes. Analysis only — TradingAgentsLab never executes trades; users bridge to their own brokerage on the receiving side.',
+      'Push the decision to Telegram, Slack, Discord, or any HTTPS endpoint when a debate finishes. Analysis only. Trading Agents Lab never executes trades; users bridge to their own brokerage on the receiving side.',
   },
   {
     id: 'clawless',
     label: 'Clawless',
     description:
-      'Optional connector — route LLM calls through a Clawless gateway when one is reachable.',
+      'Optional connector. Routes LLM calls through a Clawless gateway when one is reachable.',
   },
   {
     id: 'costguard',
     label: 'Cost Guard',
     description:
-      'Daily / weekly / monthly USD caps + optional sessions-per-day rate cap. Applies to live LLM debates only — stub mode is always free.',
+      'Daily / weekly / monthly USD caps + optional sessions-per-day rate cap. Applies to live LLM debates only; stub mode is always free.',
   },
   {
     id: 'about',
@@ -111,7 +111,7 @@ const LLM_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'llm:openai',
     name: 'OpenAI (API key fallback)',
-    note: 'GPT-4o family via API key. The OAuth row above wins when both are configured — keep an API key here only if you want a manual fallback.',
+    note: 'GPT-4o family via API key. The OAuth row above wins when both are configured. Keep an API key here only if you want a manual fallback.',
     pillLabel: 'Fallback',
     pillVariant: 'optional',
     placeholder: 'sk-…',
@@ -119,7 +119,7 @@ const LLM_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'llm:anthropic',
     name: 'Anthropic',
-    note: 'Claude family. API key only — Anthropic OAuth is banned by their TOS.',
+    note: 'Claude family. API key only (Anthropic OAuth is banned by their TOS).',
     pillLabel: 'API key only',
     pillVariant: 'default',
     placeholder: 'sk-ant-…',
@@ -127,7 +127,7 @@ const LLM_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'llm:openrouter',
     name: 'OpenRouter',
-    note: 'Provider-agnostic gateway. One key, many models — defaults to openai/gpt-4o-mini.',
+    note: 'Provider-agnostic gateway. One key, many models, defaults to openai/gpt-4o-mini.',
     pillLabel: 'Compatible',
     pillVariant: 'default',
     placeholder: 'sk-or-…',
@@ -135,7 +135,7 @@ const LLM_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'llm:gemini',
     name: 'Google Gemini',
-    note: 'Gemini 2.0 Flash family. Cheap + fast — good for high-volume runs.',
+    note: 'Gemini 2.0 Flash family. Cheap and fast, good for high-volume runs.',
     pillLabel: 'Compatible',
     pillVariant: 'default',
     placeholder: 'AIza…',
@@ -157,16 +157,16 @@ const LLM_PROVIDERS: SecretRow[] = [
 const DATA_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'data:alpaca-key-id',
-    name: 'Alpaca Markets — Key ID',
-    note: 'Public key for high-quality market data (APCA-API-KEY-ID). Looks like PKxxxxxxxxxxxxxxxx. Paste alongside the Secret below. Use a paper-trading key — TradingAgentsLab connects only to data + paper-read endpoints; live keys will not function.',
+    name: 'Alpaca Markets: Key ID',
+    note: 'Public key for high-quality market data (APCA-API-KEY-ID). Looks like PKxxxxxxxxxxxxxxxx. Paste alongside the Secret below. Use a paper-trading key. Trading Agents Lab connects only to data + paper-read endpoints; live keys will not function.',
     pillLabel: 'Key ID',
     pillVariant: 'default',
     placeholder: 'PKxxxxxxxxxxxxxxxx',
   },
   {
     secretKey: 'data:alpaca-secret',
-    name: 'Alpaca Markets — Secret',
-    note: 'Data secret (APCA-API-SECRET-KEY). Shown once at key generation on the Alpaca dashboard — regenerate the pair if you missed it.',
+    name: 'Alpaca Markets: Secret',
+    note: 'Data secret (APCA-API-SECRET-KEY). Shown once at key generation on the Alpaca dashboard. Regenerate the pair if you missed it.',
     pillLabel: 'Secret',
     pillVariant: 'default',
     placeholder: 'data secret key',
@@ -187,7 +187,7 @@ const CLAWLESS_FIELDS: SecretRow[] = [
     secretKey: 'clawless:gateway-token',
     name: 'Gateway token',
     note:
-      'Grants broad read access — store via OS keychain only. Paste from your Clawless settings.',
+      'Grants broad read access; store via OS keychain only. Paste from your Clawless settings.',
     pillLabel: 'Connector',
     pillVariant: 'default',
     placeholder: 'paste from Clawless settings',
@@ -209,7 +209,7 @@ function Settings() {
         setAvailability(info);
         if (!info.available) {
           setAvailabilityError(
-            'Encryption backend unavailable on this OS — refusing to store secrets in plaintext.',
+            'Encryption backend unavailable on this OS. Refusing to store secrets in plaintext.',
           );
         }
       })
@@ -485,7 +485,7 @@ function YfinanceRow() {
       <div className={styles.rowMain}>
         <div className={styles.rowName}>Yahoo Finance</div>
         <div className={styles.rowNote}>
-          Free historical OHLCV via the yfinance package. Default — no configuration
+          Free historical OHLCV via the yfinance package. Default, no configuration
           needed; the engine is already using it.
         </div>
       </div>
@@ -615,7 +615,7 @@ function LocalLLMRow({ disabled, onChange }: LocalLLMRowProps) {
         <div className={styles.rowName}>Local LLM (Ollama / LM Studio)</div>
         <div className={styles.rowNote}>
           Auto-detects running OpenAI-compatible local runtimes on this
-          machine. Free to run, fully private — model quality depends on
+          machine. Free to run, fully private. Model quality depends on
           what you have installed. Cost guard treats local sessions as $0
           (same as OAuth subscription).
         </div>
@@ -646,7 +646,7 @@ function LocalLLMRow({ disabled, onChange }: LocalLLMRowProps) {
               href="https://lmstudio.ai"
               target="_blank"
               rel="noopener noreferrer"
-            >LM Studio</a> and click Refresh — or use manual entry below.
+            >LM Studio</a> and click Refresh, or use manual entry below.
           </div>
         )}
 
@@ -684,7 +684,7 @@ function LocalLLMRow({ disabled, onChange }: LocalLLMRowProps) {
                         }
                       }}
                     >
-                      <option value="">— pick a model —</option>
+                      <option value="">(pick a model)</option>
                       {rt.models.map((m) => (
                         <option key={m} value={m}>
                           {m}
@@ -881,7 +881,7 @@ function OpenAIOAuthRow({ disabled }: OpenAIOAuthRowProps) {
           Sign in with your OpenAI account. Wins over the API key when both
           are configured. <strong>Note:</strong> whether OAuth tokens route
           through your ChatGPT subscription vs. per-token billing depends on
-          your OpenAI account configuration — verify with a low-cost model
+          your OpenAI account configuration. Verify with a low-cost model
           first and check your billing dashboard before relying on this for
           cost savings.
         </div>
@@ -894,8 +894,8 @@ function OpenAIOAuthRow({ disabled }: OpenAIOAuthRowProps) {
         )}
         {connected && status?.isFreeTier && (
           <div className={styles.editorError} role="alert">
-            ⚠ Free-tier ChatGPT accounts have unreliable Codex routing —
-            many models hang or return errors. Configure an OpenAI API key
+            ⚠ Free-tier ChatGPT accounts have unreliable Codex routing.
+            Many models hang or return errors. Configure an OpenAI API key
             below as a fallback if debates fail to start.
           </div>
         )}
@@ -973,10 +973,6 @@ function AboutTab({ availability, secretsCount }: AboutTabProps) {
           <dd className={styles.aboutValue}>0.0.1</dd>
         </div>
         <div className={styles.aboutRow}>
-          <dt className={styles.aboutKey}>Phase</dt>
-          <dd className={styles.aboutValue}>Phase 4 — secret storage + Settings UI</dd>
-        </div>
-        <div className={styles.aboutRow}>
           <dt className={styles.aboutKey}>License</dt>
           <dd className={styles.aboutValue}>
             AGPL-3.0 (project additions) · Apache-2.0 (upstream tradingagents core)
@@ -1028,11 +1024,46 @@ function AboutTab({ availability, secretsCount }: AboutTabProps) {
           </dd>
         </div>
         <div className={styles.aboutRow}>
+          <dt className={styles.aboutKey}>Legal</dt>
+          <dd className={styles.aboutValue}>
+            <a
+              className={styles.link}
+              href="https://tradingagentslab.ai/legal/disclaimer/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Disclaimer
+            </a>{' '}
+            ·{' '}
+            <a
+              className={styles.link}
+              href="https://tradingagentslab.ai/legal/terms/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Terms
+            </a>{' '}
+            ·{' '}
+            <a
+              className={styles.link}
+              href="https://tradingagentslab.ai/legal/privacy/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Privacy
+            </a>
+            <div className={styles.aboutHint}>
+              Full three-tier disclaimer, Terms of Service, and Privacy Policy
+              on the website.
+            </div>
+          </dd>
+        </div>
+        <div className={styles.aboutRow}>
           <dt className={styles.aboutKey}>Encryption</dt>
           <dd className={styles.aboutValue}>
             {availability?.available
               ? 'OS keychain available · safeStorage active'
-              : 'Unavailable — secret storage disabled'}
+              : 'Unavailable; secret storage disabled'}
           </dd>
         </div>
         <div className={styles.aboutRow}>
@@ -1043,7 +1074,7 @@ function AboutTab({ availability, secretsCount }: AboutTabProps) {
             </code>
             <div className={styles.aboutHint}>
               {secretsCount === 0
-                ? 'Empty — no secrets stored yet.'
+                ? 'Empty. No secrets stored yet.'
                 : `${secretsCount} entr${secretsCount === 1 ? 'y' : 'ies'} stored (encrypted).`}
             </div>
           </dd>
@@ -1214,7 +1245,7 @@ function WebhooksTab({ availability }: WebhooksTabProps) {
           what matters.
           <br />
           <br />
-          Webhooks are an analysis handoff — they push the decision JSON to
+          Webhooks are an analysis handoff. They push the decision JSON to
           your receivers. They never execute trades. If you want to bridge to
           a broker, your receiver (Cloudflare Worker, Lambda, etc.) calls the
           broker API.
