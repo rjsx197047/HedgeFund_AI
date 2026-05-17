@@ -5,10 +5,8 @@ import { CostGuardModal, type OverDimension } from '../components/CostGuardModal
 import {
   getHandshake,
   getHealth,
-  streamDebate,
   type DebateEvent,
   type LLMProvider,
-  type ProviderConfig,
   type StreamHandle,
   getAvailableModels,
   getModelStorageKey,
@@ -19,21 +17,16 @@ import {
   PROVIDER_SECRET_KEY,
 } from '../lib/engine-client';
 import {
-  CostGuardBlocked,
-  reserveCostGuard,
   type CostGuardConfig,
   type SpendState,
 } from '../lib/cost-guard';
+import { runAnalysis } from '../lib/run-analysis';
 import { buildTranscriptMarkdown } from '../lib/transcript';
-import { getSecret, listSecrets } from '../lib/secrets';
+import { listSecrets } from '../lib/secrets';
 import { consumePendingTicker } from '../lib/handoff';
 import { loadLocalConfig, saveLocalConfig } from '../lib/local-llm';
-import { loadWebhooks } from '../lib/webhooks';
 import { getLocalRuntimes } from '../lib/engine-client';
-import {
-  getOpenAICredentialsForRequest,
-  getOpenAIOAuthStatus,
-} from '../lib/oauth';
+import { getOpenAIOAuthStatus } from '../lib/oauth';
 
 /** Persists the dropdown choice across app sessions (per founder, 2026-05-09). */
 const SELECTED_PROVIDER_STORAGE_KEY = 'tal:analyze:selected-provider';
@@ -47,9 +40,11 @@ interface AnalyzeProps {
 
 function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   // Honor a watchlist hand-off if one is queued in sessionStorage. Falls
-  // back to the default NVDA when there isn't one. App.tsx renders Analyze
-  // conditionally with `&&`, so navigating to Analyze always re-runs this
-  // initializer and consumes any freshly queued hand-off ticker.
+  // back to the default NVDA when there isn't one. Since 2026-05-17 App.tsx
+  // hides-not-unmounts pages (so an in-flight debate's WebSocket survives
+  // navigation), the useState initializer only runs once at app start; the
+  // hashchange effect below re-consumes the pending ticker on subsequent
+  // navigations to #analyze.
   const [ticker, setTicker] = useState(() => consumePendingTicker() ?? 'NVDA');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [engineStatus, setEngineStatus] = useState<EngineStatus>('pending');
@@ -137,6 +132,23 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   useEffect(() => {
     openaiAuthKindRef.current = openaiAuthKind;
   }, [openaiAuthKind]);
+
+  // Re-consume any watchlist hand-off when the user navigates BACK to
+  // #analyze. Since the page stays mounted across nav (so an in-flight
+  // debate's WS survives), the useState initialiser only runs once at
+  // app start — this listener catches the hand-off on every subsequent
+  // arrival.
+  useEffect(() => {
+    const onHashChange = () => {
+      const route = window.location.hash.replace(/^#/, '');
+      if (route === 'analyze') {
+        const pending = consumePendingTicker();
+        if (pending) setTicker(pending);
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   /**
    * Local LLM dynamic state. The model list is whatever the saved runtime
@@ -543,202 +555,56 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     setAssetClass(null);
     isStreamingRef.current = true;
     setIsStreaming(true);
+
+    // Snapshot the provider/auth/model at click-time through refs so a
+    // Settings-tab state change racing with the multiple awaits inside
+    // runAnalysis can't leave the request using a now-stale combo.
+    const provider = activeProviderRef.current;
+    const authKind = openaiAuthKindRef.current ?? 'api_key';
+    const model =
+      activeModelRef.current ??
+      (provider ? getRecommendedModel(provider, authKind) : '');
+
     try {
-      // Resolve the provider config just-in-time. If a key is configured for
-      // any provider in PROVIDER_PRIORITY, run the live debate; otherwise
-      // fall through to the stub.
-      //
-      // OpenAI special case: prefer OAuth (subscription plan) when both
-      // OAuth tokens AND an API key are stored. The main-process service
-      // silently refreshes the access token if it's within 60s of expiry.
-      // Snapshot the resolved provider + OpenAI auth flow + model at
-      // click-time through the refs — guards against a Settings-tab
-      // state change racing with the multiple awaits inside this async
-      // handler.
-      const provider = activeProviderRef.current;
-      const authKind = openaiAuthKindRef.current;
-      const model =
-        activeModelRef.current ??
-        (provider ? getRecommendedModel(provider, authKind) : '');
-      let providerConfig: ProviderConfig | undefined;
-      try {
-        if (provider === 'openai') {
-          if (authKind === 'oauth') {
-            const creds = await getOpenAICredentialsForRequest();
-            if (creds) {
-              providerConfig = {
-                provider: 'openai',
-                auth: {
-                  type: 'oauth',
-                  access: creds.access,
-                  refresh: creds.refresh,
-                  expires: creds.expires,
-                  account_id: creds.accountId,
-                },
-                model,
-                max_tokens: 400,
-              };
-            }
-          }
-          if (!providerConfig) {
-            const apiKey = await getSecret(PROVIDER_SECRET_KEY.openai);
-            if (apiKey) {
-              providerConfig = {
-                provider: 'openai',
-                auth: { type: 'api_key', api_key: apiKey },
-                model,
-                max_tokens: 400,
-              };
-            }
-          }
-        } else if (provider === 'local') {
-          // Local is a (base_url, model) pair, not a single key. Load both
-          // from secrets via the helper; the model on the WS frame comes
-          // from the stored pair, not the renderer's `model` variable
-          // (which holds the priority-resolver's static recommendation —
-          // meaningless for local runtimes since the model list is
-          // dynamic per-runtime).
-          const localCfg = await loadLocalConfig();
-          if (localCfg) {
-            providerConfig = {
-              provider: 'local',
-              auth: { type: 'local', base_url: localCfg.base_url },
-              model: localCfg.model,
-              max_tokens: 400,
-            };
-          }
-        } else if (provider) {
-          const apiKey = await getSecret(PROVIDER_SECRET_KEY[provider]);
-          if (apiKey) {
-            providerConfig = {
-              provider,
-              auth: { type: 'api_key', api_key: apiKey },
-              model,
-              max_tokens: 400,
-            };
-          }
-        }
-      } catch {
-        // If secret retrieval fails for any reason (encryption offline, etc.)
-        // we silently fall back to the stub. The engine status banner already
-        // surfaces the broken-encryption case.
-      }
-
-      // Build optional data_config for the WS start frame. When the user has
-      // BOTH Alpaca Markets credentials configured, the engine instantiates
-      // a per-stream AlpacaProvider for this debate's data fetches. Either
-      // missing → engine falls through to its yfinance default. No fallback
-      // chain on Alpaca failure: if user configured Alpaca and a request
-      // errors, the data card stays empty so they notice (silent fallback
-      // would mask configuration issues).
-      let dataConfig: { provider: 'alpaca'; key_id: string; secret: string } | undefined;
-      try {
-        const [alpacaKeyId, alpacaSecret] = await Promise.all([
-          getSecret('data:alpaca-key-id'),
-          getSecret('data:alpaca-secret'),
-        ]);
-        if (alpacaKeyId && alpacaSecret) {
-          dataConfig = {
-            provider: 'alpaca',
-            key_id: alpacaKeyId,
-            secret: alpacaSecret,
-          };
-        }
-      } catch {
-        // safeStorage offline — fall through to yfinance default.
-      }
-
-      // CostGuard reservation gate. Only applies to live debates — stub
-      // mode (no providerConfig) skips the gate entirely on both sides.
-      // We try the reservation, and if it fails with CostGuardBlocked we
-      // open the modal and await the user's choice. Cancel returns early;
-      // Override re-tries with override=true.
-      let reservationId: string | undefined;
-      if (providerConfig) {
-        const auth_kind = providerConfig.auth.type;
-        // ProviderConfig.model and max_tokens are typed optional; both are
-        // populated above when we built the config, so default safely.
-        const cgModel = providerConfig.model ?? '';
-        const cgMaxTokens = providerConfig.max_tokens ?? 400;
-        try {
-          const reservation = await reserveCostGuard({
-            model: cgModel,
-            auth_kind,
-            max_tokens: cgMaxTokens,
-          });
-          reservationId = reservation.reservation_id;
-        } catch (err) {
-          if (err instanceof CostGuardBlocked) {
-            // Open the modal and wait for the user's decision.
-            const proceed = await new Promise<boolean>((resolve) => {
-              costGuardResolverRef.current = resolve;
-              setCostGuardBlocked({
-                over_dimension: err.over_dimension,
-                spend: err.spend,
-                config: err.config,
-                est_cost_usd: err.est_cost_usd,
-              });
-            });
-            if (!proceed) {
-              // User cancelled — abort cleanly with a friendly message.
-              setStreamError(
-                `Cost guard: ${err.over_dimension} cap reached. Adjust caps in Settings or override at run time.`,
-              );
-              return;
-            }
-            // User overrode — reserve again with override=true.
-            const reservation = await reserveCostGuard({
-              model: cgModel,
-              auth_kind,
-              max_tokens: cgMaxTokens,
-              override: true,
-            });
-            reservationId = reservation.reservation_id;
-          } else {
-            // Unexpected error from /cost-guard/reserve. Surface and abort.
-            setStreamError(
-              err instanceof Error ? err.message : 'cost guard reserve failed',
-            );
-            return;
-          }
-        }
-      }
-
-      // Load webhooks for this stream. Engine is stateless about them; we
-      // attach the full list to every WS start frame. Failing to load
-      // (safeStorage offline) silently falls through to no webhooks
-      // rather than blocking the debate — webhooks are additive.
-      let webhookConfigs: import('../lib/webhooks').WebhookConfig[] = [];
-      let telegramChatIds: Record<string, string> = {};
-      try {
-        webhookConfigs = await loadWebhooks();
-        for (const w of webhookConfigs) {
-          if (w.kind === 'telegram' && w.telegram_chat_id) {
-            telegramChatIds[w.id] = w.telegram_chat_id;
-          }
-        }
-      } catch {
-        // safeStorage offline — no webhooks this run.
-      }
-
-      const handle = await streamDebate(
+      const result = await runAnalysis(
         {
           ticker,
           trade_date: date,
-          provider_config: providerConfig,
-          reservation_id: reservationId,
-          data_config: dataConfig,
-          webhooks: webhookConfigs.length > 0 ? webhookConfigs : undefined,
-          telegram_chat_ids:
-            Object.keys(telegramChatIds).length > 0 ? telegramChatIds : undefined,
+          provider,
+          openaiAuthKind: authKind,
+          model,
         },
-        (event) => setEvents((prev) => [...prev, event]),
-        (err) => {
-          setStreamError(err instanceof Error ? err.message : 'stream error');
+        {
+          onEvent: (event) => setEvents((prev) => [...prev, event]),
+          onError: (err) => {
+            setStreamError(err instanceof Error ? err.message : 'stream error');
+          },
+          // Open the existing CostGuard modal and await the user's choice.
+          // Preserves the established UX where Cancel aborts and Override
+          // re-tries the reservation with override=true (handled inside
+          // runAnalysis).
+          onCostBlocked: (block) =>
+            new Promise<boolean>((resolve) => {
+              costGuardResolverRef.current = resolve;
+              setCostGuardBlocked({
+                over_dimension: block.over_dimension,
+                spend: block.spend,
+                config: block.config,
+                est_cost_usd: block.est_cost_usd,
+              });
+            }),
         },
       );
-      handleRef.current = handle;
-      await handle.done;
+
+      if (result.kind === 'cancelled') {
+        setStreamError(
+          'Cost guard cap reached. Adjust caps in Settings or override at run time.',
+        );
+        return;
+      }
+
+      handleRef.current = result.handle;
+      await result.handle.done;
     } catch (err) {
       setStreamError(err instanceof Error ? err.message : 'stream failed');
     } finally {

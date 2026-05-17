@@ -312,7 +312,7 @@ function StatusStrip() {
         engineState === 'error'
           ? `Engine error: ${engineError ?? 'unknown'}`
           : engineState === 'pending'
-            ? 'Engine starting — waiting for Python sidecar handshake'
+            ? 'Engine starting, waiting for Python sidecar handshake'
             : 'Python sidecar running'
       }
     />
@@ -351,7 +351,7 @@ function StatusStrip() {
       title={
         llmProvider
           ? `Active provider: ${llmDetail}`
-          : 'No LLM provider configured — debates will run as stub'
+          : 'No LLM provider configured; debates will run as stub'
       }
     />
   );
@@ -364,8 +364,8 @@ function StatusStrip() {
       state={clawlessConfigured ? 'warn' : 'off'}
       title={
         clawlessConfigured
-          ? 'Clawless gateway credentials stored — Phase 6 will activate the connector'
-          : 'Optional connector — not configured'
+          ? 'Clawless gateway credentials stored; Phase 6 will activate the connector'
+          : 'Optional connector, not configured'
       }
     />
   );

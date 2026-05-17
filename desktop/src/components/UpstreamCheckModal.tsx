@@ -80,7 +80,7 @@ export function UpstreamCheckModal({ state, onDismiss }: UpstreamCheckModalProps
           <dl className={styles.facts}>
             <div className={styles.factRow}>
               <dt>Latest tag</dt>
-              <dd>{state.latestTag || '—'}</dd>
+              <dd>{state.latestTag || '(none)'}</dd>
             </div>
             <div className={styles.factRow}>
               <dt>Upstream HEAD</dt>
@@ -111,12 +111,12 @@ export function UpstreamCheckModal({ state, onDismiss }: UpstreamCheckModalProps
     <div className={styles.scrim} role="dialog" aria-modal="true">
       <div className={styles.modal}>
         <h2 className={`${styles.title} ${styles.titleWarn}`}>
-          Updates available — {state.behindCount} commit{state.behindCount === 1 ? '' : 's'} behind
+          Updates available: {state.behindCount} commit{state.behindCount === 1 ? '' : 's'} behind
         </h2>
         <p className={styles.body}>
           Upstream <code className={styles.code}>TauricResearch/TradingAgents</code> has{' '}
           {state.behindCount} new commit{state.behindCount === 1 ? '' : 's'} not yet in your tree.
-          Latest tag: <code className={styles.code}>{state.latestTag || '—'}</code>.
+          Latest tag: <code className={styles.code}>{state.latestTag || '(none)'}</code>.
         </p>
         <ul className={styles.commitList}>
           {state.behindCommits.slice(0, 12).map((line, idx) => (
@@ -132,7 +132,7 @@ export function UpstreamCheckModal({ state, onDismiss }: UpstreamCheckModalProps
         </ul>
         <p className={styles.hint}>
           Merging from the terminal is the next step (upstream changes can touch agent prompts /
-          decision parser — manual review recommended):
+          decision parser, manual review recommended):
         </p>
         <pre className={styles.codeBlock}>
 {`git fetch upstream

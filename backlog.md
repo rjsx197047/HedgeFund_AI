@@ -106,11 +106,9 @@
 
 > **Replaces** the original Phase 5 broker work per locked positioning 2026-05-09. Users connect their analysis output to *their own* authorized brokerage account (Interactive Brokers, Alpaca live, etc.) — execution happens on the regulated platform, not in our app.
 
-- ⚪ Settings → Webhooks tab — outbound webhook URL configuration. Per-webhook: name, URL, optional bearer token, event filter (e.g. only fire on BUY decisions, only above a confidence threshold).
-- ⚪ Engine: outbound POST emitted on `session.complete` to each configured webhook. Body includes ticker, decision, confidence, reasoning, full transcript URL (locally addressable session id), and a HMAC signature for receiver verification.
-- ⚪ Renderer: per-debate "Sent to webhooks" indicator with success / failure / retry state per endpoint.
-- ⚪ Documentation: webhook payload schema in `docs/api.md`. Example receiver scripts (Node + Python) in `docs/kb/webhooks.md` showing how to wire to IB / Alpaca / a custom Slack bot.
-- ⚪ Acceptance: founder configures a webhook pointing to a local script that logs the payload; runs an analysis; sees the webhook fired with the correct payload + signature.
+- 🟢 **Phase 8a (shipped 2026-05-15):** Settings → Webhooks tab + engine dispatcher + Telegram/Slack/Discord/Generic presets + per-receiver filter + HMAC for generic + URL secret-safety end-to-end.
+- 🟢 **Phase 8b (shipped 2026-05-17):** Multi-ticker batch runner on Watchlist. "Run all" button streams every tracked ticker sequentially. Each debate persists + fires its own webhooks.
+- 🟣 **Phase 8c (planned, deferred):** Bidirectional Telegram bot — send a ticker FROM Telegram, get the analysis back. Needs poll-vs-cloud-relay design call + chat_id auth + abuse caps + ticker-syntax decision. Full notes in memory: `project_phase_8c_bidirectional_telegram.md`. Estimated 1-2 days for the polling-daemon approach. Don't start before Phase 6 is stable (both add long-running event loops to the engine).
 
 ---
 

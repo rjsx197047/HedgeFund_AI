@@ -23,7 +23,7 @@ const SORT_STORAGE_KEY = 'tal:history:sort';
 const SORT_LABEL: Record<SortMode, string> = {
   recent: 'Most recent',
   cost: 'Most expensive',
-  ticker: 'Ticker A–Z',
+  ticker: 'Ticker A to Z',
 };
 
 function formatRelative(iso: string): string {
@@ -188,7 +188,7 @@ function History() {
 
   if (view === 'detail') {
     return (
-      <div className={styles.page}>
+      <div className={styles.page} data-testid="history-page">
         <header className={styles.detailHeader}>
           <button className={styles.backButton} onClick={onBack} type="button">
             ← Back to history
@@ -255,11 +255,11 @@ function History() {
   }
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-testid="history-page">
       <header className={styles.pageHeader}>
         <h1 className={styles.pageTitle}>History</h1>
         <p className={styles.pageSubtitle}>
-          Past debates the engine has saved. Each row is a completed session —
+          Past debates the engine has saved. Each row is a completed session;
           aborted runs are not stored. Sessions live in <code className={styles.code}>data/sessions.db</code>{' '}
           next to the engine.
         </p>
@@ -302,7 +302,7 @@ function History() {
           <p className={styles.emptyBody}>
             Run an analysis on the <a href="#analyze">Analyze</a> page and the
             engine will write a row here when the debate completes. Sessions
-            stay local — nothing leaves your machine.
+            stay local: nothing leaves your machine.
           </p>
         </div>
       )}

@@ -307,7 +307,7 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
           <div className={styles.summaryItem}>
             <span className={styles.summaryLabel}>Range</span>
             <span className={styles.summaryValue}>
-              {summary.period_low.toFixed(2)}–{summary.period_high.toFixed(2)}
+              {summary.period_low.toFixed(2)} to {summary.period_high.toFixed(2)}
             </span>
           </div>
           <div className={styles.summaryItem}>

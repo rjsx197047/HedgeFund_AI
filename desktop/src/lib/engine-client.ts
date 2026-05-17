@@ -451,16 +451,37 @@ export async function listSessions(opts: { limit?: number; ticker?: string } = {
   return body.sessions;
 }
 
+/** Hard timeout for /sessions/{id}. Engine reads from local SQLite so
+ * normal latency is ~ms; an 8s window covers cold-disk fetches without
+ * letting a hung engine strand the History detail view indefinitely. */
+const GET_SESSION_TIMEOUT_MS = 8000;
+
 export async function getSession(id: string): Promise<SessionDetail> {
   const { port, token } = await handshake();
-  const res = await fetch(
-    `http://127.0.0.1:${port}/sessions/${encodeURIComponent(id)}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (!res.ok) {
-    throw new Error(`getSession failed: ${res.status} ${res.statusText}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GET_SESSION_TIMEOUT_MS);
+  try {
+    const res = await fetch(
+      `http://127.0.0.1:${port}/sessions/${encodeURIComponent(id)}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      },
+    );
+    if (!res.ok) {
+      throw new Error(`getSession failed: ${res.status} ${res.statusText}`);
+    }
+    return (await res.json()) as SessionDetail;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error(
+        `getSession timed out after ${GET_SESSION_TIMEOUT_MS / 1000}s`,
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return (await res.json()) as SessionDetail;
 }
 
 export async function deleteSession(id: string): Promise<void> {
@@ -543,6 +564,69 @@ export interface LocalRuntime {
   runtime: string;
   base_url: string;
   models: string[];
+}
+
+export interface LLMTestResult {
+  ok: boolean;
+  ms?: number;
+  model?: string;
+  error?: string;
+}
+
+/** 15s hard timeout for /llm/test. LLM APIs are slower than SQLite so
+ * the cap is higher than getSession's 8s, but capped to prevent a
+ * firewalled or rate-limited provider from leaving the Settings
+ * "Testing…" spinner stuck forever with no recovery path. */
+const LLM_TEST_TIMEOUT_MS = 15000;
+
+/**
+ * Issue a 1-token completion against the supplied API-key + provider to
+ * validate the credentials. Skips CostGuard; under $0.0001 per call.
+ *
+ * The renderer only stores API keys (OAuth credentials live in main),
+ * so this endpoint is API-key only. The OAuth row has its own status
+ * indicator wired through `getOpenAIOAuthStatus()`.
+ */
+export async function testLLMConnection(args: {
+  provider: Exclude<LLMProvider, 'local'>;
+  apiKey: string;
+  model?: string;
+}): Promise<LLMTestResult> {
+  const { port, token } = await handshake();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LLM_TEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/llm/test`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        provider_config: {
+          provider: args.provider,
+          auth: { type: 'api_key', api_key: args.apiKey },
+          model: args.model,
+          max_tokens: 1,
+        },
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      return { ok: false, error: `${res.status} ${res.statusText}` };
+    }
+    return (await res.json()) as LLMTestResult;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return {
+        ok: false,
+        error: `Test timed out after ${LLM_TEST_TIMEOUT_MS / 1000}s`,
+      };
+    }
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Probe localhost for running OpenAI-compatible LLM runtimes.

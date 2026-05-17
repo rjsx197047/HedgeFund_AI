@@ -3,6 +3,7 @@ import styles from './Settings.module.css';
 import {
   deleteSecret,
   getAvailability,
+  getSecret,
   listSecrets,
   setSecret,
   type SecretListing,
@@ -27,6 +28,9 @@ import {
   getLocalRuntimes,
   LOCAL_MODEL_SECRET_KEY,
   PROVIDER_SECRET_KEY,
+  testLLMConnection,
+  type LLMProvider,
+  type LLMTestResult,
   type LocalRuntime,
 } from '../lib/engine-client';
 import {
@@ -58,31 +62,31 @@ const TABS: TabDef[] = [
     id: 'llm',
     label: 'LLM Providers',
     description:
-      'Bring your own API key, sign in with OpenAI OAuth, or auto-detect a local runtime (Ollama / LM Studio). Anthropic API key only — OAuth is banned by their TOS.',
+      'Bring your own API key, sign in with OpenAI OAuth, or auto-detect a local runtime (Ollama / LM Studio). Anthropic API key only (OAuth is banned by their TOS).',
   },
   {
     id: 'data',
     label: 'Data Providers',
     description:
-      'Where market data comes from. yfinance is the free default — no key required. Optionally connect Alpaca Markets for higher-quality real-time data.',
+      'Where market data comes from. yfinance is the free default, no key required. Optionally connect Alpaca Markets for higher-quality real-time data.',
   },
   {
     id: 'webhooks',
     label: 'Webhooks',
     description:
-      'Push the decision to Telegram, Slack, Discord, or any HTTPS endpoint when a debate finishes. Analysis only — TradingAgentsLab never executes trades; users bridge to their own brokerage on the receiving side.',
+      'Push the decision to Telegram, Slack, Discord, or any HTTPS endpoint when a debate finishes. Analysis only. Trading Agents Lab never executes trades; users bridge to their own brokerage on the receiving side.',
   },
   {
     id: 'clawless',
     label: 'Clawless',
     description:
-      'Optional connector — route LLM calls through a Clawless gateway when one is reachable.',
+      'Optional connector. Routes LLM calls through a Clawless gateway when one is reachable.',
   },
   {
     id: 'costguard',
     label: 'Cost Guard',
     description:
-      'Daily / weekly / monthly USD caps + optional sessions-per-day rate cap. Applies to live LLM debates only — stub mode is always free.',
+      'Daily / weekly / monthly USD caps + optional sessions-per-day rate cap. Applies to live LLM debates only; stub mode is always free.',
   },
   {
     id: 'about',
@@ -105,40 +109,48 @@ interface SecretRow {
   fieldType?: 'password' | 'text';
   /** Placeholder for the input. */
   placeholder?: string;
+  /** When set, a "Test" button appears once the key is stored. Clicking
+   * runs a 1-token completion against the live provider to validate the
+   * credential. Only meaningful for LLM rows. */
+  testProvider?: Exclude<LLMProvider, 'local'>;
 }
 
 const LLM_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'llm:openai',
     name: 'OpenAI (API key fallback)',
-    note: 'GPT-4o family via API key. The OAuth row above wins when both are configured — keep an API key here only if you want a manual fallback.',
+    note: 'GPT-4o family via API key. The OAuth row above wins when both are configured. Keep an API key here only if you want a manual fallback.',
     pillLabel: 'Fallback',
     pillVariant: 'optional',
     placeholder: 'sk-…',
+    testProvider: 'openai',
   },
   {
     secretKey: 'llm:anthropic',
     name: 'Anthropic',
-    note: 'Claude family. API key only — Anthropic OAuth is banned by their TOS.',
+    note: 'Claude family. API key only (Anthropic OAuth is banned by their TOS).',
     pillLabel: 'API key only',
     pillVariant: 'default',
     placeholder: 'sk-ant-…',
+    testProvider: 'anthropic',
   },
   {
     secretKey: 'llm:openrouter',
     name: 'OpenRouter',
-    note: 'Provider-agnostic gateway. One key, many models — defaults to openai/gpt-4o-mini.',
+    note: 'Provider-agnostic gateway. One key, many models, defaults to openai/gpt-4o-mini.',
     pillLabel: 'Compatible',
     pillVariant: 'default',
     placeholder: 'sk-or-…',
+    testProvider: 'openrouter',
   },
   {
     secretKey: 'llm:gemini',
     name: 'Google Gemini',
-    note: 'Gemini 2.0 Flash family. Cheap + fast — good for high-volume runs.',
+    note: 'Gemini 2.0 Flash family. Cheap and fast, good for high-volume runs.',
     pillLabel: 'Compatible',
     pillVariant: 'default',
     placeholder: 'AIza…',
+    testProvider: 'gemini',
   },
 ];
 
@@ -157,16 +169,16 @@ const LLM_PROVIDERS: SecretRow[] = [
 const DATA_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'data:alpaca-key-id',
-    name: 'Alpaca Markets — Key ID',
-    note: 'Public key for high-quality market data (APCA-API-KEY-ID). Looks like PKxxxxxxxxxxxxxxxx. Paste alongside the Secret below. Use a paper-trading key — TradingAgentsLab connects only to data + paper-read endpoints; live keys will not function.',
+    name: 'Alpaca Markets: Key ID',
+    note: 'Public key for high-quality market data (APCA-API-KEY-ID). Looks like PKxxxxxxxxxxxxxxxx. Paste alongside the Secret below. Use a paper-trading key. Trading Agents Lab connects only to data + paper-read endpoints; live keys will not function.',
     pillLabel: 'Key ID',
     pillVariant: 'default',
     placeholder: 'PKxxxxxxxxxxxxxxxx',
   },
   {
     secretKey: 'data:alpaca-secret',
-    name: 'Alpaca Markets — Secret',
-    note: 'Data secret (APCA-API-SECRET-KEY). Shown once at key generation on the Alpaca dashboard — regenerate the pair if you missed it.',
+    name: 'Alpaca Markets: Secret',
+    note: 'Data secret (APCA-API-SECRET-KEY). Shown once at key generation on the Alpaca dashboard. Regenerate the pair if you missed it.',
     pillLabel: 'Secret',
     pillVariant: 'default',
     placeholder: 'data secret key',
@@ -187,7 +199,7 @@ const CLAWLESS_FIELDS: SecretRow[] = [
     secretKey: 'clawless:gateway-token',
     name: 'Gateway token',
     note:
-      'Grants broad read access — store via OS keychain only. Paste from your Clawless settings.',
+      'Grants broad read access; store via OS keychain only. Paste from your Clawless settings.',
     pillLabel: 'Connector',
     pillVariant: 'default',
     placeholder: 'paste from Clawless settings',
@@ -209,7 +221,7 @@ function Settings() {
         setAvailability(info);
         if (!info.available) {
           setAvailabilityError(
-            'Encryption backend unavailable on this OS — refusing to store secrets in plaintext.',
+            'Encryption backend unavailable on this OS. Refusing to store secrets in plaintext.',
           );
         }
       })
@@ -367,6 +379,35 @@ function SecretRowItem({ row, listing, disabled, onChange }: SecretRowItemProps)
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Test-connection state. `null` = not tested this mount; otherwise the
+   * most recent result is rendered inline. Re-running replaces. */
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<LLMTestResult | null>(null);
+
+  const onTest = async () => {
+    if (!row.testProvider || !listing) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const apiKey = await getSecret(row.secretKey);
+      if (!apiKey) {
+        setTestResult({ ok: false, error: 'no stored key' });
+        return;
+      }
+      const result = await testLLMConnection({
+        provider: row.testProvider,
+        apiKey,
+      });
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({
+        ok: false,
+        error: err instanceof Error ? err.message : 'test failed',
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const onSave = async () => {
     if (!value) return;
@@ -409,6 +450,20 @@ function SecretRowItem({ row, listing, disabled, onChange }: SecretRowItemProps)
             Stored {row.fieldType === 'text' ? 'value' : 'key'}{' '}
             <span className={styles.hint}>{listing.hint}</span> · saved{' '}
             {formatRelative(listing.updatedAt)}
+          </div>
+        )}
+        {testResult && (
+          <div
+            className={styles.rowMeta}
+            style={{
+              color: testResult.ok
+                ? 'var(--tal-buy, #4caf50)'
+                : 'var(--tal-sell, #d64545)',
+            }}
+          >
+            {testResult.ok
+              ? `✓ Connection works${testResult.ms ? ` (${testResult.ms}ms)` : ''}${testResult.model ? ` · ${testResult.model}` : ''}`
+              : `✗ ${testResult.error ?? 'failed'}`}
           </div>
         )}
         {editing && (
@@ -454,6 +509,16 @@ function SecretRowItem({ row, listing, disabled, onChange }: SecretRowItemProps)
         </span>
         {!editing && (
           <>
+            {row.testProvider && listing && (
+              <button
+                className={styles.rowAction}
+                onClick={() => void onTest()}
+                disabled={disabled || busy || testing}
+                type="button"
+              >
+                {testing ? 'Testing…' : 'Test'}
+              </button>
+            )}
             <button
               className={styles.rowAction}
               onClick={() => setEditing(true)}
@@ -485,7 +550,7 @@ function YfinanceRow() {
       <div className={styles.rowMain}>
         <div className={styles.rowName}>Yahoo Finance</div>
         <div className={styles.rowNote}>
-          Free historical OHLCV via the yfinance package. Default — no configuration
+          Free historical OHLCV via the yfinance package. Default, no configuration
           needed; the engine is already using it.
         </div>
       </div>
@@ -615,7 +680,7 @@ function LocalLLMRow({ disabled, onChange }: LocalLLMRowProps) {
         <div className={styles.rowName}>Local LLM (Ollama / LM Studio)</div>
         <div className={styles.rowNote}>
           Auto-detects running OpenAI-compatible local runtimes on this
-          machine. Free to run, fully private — model quality depends on
+          machine. Free to run, fully private. Model quality depends on
           what you have installed. Cost guard treats local sessions as $0
           (same as OAuth subscription).
         </div>
@@ -646,7 +711,7 @@ function LocalLLMRow({ disabled, onChange }: LocalLLMRowProps) {
               href="https://lmstudio.ai"
               target="_blank"
               rel="noopener noreferrer"
-            >LM Studio</a> and click Refresh — or use manual entry below.
+            >LM Studio</a> and click Refresh, or use manual entry below.
           </div>
         )}
 
@@ -684,7 +749,7 @@ function LocalLLMRow({ disabled, onChange }: LocalLLMRowProps) {
                         }
                       }}
                     >
-                      <option value="">— pick a model —</option>
+                      <option value="">(pick a model)</option>
                       {rt.models.map((m) => (
                         <option key={m} value={m}>
                           {m}
@@ -881,7 +946,7 @@ function OpenAIOAuthRow({ disabled }: OpenAIOAuthRowProps) {
           Sign in with your OpenAI account. Wins over the API key when both
           are configured. <strong>Note:</strong> whether OAuth tokens route
           through your ChatGPT subscription vs. per-token billing depends on
-          your OpenAI account configuration — verify with a low-cost model
+          your OpenAI account configuration. Verify with a low-cost model
           first and check your billing dashboard before relying on this for
           cost savings.
         </div>
@@ -894,8 +959,8 @@ function OpenAIOAuthRow({ disabled }: OpenAIOAuthRowProps) {
         )}
         {connected && status?.isFreeTier && (
           <div className={styles.editorError} role="alert">
-            ⚠ Free-tier ChatGPT accounts have unreliable Codex routing —
-            many models hang or return errors. Configure an OpenAI API key
+            ⚠ Free-tier ChatGPT accounts have unreliable Codex routing.
+            Many models hang or return errors. Configure an OpenAI API key
             below as a fallback if debates fail to start.
           </div>
         )}
@@ -973,10 +1038,6 @@ function AboutTab({ availability, secretsCount }: AboutTabProps) {
           <dd className={styles.aboutValue}>0.0.1</dd>
         </div>
         <div className={styles.aboutRow}>
-          <dt className={styles.aboutKey}>Phase</dt>
-          <dd className={styles.aboutValue}>Phase 4 — secret storage + Settings UI</dd>
-        </div>
-        <div className={styles.aboutRow}>
           <dt className={styles.aboutKey}>License</dt>
           <dd className={styles.aboutValue}>
             AGPL-3.0 (project additions) · Apache-2.0 (upstream tradingagents core)
@@ -1028,11 +1089,46 @@ function AboutTab({ availability, secretsCount }: AboutTabProps) {
           </dd>
         </div>
         <div className={styles.aboutRow}>
+          <dt className={styles.aboutKey}>Legal</dt>
+          <dd className={styles.aboutValue}>
+            <a
+              className={styles.link}
+              href="https://tradingagentslab.ai/legal/disclaimer/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Disclaimer
+            </a>{' '}
+            ·{' '}
+            <a
+              className={styles.link}
+              href="https://tradingagentslab.ai/legal/terms/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Terms
+            </a>{' '}
+            ·{' '}
+            <a
+              className={styles.link}
+              href="https://tradingagentslab.ai/legal/privacy/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Privacy
+            </a>
+            <div className={styles.aboutHint}>
+              Full three-tier disclaimer, Terms of Service, and Privacy Policy
+              on the website.
+            </div>
+          </dd>
+        </div>
+        <div className={styles.aboutRow}>
           <dt className={styles.aboutKey}>Encryption</dt>
           <dd className={styles.aboutValue}>
             {availability?.available
               ? 'OS keychain available · safeStorage active'
-              : 'Unavailable — secret storage disabled'}
+              : 'Unavailable; secret storage disabled'}
           </dd>
         </div>
         <div className={styles.aboutRow}>
@@ -1043,7 +1139,7 @@ function AboutTab({ availability, secretsCount }: AboutTabProps) {
             </code>
             <div className={styles.aboutHint}>
               {secretsCount === 0
-                ? 'Empty — no secrets stored yet.'
+                ? 'Empty. No secrets stored yet.'
                 : `${secretsCount} entr${secretsCount === 1 ? 'y' : 'ies'} stored (encrypted).`}
             </div>
           </dd>
@@ -1158,6 +1254,17 @@ function WebhooksTab({ availability }: WebhooksTabProps) {
         setSaveError('URL must start with http:// or https://');
         return;
       }
+      if (trimmed.kind === 'telegram') {
+        const token = extractTelegramToken(trimmed.url);
+        if (!token) {
+          setSaveError('Bot Token is required for Telegram.');
+          return;
+        }
+        if (!trimmed.telegram_chat_id) {
+          setSaveError('Chat ID is required for Telegram.');
+          return;
+        }
+      }
       const existing = webhooks.findIndex((w) => w.id === trimmed.id);
       const next =
         existing >= 0
@@ -1214,7 +1321,7 @@ function WebhooksTab({ availability }: WebhooksTabProps) {
           what matters.
           <br />
           <br />
-          Webhooks are an analysis handoff — they push the decision JSON to
+          Webhooks are an analysis handoff. They push the decision JSON to
           your receivers. They never execute trades. If you want to bridge to
           a broker, your receiver (Cloudflare Worker, Lambda, etc.) calls the
           broker API.
@@ -1291,6 +1398,23 @@ function hostFromUrl(url: string): string {
   }
 }
 
+/** Telegram URLs embed the bot token. Settings UI asks for the bare token
+ * (closer to how BotFather presents it) and these helpers materialise the
+ * full Bot API URL on the way to storage and back. */
+const TELEGRAM_URL_PREFIX = 'https://api.telegram.org/bot';
+const TELEGRAM_URL_SUFFIX = '/sendMessage';
+
+function extractTelegramToken(url: string): string {
+  if (!url.startsWith(TELEGRAM_URL_PREFIX)) return '';
+  const rest = url.slice(TELEGRAM_URL_PREFIX.length);
+  const slash = rest.indexOf('/');
+  return slash >= 0 ? rest.slice(0, slash) : rest;
+}
+
+function buildTelegramUrl(token: string): string {
+  return `${TELEGRAM_URL_PREFIX}${token.trim()}${TELEGRAM_URL_SUFFIX}`;
+}
+
 interface WebhookEditorProps {
   config: WebhookConfig;
   onCancel: () => void;
@@ -1341,43 +1465,61 @@ function WebhookEditor({ config, onCancel, onSave }: WebhookEditorProps) {
         <p className={styles.hint}>{KIND_HINT[draft.kind]}</p>
       </div>
 
-      <div className={styles.field}>
-        <label className={styles.label}>URL</label>
-        <input
-          type="password"
-          className={styles.input}
-          value={draft.url}
-          onChange={(e) => setDraft({ ...draft, url: e.target.value })}
-          placeholder={
-            draft.kind === 'telegram'
-              ? 'https://api.telegram.org/bot<token>/sendMessage'
-              : draft.kind === 'slack'
+      {draft.kind === 'telegram' ? (
+        <>
+          <div className={styles.field}>
+            <label className={styles.label}>Bot Token</label>
+            <input
+              type="password"
+              className={styles.input}
+              value={extractTelegramToken(draft.url)}
+              onChange={(e) =>
+                setDraft({ ...draft, url: buildTelegramUrl(e.target.value) })
+              }
+              placeholder="123456789:ABCdef-GhIJklmnOPqrsTUVwxyz"
+              data-testid="webhook-url-input"
+            />
+            <p className={styles.hint}>
+              The token BotFather gave you on Telegram. Looks like{' '}
+              <code className={styles.code}>123456789:ABC...</code>. Stored
+              encrypted in your OS keychain; never shown back in the row preview.
+            </p>
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Chat ID</label>
+            <input
+              className={styles.input}
+              value={draft.telegram_chat_id ?? ''}
+              onChange={(e) =>
+                setDraft({ ...draft, telegram_chat_id: e.target.value })
+              }
+              placeholder="12345678 or -100123456789 for groups"
+              data-testid="webhook-chat-id-input"
+            />
+            <p className={styles.hint}>
+              Numeric Telegram chat id. Get yours by messaging{' '}
+              <code className={styles.code}>@userinfobot</code> on Telegram. For
+              group chats the id starts with a minus.
+            </p>
+          </div>
+        </>
+      ) : (
+        <div className={styles.field}>
+          <label className={styles.label}>URL</label>
+          <input
+            type="password"
+            className={styles.input}
+            value={draft.url}
+            onChange={(e) => setDraft({ ...draft, url: e.target.value })}
+            placeholder={
+              draft.kind === 'slack'
                 ? 'https://hooks.slack.com/services/...'
                 : draft.kind === 'discord'
                   ? 'https://discord.com/api/webhooks/<id>/<token>'
                   : 'https://your-receiver.example.com/hook'
-          }
-          data-testid="webhook-url-input"
-        />
-      </div>
-
-      {draft.kind === 'telegram' && (
-        <div className={styles.field}>
-          <label className={styles.label}>Chat ID</label>
-          <input
-            className={styles.input}
-            value={draft.telegram_chat_id ?? ''}
-            onChange={(e) =>
-              setDraft({ ...draft, telegram_chat_id: e.target.value })
             }
-            placeholder="12345678 or -100123456789 for groups"
-            data-testid="webhook-chat-id-input"
+            data-testid="webhook-url-input"
           />
-          <p className={styles.hint}>
-            Numeric Telegram chat id. Get yours by messaging{' '}
-            <code className={styles.code}>@userinfobot</code> on Telegram. For
-            group chats the id starts with a minus.
-          </p>
         </div>
       )}
 
