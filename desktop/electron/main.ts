@@ -14,6 +14,7 @@ import {
   setSecret,
 } from './secrets';
 import { checkUpstream, type UpstreamCheckResult } from './upstream-check';
+import { loadWindowState, saveWindowState } from './window-state';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,10 +45,13 @@ const ICON_PNG_PATH = path.join(process.env.APP_ROOT, 'build', 'icon.png');
 
 let win: BrowserWindow | null = null;
 
-function createWindow() {
+async function createWindow() {
+  const saved = await loadWindowState();
   win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: saved?.width ?? 1280,
+    height: saved?.height ?? 800,
+    x: saved?.x,
+    y: saved?.y,
     minWidth: 960,
     minHeight: 600,
     backgroundColor: '#0d1117',
@@ -62,6 +66,20 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  // Persist bounds on close so the next launch restores them. Pulling the
+  // bounds inside the event handler (not from a stale snapshot) avoids
+  // saving an intermediate value if the user resized just before quitting.
+  win.on('close', () => {
+    if (!win || win.isDestroyed()) return;
+    const bounds = win.getBounds();
+    void saveWindowState({
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+    });
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -264,10 +282,10 @@ app.whenReady().then(() => {
 
   registerAppMenu(() => win);
 
-  createWindow();
+  void createWindow();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
 });
 
