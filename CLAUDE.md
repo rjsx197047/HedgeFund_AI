@@ -42,6 +42,10 @@ Why: sidesteps the SEC / financial-advisor regulatory surface entirely. Avoids t
 - **Locked phrasing for Clawless relationship:**
   - ✅ "Standalone trading companion for Clawless"
   - ❌ NOT "Clawless extension / plugin / add-on / integration"
+- **Brand name rendering (locked 2026-05-17):**
+  - ✅ "Trading Agents Lab" (three words, spaces) in any human-readable text: body copy, marketing, docs, KB, README prose, OG cards, page titles, meta descriptions, LinkedIn, press kit, error messages a user might read.
+  - ✅ "TradingAgentsLab" (compressed) reserved for URL/code contexts only: `github.com/RBJGlobal/TradingAgentsLab`, `tradingagentslab.ai`, `/products/tradingagentslab`, React component/function names, TypeScript identifiers, `package.json` `name` field, `git clone` directory, internal code comments.
+  - Rule of thumb: if a human reads it as prose, three words. If a machine parses it as identifier or URL slug, compressed.
 
 ### Business model + privacy
 
