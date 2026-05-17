@@ -451,16 +451,37 @@ export async function listSessions(opts: { limit?: number; ticker?: string } = {
   return body.sessions;
 }
 
+/** Hard timeout for /sessions/{id}. Engine reads from local SQLite so
+ * normal latency is ~ms; an 8s window covers cold-disk fetches without
+ * letting a hung engine strand the History detail view indefinitely. */
+const GET_SESSION_TIMEOUT_MS = 8000;
+
 export async function getSession(id: string): Promise<SessionDetail> {
   const { port, token } = await handshake();
-  const res = await fetch(
-    `http://127.0.0.1:${port}/sessions/${encodeURIComponent(id)}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (!res.ok) {
-    throw new Error(`getSession failed: ${res.status} ${res.statusText}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GET_SESSION_TIMEOUT_MS);
+  try {
+    const res = await fetch(
+      `http://127.0.0.1:${port}/sessions/${encodeURIComponent(id)}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      },
+    );
+    if (!res.ok) {
+      throw new Error(`getSession failed: ${res.status} ${res.statusText}`);
+    }
+    return (await res.json()) as SessionDetail;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error(
+        `getSession timed out after ${GET_SESSION_TIMEOUT_MS / 1000}s`,
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return (await res.json()) as SessionDetail;
 }
 
 export async function deleteSession(id: string): Promise<void> {
