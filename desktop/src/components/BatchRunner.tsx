@@ -61,6 +61,21 @@ function BatchRunner({ tickers }: BatchRunnerProps) {
   const currentHandleRef = useRef<StreamHandle | null>(null);
   const currentStartRef = useRef<number>(0);
   const [elapsedTick, setElapsedTick] = useState(0);
+  /** Mount-guard. Watchlist is conditionally rendered in App.tsx; if the
+   * user navigates away mid-batch, the component unmounts but `onRun`'s
+   * async loop keeps going. Without this guard, returning to Watchlist
+   * and clicking Run again would start a SECOND concurrent loop while
+   * the first is still firing webhooks + writing sessions. Mount-guard
+   * + WS close on unmount stops both. */
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      currentHandleRef.current?.close();
+      stopRequestedRef.current = true;
+    };
+  }, []);
 
   // 1Hz tick for the elapsed display on the active ticker. Cheap; only
   // runs while a batch is in flight.
@@ -98,6 +113,7 @@ function BatchRunner({ tickers }: BatchRunnerProps) {
     setRows(initial);
 
     for (let i = 0; i < tickers.length; i++) {
+      if (!mountedRef.current) return;
       if (stopRequestedRef.current) {
         setRows((prev) =>
           prev.map((r, idx) => (idx >= i ? { ...r, status: 'skipped' } : r)),
@@ -161,18 +177,8 @@ function BatchRunner({ tickers }: BatchRunnerProps) {
             ),
           );
           setBatchError(
-            `Cost guard blocked ${ticker} — adjust caps in Settings or stop the batch.`,
+            `Cost guard blocked ${ticker}, adjust caps in Settings or stop the batch.`,
           );
-          setPhase('cancelled');
-          return;
-        }
-        if (result.kind === 'no_provider') {
-          setRows((prev) =>
-            prev.map((r, idx) =>
-              idx === i ? { ...r, status: 'failed', error: 'No provider' } : r,
-            ),
-          );
-          setBatchError('Provider unavailable mid-batch.');
           setPhase('cancelled');
           return;
         }
@@ -180,6 +186,7 @@ function BatchRunner({ tickers }: BatchRunnerProps) {
         currentHandleRef.current = result.handle;
         await result.handle.done;
         currentHandleRef.current = null;
+        if (!mountedRef.current) return;
         const elapsed = Math.round((Date.now() - currentStartRef.current) / 1000);
 
         if (perError) {
