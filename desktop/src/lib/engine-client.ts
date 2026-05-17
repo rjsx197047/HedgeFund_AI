@@ -573,6 +573,12 @@ export interface LLMTestResult {
   error?: string;
 }
 
+/** 15s hard timeout for /llm/test. LLM APIs are slower than SQLite so
+ * the cap is higher than getSession's 8s, but capped to prevent a
+ * firewalled or rate-limited provider from leaving the Settings
+ * "Testing…" spinner stuck forever with no recovery path. */
+const LLM_TEST_TIMEOUT_MS = 15000;
+
 /**
  * Issue a 1-token completion against the supplied API-key + provider to
  * validate the credentials. Skips CostGuard; under $0.0001 per call.
@@ -587,25 +593,40 @@ export async function testLLMConnection(args: {
   model?: string;
 }): Promise<LLMTestResult> {
   const { port, token } = await handshake();
-  const res = await fetch(`http://127.0.0.1:${port}/llm/test`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      provider_config: {
-        provider: args.provider,
-        auth: { type: 'api_key', api_key: args.apiKey },
-        model: args.model,
-        max_tokens: 1,
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LLM_TEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/llm/test`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
       },
-    }),
-  });
-  if (!res.ok) {
-    return { ok: false, error: `${res.status} ${res.statusText}` };
+      body: JSON.stringify({
+        provider_config: {
+          provider: args.provider,
+          auth: { type: 'api_key', api_key: args.apiKey },
+          model: args.model,
+          max_tokens: 1,
+        },
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      return { ok: false, error: `${res.status} ${res.statusText}` };
+    }
+    return (await res.json()) as LLMTestResult;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return {
+        ok: false,
+        error: `Test timed out after ${LLM_TEST_TIMEOUT_MS / 1000}s`,
+      };
+    }
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timer);
   }
-  return (await res.json()) as LLMTestResult;
 }
 
 /** Probe localhost for running OpenAI-compatible LLM runtimes.
