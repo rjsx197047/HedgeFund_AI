@@ -138,7 +138,7 @@ function App() {
                 type="button"
                 className={`${styles.titleBarButton} ${appMenuOpen ? styles.titleBarButtonActive : ''}`}
                 onClick={() => setAppMenuOpen((open) => !open)}
-                title="App actions — Restart or Shut down"
+                title="App actions: Restart or Shut down"
                 aria-label="App actions"
                 aria-haspopup="menu"
                 aria-expanded={appMenuOpen}

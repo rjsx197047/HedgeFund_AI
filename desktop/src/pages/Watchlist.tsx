@@ -103,7 +103,7 @@ function Watchlist() {
         <h1 className={styles.pageTitle}>Watchlist</h1>
         <p className={styles.pageSubtitle}>
           Tickers you want to keep an eye on. Click <strong>Analyze</strong> on any
-          row to drop into the Analyze page with the ticker pre-filled — then run
+          row to drop into the Analyze page with the ticker pre-filled, then run
           a debate on today's data.
         </p>
       </header>
@@ -167,7 +167,7 @@ function Watchlist() {
         <div className={styles.empty}>
           <h2 className={styles.emptyTitle}>Empty watchlist</h2>
           <p className={styles.emptyBody}>
-            Add a ticker above to track it. The watchlist is local — it lives in{' '}
+            Add a ticker above to track it. The watchlist is local: it lives in{' '}
             <code className={styles.code}>data/sessions.db</code> and never leaves
             your machine.
           </p>
