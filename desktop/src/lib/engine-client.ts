@@ -566,6 +566,48 @@ export interface LocalRuntime {
   models: string[];
 }
 
+export interface LLMTestResult {
+  ok: boolean;
+  ms?: number;
+  model?: string;
+  error?: string;
+}
+
+/**
+ * Issue a 1-token completion against the supplied API-key + provider to
+ * validate the credentials. Skips CostGuard; under $0.0001 per call.
+ *
+ * The renderer only stores API keys (OAuth credentials live in main),
+ * so this endpoint is API-key only. The OAuth row has its own status
+ * indicator wired through `getOpenAIOAuthStatus()`.
+ */
+export async function testLLMConnection(args: {
+  provider: Exclude<LLMProvider, 'local'>;
+  apiKey: string;
+  model?: string;
+}): Promise<LLMTestResult> {
+  const { port, token } = await handshake();
+  const res = await fetch(`http://127.0.0.1:${port}/llm/test`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      provider_config: {
+        provider: args.provider,
+        auth: { type: 'api_key', api_key: args.apiKey },
+        model: args.model,
+        max_tokens: 1,
+      },
+    }),
+  });
+  if (!res.ok) {
+    return { ok: false, error: `${res.status} ${res.statusText}` };
+  }
+  return (await res.json()) as LLMTestResult;
+}
+
 /** Probe localhost for running OpenAI-compatible LLM runtimes.
  *
  * Empty array is a normal response — it means the user has nothing

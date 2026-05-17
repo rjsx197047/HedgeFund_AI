@@ -3,6 +3,7 @@ import styles from './Settings.module.css';
 import {
   deleteSecret,
   getAvailability,
+  getSecret,
   listSecrets,
   setSecret,
   type SecretListing,
@@ -27,6 +28,9 @@ import {
   getLocalRuntimes,
   LOCAL_MODEL_SECRET_KEY,
   PROVIDER_SECRET_KEY,
+  testLLMConnection,
+  type LLMProvider,
+  type LLMTestResult,
   type LocalRuntime,
 } from '../lib/engine-client';
 import {
@@ -105,6 +109,10 @@ interface SecretRow {
   fieldType?: 'password' | 'text';
   /** Placeholder for the input. */
   placeholder?: string;
+  /** When set, a "Test" button appears once the key is stored. Clicking
+   * runs a 1-token completion against the live provider to validate the
+   * credential. Only meaningful for LLM rows. */
+  testProvider?: Exclude<LLMProvider, 'local'>;
 }
 
 const LLM_PROVIDERS: SecretRow[] = [
@@ -115,6 +123,7 @@ const LLM_PROVIDERS: SecretRow[] = [
     pillLabel: 'Fallback',
     pillVariant: 'optional',
     placeholder: 'sk-…',
+    testProvider: 'openai',
   },
   {
     secretKey: 'llm:anthropic',
@@ -123,6 +132,7 @@ const LLM_PROVIDERS: SecretRow[] = [
     pillLabel: 'API key only',
     pillVariant: 'default',
     placeholder: 'sk-ant-…',
+    testProvider: 'anthropic',
   },
   {
     secretKey: 'llm:openrouter',
@@ -131,6 +141,7 @@ const LLM_PROVIDERS: SecretRow[] = [
     pillLabel: 'Compatible',
     pillVariant: 'default',
     placeholder: 'sk-or-…',
+    testProvider: 'openrouter',
   },
   {
     secretKey: 'llm:gemini',
@@ -139,6 +150,7 @@ const LLM_PROVIDERS: SecretRow[] = [
     pillLabel: 'Compatible',
     pillVariant: 'default',
     placeholder: 'AIza…',
+    testProvider: 'gemini',
   },
 ];
 
@@ -367,6 +379,35 @@ function SecretRowItem({ row, listing, disabled, onChange }: SecretRowItemProps)
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Test-connection state. `null` = not tested this mount; otherwise the
+   * most recent result is rendered inline. Re-running replaces. */
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<LLMTestResult | null>(null);
+
+  const onTest = async () => {
+    if (!row.testProvider || !listing) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const apiKey = await getSecret(row.secretKey);
+      if (!apiKey) {
+        setTestResult({ ok: false, error: 'no stored key' });
+        return;
+      }
+      const result = await testLLMConnection({
+        provider: row.testProvider,
+        apiKey,
+      });
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({
+        ok: false,
+        error: err instanceof Error ? err.message : 'test failed',
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const onSave = async () => {
     if (!value) return;
@@ -409,6 +450,20 @@ function SecretRowItem({ row, listing, disabled, onChange }: SecretRowItemProps)
             Stored {row.fieldType === 'text' ? 'value' : 'key'}{' '}
             <span className={styles.hint}>{listing.hint}</span> · saved{' '}
             {formatRelative(listing.updatedAt)}
+          </div>
+        )}
+        {testResult && (
+          <div
+            className={styles.rowMeta}
+            style={{
+              color: testResult.ok
+                ? 'var(--tal-buy, #4caf50)'
+                : 'var(--tal-sell, #d64545)',
+            }}
+          >
+            {testResult.ok
+              ? `✓ Connection works${testResult.ms ? ` (${testResult.ms}ms)` : ''}${testResult.model ? ` · ${testResult.model}` : ''}`
+              : `✗ ${testResult.error ?? 'failed'}`}
           </div>
         )}
         {editing && (
@@ -454,6 +509,16 @@ function SecretRowItem({ row, listing, disabled, onChange }: SecretRowItemProps)
         </span>
         {!editing && (
           <>
+            {row.testProvider && listing && (
+              <button
+                className={styles.rowAction}
+                onClick={() => void onTest()}
+                disabled={disabled || busy || testing}
+                type="button"
+              >
+                {testing ? 'Testing…' : 'Test'}
+              </button>
+            )}
             <button
               className={styles.rowAction}
               onClick={() => setEditing(true)}

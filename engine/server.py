@@ -38,6 +38,7 @@ from .data_providers import (
     provider_from_data_config,
 )
 from .live_debate import ProviderConfig, SentimentBlock, live_debate
+from .llm_providers import adapter_for
 from . import cost_guard, local_llm_detect, sentiment_sources, storage
 from . import webhooks as webhook_dispatcher
 from .stub_debate import canned_debate
@@ -230,6 +231,48 @@ def build_app(*, token: str) -> FastAPI:
             max_tokens=req.max_tokens,
         )
         return cost_guard.check_result_to_dict(result)
+
+    @app.post("/llm/test", dependencies=bearer)
+    async def llm_test(req: LLMTestRequest) -> dict[str, Any]:
+        """Validate stored LLM credentials with a 1-token completion.
+
+        Explicit-trigger only (Settings → "Test connection" per row).
+        Under ~$0.0001 per test for API-key providers; skips CostGuard
+        entirely because this is a credential ping, not a debate.
+
+        OAuth credentials live in the Electron main process and never
+        reach the renderer, so OAuth is rejected here on principle;
+        the OAuth row in Settings already shows live connection state
+        via `oauth:openai:status`.
+        """
+        config = ProviderConfig.from_dict(req.provider_config)
+        if config is None:
+            return {"ok": False, "error": "invalid provider_config"}
+        if config.auth.get("type") == "oauth":
+            return {
+                "ok": False,
+                "error": "OAuth credentials cannot be tested here; "
+                "use the OAuth row's status indicator instead.",
+            }
+        adapter = adapter_for(config)
+        started = time.monotonic()
+        try:
+            await adapter.open(api_key=config.bearer_token)
+            await adapter.complete(
+                system="",
+                user="ping",
+                model=config.model,
+                max_tokens=1,
+            )
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            return {"ok": True, "model": config.model, "ms": elapsed_ms}
+        except Exception as exc:  # noqa: BLE001 — surface whatever blew up
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        finally:
+            try:
+                await adapter.close()
+            except Exception:  # noqa: BLE001 — best-effort cleanup
+                pass
 
     @app.get("/llm/local-runtimes", dependencies=bearer)
     async def llm_local_runtimes() -> dict[str, Any]:
@@ -654,3 +697,12 @@ class CostGuardCheckRequest(BaseModel):
 
 class CostGuardReserveRequest(CostGuardCheckRequest):
     override: bool = False
+
+
+class LLMTestRequest(BaseModel):
+    """ProviderConfig dict the renderer would normally attach to a WS
+    start frame. Re-validated through `ProviderConfig.from_dict` so the
+    test endpoint enforces the same allowlist + auth-shape rules as a
+    real debate."""
+
+    provider_config: dict[str, Any]
