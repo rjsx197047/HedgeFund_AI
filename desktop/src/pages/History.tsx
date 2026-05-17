@@ -188,7 +188,7 @@ function History() {
 
   if (view === 'detail') {
     return (
-      <div className={styles.page}>
+      <div className={styles.page} data-testid="history-page">
         <header className={styles.detailHeader}>
           <button className={styles.backButton} onClick={onBack} type="button">
             ← Back to history
@@ -255,7 +255,7 @@ function History() {
   }
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-testid="history-page">
       <header className={styles.pageHeader}>
         <h1 className={styles.pageTitle}>History</h1>
         <p className={styles.pageSubtitle}>

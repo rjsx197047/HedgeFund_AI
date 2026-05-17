@@ -193,7 +193,17 @@ function App() {
       </nav>
 
       <main className={`${styles.main} app-no-drag`}>
-        {route === 'analyze' && <Analyze resetSignal={newAnalysisTick} />}
+        {/* Analyze stays mounted (hide-don't-unmount) so an in-flight
+            debate's WebSocket survives navigation. Founder ask 2026-05-17:
+            "user may have to start the analysis and then go to their
+            watchlist or history and then come back to analysis." Pre-fix,
+            Analyze unmount closed the WS and engine aborted mid-stream.
+
+            The other three pages keep their original mount/unmount
+            behaviour so their on-mount fetches re-run on each visit. */}
+        <div style={{ display: route === 'analyze' ? 'contents' : 'none' }}>
+          <Analyze resetSignal={newAnalysisTick} />
+        </div>
         {route === 'watchlist' && <Watchlist />}
         {route === 'history' && <History />}
         {route === 'settings' && <Settings />}

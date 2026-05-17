@@ -40,9 +40,11 @@ interface AnalyzeProps {
 
 function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   // Honor a watchlist hand-off if one is queued in sessionStorage. Falls
-  // back to the default NVDA when there isn't one. App.tsx renders Analyze
-  // conditionally with `&&`, so navigating to Analyze always re-runs this
-  // initializer and consumes any freshly queued hand-off ticker.
+  // back to the default NVDA when there isn't one. Since 2026-05-17 App.tsx
+  // hides-not-unmounts pages (so an in-flight debate's WebSocket survives
+  // navigation), the useState initializer only runs once at app start; the
+  // hashchange effect below re-consumes the pending ticker on subsequent
+  // navigations to #analyze.
   const [ticker, setTicker] = useState(() => consumePendingTicker() ?? 'NVDA');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [engineStatus, setEngineStatus] = useState<EngineStatus>('pending');
@@ -130,6 +132,23 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   useEffect(() => {
     openaiAuthKindRef.current = openaiAuthKind;
   }, [openaiAuthKind]);
+
+  // Re-consume any watchlist hand-off when the user navigates BACK to
+  // #analyze. Since the page stays mounted across nav (so an in-flight
+  // debate's WS survives), the useState initialiser only runs once at
+  // app start — this listener catches the hand-off on every subsequent
+  // arrival.
+  useEffect(() => {
+    const onHashChange = () => {
+      const route = window.location.hash.replace(/^#/, '');
+      if (route === 'analyze') {
+        const pending = consumePendingTicker();
+        if (pending) setTicker(pending);
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   /**
    * Local LLM dynamic state. The model list is whatever the saved runtime
