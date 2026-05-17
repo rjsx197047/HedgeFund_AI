@@ -1,6 +1,6 @@
 # Reading the Debate
 
-*A guided tour of the Analyze page — every element explained, from the input form to the decision card.*
+*A guided tour of the Analyze page, every element explained, from the input form to the decision card.*
 
 ---
 
@@ -8,10 +8,10 @@
 
 The Analyze page has these sections, top to bottom:
 
-1. **Page header** — title and one-line description
-2. **Input card** — ticker, date, Analyze/Stop button
-3. **Status grid** — four status cards (Engine, Data, LLM, Clawless)
-4. **Debate stream** — session header, data summary strip, news card, phase cards, decision card
+1. **Page header**, title and one-line description
+2. **Input card**, ticker, date, Analyze/Stop button
+3. **Status grid**, four status cards (Engine, Data, LLM, Clawless)
+4. **Debate stream**, session header, data summary strip, news card, phase cards, decision card
 5. **Disclaimer footer**
 
 ---
@@ -24,7 +24,7 @@ Type any exchange-listed ticker symbol. The input converts to uppercase automati
 
 ### As-of date field
 
-The date the analysis is anchored to. The engine fetches data up to and including this date. The date picker is capped at today — future dates would produce empty data. The field is disabled while streaming.
+The date the analysis is anchored to. The engine fetches data up to and including this date. The date picker is capped at today, future dates would produce empty data. The field is disabled while streaming.
 
 ### Analyze button
 
@@ -32,15 +32,15 @@ Enabled when the engine is running and no debate is in flight. Click it, or pres
 
 ### Stop button
 
-Appears in place of the Analyze button while a debate is streaming. Click it, or press `Cmd+.`, to close the WebSocket immediately. The engine handles the disconnect cleanly — no data corruption or error. Partial results already received remain visible in the debate stream.
+Appears in place of the Analyze button while a debate is streaming. Click it, or press `Cmd+.`, to close the WebSocket immediately. The engine handles the disconnect cleanly, no data corruption or error. Partial results already received remain visible in the debate stream.
 
 ### Helper text
 
 Below the buttons, a one-line status describes the engine state:
 
-- **Engine starting — sidecar handshake pending.** The Python sidecar is spawning. Usually clears within 2-3 seconds.
-- **Stub debate — analyst messages reference real data when reachable.** Engine is ready; no LLM key is configured.
-- **Streaming agent debate from sidecar — Stop to abort.** A debate is in flight.
+- **Engine starting, sidecar handshake pending.** The Python sidecar is spawning. Usually clears within 2-3 seconds.
+- **Stub debate, analyst messages reference real data when reachable.** Engine is ready; no LLM key is configured.
+- **Streaming agent debate from sidecar, Stop to abort.** A debate is in flight.
 - **Engine failed to start: \<message>.** The sidecar didn't start. See [troubleshooting.md](troubleshooting.md).
 
 ### Copy transcript button
@@ -79,7 +79,7 @@ Shows the LLM configuration state. Currently always shows "Not configured" becau
 
 ### Clawless card
 
-Shows the Clawless gateway connection state. Currently always shows "Disconnected" — the gateway connector is Phase 6. See [clawless-connector.md](clawless-connector.md).
+Shows the Clawless gateway connection state. Currently always shows "Disconnected", the gateway connector is Phase 6. See [clawless-connector.md](clawless-connector.md).
 
 ---
 
@@ -95,10 +95,10 @@ Shows the ticker and trade date for the current session. While the stream is ope
 
 Appears after the `data.summary` event arrives (one of the first events). A compact horizontal strip shows:
 
-- **Last close** — closing price as of the last complete trading day before your trade date
-- **Period change** — percent change over the lookback window; green for positive, red for negative
-- **Range** — period low – period high
-- **Avg volume** — mean daily volume over the window, formatted as M (millions) or K (thousands)
+- **Last close**, closing price as of the last complete trading day before your trade date
+- **Period change**, percent change over the lookback window; green for positive, red for negative
+- **Range**, period low,  period high
+- **Avg volume**, mean daily volume over the window, formatted as M (millions) or K (thousands)
 - A metadata line: number of sessions, data source, and the `as_of` date
 
 If yfinance could not fetch data (offline, unknown ticker, future date), the summary strip is absent. Agent messages that reference prices fall back to generic language.
@@ -112,7 +112,7 @@ Appears after the `news.headlines` event arrives. Shows up to 5 recent Yahoo Fin
 Agent messages are grouped into phase cards. Each phase card has:
 
 - A phase header with the phase name (Analysts, Researchers, Trader, Risk) and a subtitle listing the agents in that phase
-- A colored left border — each phase has a distinct color for quick visual scanning
+- A colored left border, each phase has a distinct color for quick visual scanning
 - Agent message articles, each showing the agent name and its message content
 
 Phases render in order as their first message arrives: Analysts → Researchers → Trader → Risk. Within a phase, messages append as they stream in.
@@ -130,9 +130,9 @@ Phases render in order as their first message arrives: Analysts → Researchers 
 
 Appears after `session.complete` arrives. The card is color-coded by action:
 
-- **BUY** — green
-- **SELL** — red
-- **HOLD** — amber
+- **BUY**, green
+- **SELL**, red
+- **HOLD**, amber
 
 The card shows the action, confidence percentage, and the portfolio manager's reasoning. In stub mode the reasoning includes "Stub canned debate" and may reference real price data. In live mode the reasoning is the portfolio manager's actual model output.
 
@@ -150,6 +150,6 @@ This is not decorative. The app is designed for research and paper trading only.
 
 ## Further reading
 
-- [How it works](how-it-works.md) — what each agent is doing and why
-- [Keyboard shortcuts](keyboard-shortcuts.md) — Cmd+Enter, Cmd+., and navigation shortcuts
-- [Troubleshooting](troubleshooting.md) — when the stream doesn't start or stops unexpectedly
+- [How it works](how-it-works.md), what each agent is doing and why
+- [Keyboard shortcuts](keyboard-shortcuts.md), Cmd+Enter, Cmd+., and navigation shortcuts
+- [Troubleshooting](troubleshooting.md), when the stream doesn't start or stops unexpectedly

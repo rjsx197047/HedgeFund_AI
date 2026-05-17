@@ -8,18 +8,18 @@
 
 The engine fetches two types of data before running a debate:
 
-1. **A price summary** — last close, period range, average volume, session count
-2. **News headlines** — recent Yahoo Finance news for the ticker
+1. **A price summary**, last close, period range, average volume, session count
+2. **News headlines**, recent Yahoo Finance news for the ticker
 
 Both are fetched at the start of every WS session, before any agent speaks. If a fetch fails, the engine degrades gracefully: the debate runs with reduced context rather than failing entirely.
 
 ---
 
-## Yahoo Finance — the free default
+## Yahoo Finance: the free default
 
 Yahoo Finance is the default data source. It requires no API key and no configuration. The engine is already using it when you first launch the app.
 
-The Settings page shows **Yahoo Finance — Active · default** in the Data Providers tab with no Configure button — there is nothing to configure.
+The Settings page shows **Yahoo Finance, Active · default** in the Data Providers tab with no Configure button, there is nothing to configure.
 
 ### What it provides
 
@@ -41,7 +41,7 @@ The Settings page shows **Yahoo Finance — Active · default** in the Data Prov
 
 ---
 
-## Alpaca Markets — optional power-user data
+## Alpaca Markets: optional power-user data
 
 Alpaca provides IEX/SIP market data feed access under a paid subscription. Adding Alpaca credentials is optional.
 
@@ -86,7 +86,7 @@ This is a deliberate summary, not a raw dataframe. Raw OHLCV tables are noisy an
 
 Both yfinance and Alpaca handle crypto, but their coverage differs:
 
-- **yfinance** uses the `BTC-USD` style symbol. Major pairs (BTC, ETH, SOL, etc.) are well covered. Stablecoin-quoted pairs (`USDT`/`USDC` quotes) collapse to the USD pair — yfinance doesn't expose USDT pairs reliably.
+- **yfinance** uses the `BTC-USD` style symbol. Major pairs (BTC, ETH, SOL, etc.) are well covered. Stablecoin-quoted pairs (`USDT`/`USDC` quotes) collapse to the USD pair, yfinance doesn't expose USDT pairs reliably.
 - **Alpaca** uses the exact `BTC/USD` pair format and hits a dedicated endpoint at `/v1beta3/crypto/us/bars`. Better coverage for stablecoin-quoted pairs and altcoins.
 
 The engine **auto-routes** crypto tickers to the right endpoint per provider. The **Data** pill on the Analyze page gains a **"crypto"** badge when the active stream is crypto, so you can confirm the engine routed correctly.
@@ -103,14 +103,14 @@ Separately from market data, the engine fetches public social signal (StockTwits
 
 ## Deferred providers
 
-**Massive.com / Polygon-class providers** — institutional-grade tick data and alternative data. Deferred until a feature specifically requires it. Alpaca is sufficient for v1.
+**Massive.com / Polygon-class providers**, institutional-grade tick data and alternative data. Deferred until a feature specifically requires it. Alpaca is sufficient for v1.
 
 ---
 
 ## Further reading
 
-- [How it works](how-it-works.md) — how data fits into the debate flow
-- [Crypto tickers](crypto-tickers.md) — symbol normalization and routing
-- [Sentiment](sentiment.md) — StockTwits + Reddit pre-fetch
-- [Troubleshooting](troubleshooting.md) — yfinance returns no data
+- [How it works](how-it-works.md), how data fits into the debate flow
+- [Crypto tickers](crypto-tickers.md), symbol normalization and routing
+- [Sentiment](sentiment.md), StockTwits + Reddit pre-fetch
+- [Troubleshooting](troubleshooting.md), yfinance returns no data
 - Engine API reference for data endpoints: [docs/api.md](../api.md)

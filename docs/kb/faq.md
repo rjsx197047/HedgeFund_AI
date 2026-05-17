@@ -23,7 +23,7 @@ You can connect a live Alpaca account, but:
 
 ### Does it guarantee profitable trades?
 
-No. The agent debate produces a recommendation — BUY, SELL, or HOLD — with a confidence level. The confidence is a model output, not a probability of profit. Past analysis results have no predictive value for future returns. This is a research tool, not a trading signal service.
+No. The agent debate produces a recommendation, BUY, SELL, or HOLD, with a confidence level. The confidence is a model output, not a probability of profit. Past analysis results have no predictive value for future returns. This is a research tool, not a trading signal service.
 
 ---
 
@@ -31,7 +31,7 @@ No. The agent debate produces a recommendation — BUY, SELL, or HOLD — with a
 
 - **Not a brokerage.** It does not execute trades on its own.
 - **Not a registered investment advisor.** Nothing it produces is investment advice.
-- **Not a Clawless extension, plugin, add-on, or integration.** It is a standalone product that can optionally connect to a Clawless gateway — the same way it can optionally connect to Alpaca or Yahoo Finance.
+- **Not a Clawless extension, plugin, add-on, or integration.** It is a standalone product that can optionally connect to a Clawless gateway, the same way it can optionally connect to Alpaca or Yahoo Finance.
 - **Not a live trading platform.** Paper trading is the intended use case.
 
 ---
@@ -74,7 +74,7 @@ Not at this time. TradingAgentsLab is an independent fork under AGPL-3.0 for its
 
 TradingAgentsLab is a **standalone trading companion for Clawless**. It is an independent product with its own codebase, license, and UI.
 
-Clawless is one of several optional connectors in TradingAgentsLab — alongside Alpaca, Yahoo Finance, and direct LLM provider keys. Connecting the two is optional. TradingAgentsLab works fully without a running Clawless instance.
+Clawless is one of several optional connectors in TradingAgentsLab, alongside Alpaca, Yahoo Finance, and direct LLM provider keys. Connecting the two is optional. TradingAgentsLab works fully without a running Clawless instance.
 
 No code is shared between the two products. Brand-level coherence (compatible dark palette, compatible font choices) is achieved through independent design decisions, not code reuse.
 
@@ -92,11 +92,11 @@ Four provider families are wired end-to-end today: **OpenAI**, **Anthropic**, **
 
 ### Can I use my paid ChatGPT account instead of an API key?
 
-Yes — for OpenAI only. The OAuth flow routes debates through `chatgpt.com/backend-api/codex/responses` (the Codex backend, same as the ChatGPT web app and Codex CLI), so debates bill against your ChatGPT subscription rate limits rather than per-token API charges. See [oauth.md](oauth.md). Free-tier ChatGPT accounts are unreliable here — paste an API key instead.
+Yes, for OpenAI only. The OAuth flow routes debates through `chatgpt.com/backend-api/codex/responses` (the Codex backend, same as the ChatGPT web app and Codex CLI), so debates bill against your ChatGPT subscription rate limits rather than per-token API charges. See [oauth.md](oauth.md). Free-tier ChatGPT accounts are unreliable here, paste an API key instead.
 
 ### Why is there no Anthropic OAuth?
 
-Anthropic's Terms of Service prohibit OAuth flows for their API. TradingAgentsLab respects this — Anthropic is API-key only.
+Anthropic's Terms of Service prohibit OAuth flows for their API. TradingAgentsLab respects this, Anthropic is API-key only.
 
 ### Can I use multiple providers simultaneously?
 
@@ -113,8 +113,8 @@ Yahoo Finance by default (free, no API key required). Optionally Alpaca for powe
 ### Does TradingAgentsLab send data to any server?
 
 - Market data is fetched from Yahoo Finance's public endpoints.
-- LLM calls go to your configured provider (OpenAI, Anthropic, OpenRouter, Gemini) using your own key — or, for OpenAI OAuth, through the Codex backend using your ChatGPT subscription.
-- No data is sent to TradingAgentsLab's own servers — the app has none. No telemetry, no analytics, no error reports. All processing happens locally.
+- LLM calls go to your configured provider (OpenAI, Anthropic, OpenRouter, Gemini) using your own key, or, for OpenAI OAuth, through the Codex backend using your ChatGPT subscription.
+- No data is sent to TradingAgentsLab's own servers, the app has none. No telemetry, no analytics, no error reports. All processing happens locally.
 
 ### Are my API keys safe?
 
@@ -122,15 +122,15 @@ Yes. Keys are encrypted by your OS keychain (Keychain on macOS, DPAPI on Windows
 
 ### Where is my debate history stored?
 
-Locally, in `<repo>/data/sessions.db` (SQLite). The History page reads from this file. Delete the file to wipe history. It is not encrypted at rest — store the repo on an encrypted volume (FileVault, BitLocker, LUKS) if you want at-rest encryption for transcripts.
+Locally, in `<repo>/data/sessions.db` (SQLite). The History page reads from this file. Delete the file to wipe history. It is not encrypted at rest, store the repo on an encrypted volume (FileVault, BitLocker, LUKS) if you want at-rest encryption for transcripts.
 
 ---
 
 ## Further reading
 
-- [Getting started](getting-started.md) — install and run
-- [How it works](how-it-works.md) — the multi-agent pipeline
-- [Configuring LLM providers](configuring-llm-providers.md) — set up your providers
-- [OAuth](oauth.md) — ChatGPT subscription routing
-- [Clawless connector](clawless-connector.md) — optional gateway tap
-- [Security and storage](security-and-storage.md) — how keys are protected
+- [Getting started](getting-started.md), install and run
+- [How it works](how-it-works.md), the multi-agent pipeline
+- [Configuring LLM providers](configuring-llm-providers.md), set up your providers
+- [OAuth](oauth.md), ChatGPT subscription routing
+- [Clawless connector](clawless-connector.md), optional gateway tap
+- [Security and storage](security-and-storage.md), how keys are protected

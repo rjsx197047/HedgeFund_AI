@@ -8,10 +8,10 @@
 
 ## Prerequisites
 
-- **macOS** — the app is developed and tested on macOS. Windows and Linux are not tested today; they may work but you may hit rough edges (see [troubleshooting.md](troubleshooting.md)).
-- **Python 3.13** — the engine sidecar requires Python 3.13. Check with `python3 --version`.
-- **Node.js 20+** — the desktop app requires Node.js. Check with `node --version`.
-- **Git** — to clone the repo.
+- **macOS**, the app is developed and tested on macOS. Windows and Linux are not tested today; they may work but you may hit rough edges (see [troubleshooting.md](troubleshooting.md)).
+- **Python 3.13**, the engine sidecar requires Python 3.13. Check with `python3 --version`.
+- **Node.js 20+**, the desktop app requires Node.js. Check with `node --version`.
+- **Git**, to clone the repo.
 
 ---
 
@@ -24,8 +24,8 @@ cd TradingAgentsLab
 
 The repo has two main remotes:
 
-- `origin` — `https://github.com/RBJGlobal/TradingAgentsLab.git` (this fork, AGPL-3.0)
-- `upstream` — `https://github.com/TauricResearch/TradingAgents.git` (Apache 2.0 source)
+- `origin`, `https://github.com/RBJGlobal/TradingAgentsLab.git` (this fork, AGPL-3.0)
+- `upstream`, `https://github.com/TauricResearch/TradingAgents.git` (Apache 2.0 source)
 
 You only need `origin` to run the app.
 
@@ -48,12 +48,12 @@ pip install -r engine/requirements.txt
 
 The `requirements.txt` installs:
 
-- `fastapi` + `uvicorn` — the HTTP/WebSocket server
-- `yfinance` — free market data (no key required)
-- `openai` — for live-LLM debates once you configure a key
-- `websockets` — WebSocket support for uvicorn
+- `fastapi` + `uvicorn`, the HTTP/WebSocket server
+- `yfinance`, free market data (no key required)
+- `openai`, for live-LLM debates once you configure a key
+- `websockets`, WebSocket support for uvicorn
 
-The venv must live at `engine/.venv` — that is the path the Electron main process uses to spawn the sidecar automatically.
+The venv must live at `engine/.venv`, that is the path the Electron main process uses to spawn the sidecar automatically.
 
 ### Verify the engine works
 
@@ -97,9 +97,9 @@ When the app opens, the Analyze page loads. The **Engine** status card in the mi
 
 1. The Analyze page defaults to ticker `NVDA` and today's date.
 2. Click **Analyze** (or press `Cmd+Enter`).
-3. The debate streams in over about 7 seconds — analysts, then researchers, then the trader, then the risk panel, then a final decision card.
+3. The debate streams in over about 7 seconds, analysts, then researchers, then the trader, then the risk panel, then a final decision card.
 
-By default — with no LLM provider configured — the debate is a **stub**: agent messages reference real Yahoo Finance data but the reasoning is canned. To activate real LLM reasoning, connect at least one provider (OpenAI, Anthropic, OpenRouter, or Google Gemini — API key or, for OpenAI, ChatGPT OAuth). See [configuring-llm-providers.md](configuring-llm-providers.md) and [oauth.md](oauth.md).
+By default, with no LLM provider configured, the debate is a **stub**: agent messages reference real Yahoo Finance data but the reasoning is canned. To activate real LLM reasoning, connect at least one provider (OpenAI, Anthropic, OpenRouter, or Google Gemini, API key or, for OpenAI, ChatGPT OAuth). See [configuring-llm-providers.md](configuring-llm-providers.md) and [oauth.md](oauth.md).
 
 ---
 
@@ -131,6 +131,6 @@ The smoke script accepts an optional ticker and trade date. It exits 0 when all 
 
 ## Next steps
 
-- [Configuring LLM providers](configuring-llm-providers.md) — paste your OpenAI key to turn on real-LLM debates
-- [Reading the debate](reading-the-debate.md) — understand the Analyze page
-- [Keyboard shortcuts](keyboard-shortcuts.md) — speed up your workflow
+- [Configuring LLM providers](configuring-llm-providers.md), paste your OpenAI key to turn on real-LLM debates
+- [Reading the debate](reading-the-debate.md), understand the Analyze page
+- [Keyboard shortcuts](keyboard-shortcuts.md), speed up your workflow

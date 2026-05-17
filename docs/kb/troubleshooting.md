@@ -6,7 +6,7 @@
 
 ## Engine problems
 
-### "Engine starting — sidecar handshake pending" never clears
+### "Engine starting, sidecar handshake pending" never clears
 
 The Python sidecar didn't start or didn't emit its handshake line.
 
@@ -40,9 +40,9 @@ The Python sidecar didn't start or didn't emit its handshake line.
 The Analyze page shows this in the helper text when `getHealth()` fails after the handshake.
 
 Common causes:
-- Port conflict — another process is already on the randomly chosen port (rare, since the port is dynamic).
-- `requirements.txt` not installed — the venv is missing `fastapi` or `uvicorn`. Reinstall with `pip install -r engine/requirements.txt`.
-- Python version mismatch — the engine requires Python 3.13. Check `engine/.venv/bin/python --version`.
+- Port conflict, another process is already on the randomly chosen port (rare, since the port is dynamic).
+- `requirements.txt` not installed, the venv is missing `fastapi` or `uvicorn`. Reinstall with `pip install -r engine/requirements.txt`.
+- Python version mismatch, the engine requires Python 3.13. Check `engine/.venv/bin/python --version`.
 
 ---
 
@@ -52,9 +52,9 @@ Common causes:
 
 The Analyze page should inject your stored credentials automatically. If you still see stub messages:
 
-1. Check that the **"Run with"** dropdown in the Analyze header shows your provider (not "Stub mode"). If only stub is offered, the credentials weren't successfully decrypted — try **Replace** in Settings to re-save the key.
+1. Check that the **"Run with"** dropdown in the Analyze header shows your provider (not "Stub mode"). If only stub is offered, the credentials weren't successfully decrypted, try **Replace** in Settings to re-save the key.
 2. If the dropdown shows your provider but the decision card still says "Stub canned debate", look at engine stderr (visible in the Vite terminal) for messages prefixed `[live_debate]`. A fall-through to stub usually means the provider name in the WS start frame doesn't match the engine's allowlist (`openai`, `anthropic`, `openrouter`, `gemini`).
-3. For OAuth specifically — if **Settings → OpenAI account** shows "Connected" but debates run as stub, click **Disconnect** and **Connect** again to refresh the tokens.
+3. For OAuth specifically, if **Settings → OpenAI account** shows "Connected" but debates run as stub, click **Disconnect** and **Connect** again to refresh the tokens.
 
 The decision card's reasoning text says "Stub canned debate" to make this visible.
 
@@ -91,7 +91,7 @@ The price summary strip is absent when `data.summary` was not emitted. This happ
 - **Future date:** the date picker is capped at today, but if you bypass this, future dates produce no bars.
 - **Network issue:** yfinance can rate-limit or time out. Wait a minute and try again.
 
-The debate still runs when data is unavailable — analyst messages fall back to generic language rather than referencing specific prices.
+The debate still runs when data is unavailable, analyst messages fall back to generic language rather than referencing specific prices.
 
 ### yfinance news headlines are empty
 
@@ -105,7 +105,7 @@ This is normal for some tickers or at certain times of day. Yahoo Finance's news
 
 This error appears at the top of the Settings page on Linux when no keyring is running.
 
-`safeStorage` on Linux requires a running secret-service implementation (GNOME Keyring, KWallet, etc.). Without it, the app refuses to store secrets in plaintext — the hard-fail is intentional.
+`safeStorage` on Linux requires a running secret-service implementation (GNOME Keyring, KWallet, etc.). Without it, the app refuses to store secrets in plaintext, the hard-fail is intentional.
 
 **Fix on Linux:**
 - Install and start GNOME Keyring: `gnome-keyring-daemon --start`
@@ -142,7 +142,7 @@ Run:
 npm --prefix desktop run type-check
 ```
 
-Fix any errors before running the app — type errors in `electron/` can prevent the main process from starting.
+Fix any errors before running the app, type errors in `electron/` can prevent the main process from starting.
 
 ---
 
@@ -160,6 +160,6 @@ The smoke test starts the engine, runs 8 assertions (auth, CORS, HTTP endpoints,
 
 ## Further reading
 
-- [Getting started](getting-started.md) — initial setup, venv creation
-- [Security and storage](security-and-storage.md) — secrets.json location, Linux keyring
-- [How it works](how-it-works.md) — stub mode vs. live mode
+- [Getting started](getting-started.md), initial setup, venv creation
+- [Security and storage](security-and-storage.md), secrets.json location, Linux keyring
+- [How it works](how-it-works.md), stub mode vs. live mode

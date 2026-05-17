@@ -1,6 +1,6 @@
 # Keyboard Shortcuts
 
-*Every keyboard shortcut in TradingAgentsLab — menu accelerators and page-level shortcuts.*
+*Every keyboard shortcut in TradingAgentsLab, menu accelerators and page-level shortcuts.*
 
 ---
 
@@ -18,8 +18,8 @@ These are defined in `desktop/electron/menu.ts` and are active from anywhere in 
 
 | Shortcut | Action |
 |---|---|
-| `Cmd+N` | New analysis — navigates to the Analyze page and clears any prior results |
-| `Cmd+.` | Stop streaming — closes the active WebSocket if a debate is in flight |
+| `Cmd+N` | New analysis, navigates to the Analyze page and clears any prior results |
+| `Cmd+.` | Stop streaming, closes the active WebSocket if a debate is in flight |
 
 ### Go menu
 
@@ -32,7 +32,7 @@ These are defined in `desktop/electron/menu.ts` and are active from anywhere in 
 
 ### Edit menu
 
-Standard editing shortcuts — these are platform defaults:
+Standard editing shortcuts, these are platform defaults:
 
 | Shortcut | Action |
 |---|---|
@@ -79,7 +79,7 @@ On Windows and Linux, `Cmd` maps to `Ctrl` for all shortcuts above.
 
 ## Notes
 
-- `Cmd+N` navigates to the Analyze page and resets state (clears prior results). It does not close an in-flight stream — use `Cmd+.` first if a debate is running.
+- `Cmd+N` navigates to the Analyze page and resets state (clears prior results). It does not close an in-flight stream, use `Cmd+.` first if a debate is running.
 - `Cmd+.` is safe to press when nothing is streaming. It simply no-ops.
 - The **Watchlist** and **History** pages show "Coming Soon" placeholders. Navigating to them (via `Cmd+2` / `Cmd+3`) works, but there is no content yet.
 - Help menu links are available under **Help → TradingAgentsLab on GitHub** and **Help → Report an issue**. These open in your default browser.
@@ -88,5 +88,5 @@ On Windows and Linux, `Cmd` maps to `Ctrl` for all shortcuts above.
 
 ## Further reading
 
-- [Reading the debate](reading-the-debate.md) — how to use the Analyze page effectively
-- [Getting started](getting-started.md) — first-run setup
+- [Reading the debate](reading-the-debate.md), how to use the Analyze page effectively
+- [Getting started](getting-started.md), first-run setup

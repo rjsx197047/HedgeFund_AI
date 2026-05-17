@@ -28,7 +28,7 @@ You can find the exact path in **Settings → About → Secrets file**. The path
 
 ---
 
-## secrets.json — how key storage works
+## secrets.json: how key storage works
 
 ### Encryption model
 
@@ -74,13 +74,13 @@ The `secrets.json` file is written atomically: the new content is written to a `
 
 ### OAuth token lifecycle
 
-OAuth access tokens are short-lived (typically 1 hour). The OAuth service in the Electron main process auto-refreshes within a 60-second window of expiry using the stored refresh token. On every refresh, a new ciphertext blob is written atomically to `secrets.json`. The renderer fetches fresh credentials via `getOpenAICredentialsForRequest()` immediately before each WebSocket start frame — tokens never live in React state for longer than one stream frame.
+OAuth access tokens are short-lived (typically 1 hour). The OAuth service in the Electron main process auto-refreshes within a 60-second window of expiry using the stored refresh token. On every refresh, a new ciphertext blob is written atomically to `secrets.json`. The renderer fetches fresh credentials via `getOpenAICredentialsForRequest()` immediately before each WebSocket start frame, tokens never live in React state for longer than one stream frame.
 
 ---
 
-## sessions.db — local debate history
+## sessions.db: local debate history
 
-The engine writes every completed debate to SQLite at `<repo>/data/sessions.db`. This is **not encrypted** — it lives under your repo directory and is protected only by file-system permissions.
+The engine writes every completed debate to SQLite at `<repo>/data/sessions.db`. This is **not encrypted**, it lives under your repo directory and is protected only by file-system permissions.
 
 What's stored per session:
 
@@ -100,9 +100,9 @@ To reset history: delete the `data/sessions.db` file. The engine recreates it on
 
 ---
 
-## Engine sidecar — process isolation
+## Engine sidecar: process isolation
 
-The Python sidecar binds exclusively to `127.0.0.1` (loopback). It cannot be reached from the network. Every request requires a per-process bearer token that is generated at startup and passed to the renderer via an IPC channel — the token is never written to disk.
+The Python sidecar binds exclusively to `127.0.0.1` (loopback). It cannot be reached from the network. Every request requires a per-process bearer token that is generated at startup and passed to the renderer via an IPC channel, the token is never written to disk.
 
 WebSocket authentication uses a query parameter (`?token=…`) because browsers cannot set Authorization headers on WebSocket connections. The token changes every time the sidecar restarts (i.e., every time you launch the app).
 
@@ -112,7 +112,7 @@ WebSocket authentication uses a query parameter (`?token=…`) because browsers 
 
 Because `safeStorage` encryption is machine- and user-bound, you cannot copy `secrets.json` to a new machine and have it work. The ciphertext cannot be decrypted outside the original machine + user context.
 
-`sessions.db` is portable — copy the file to the new machine and the History page will show your previous debates immediately. (It contains transcripts, not credentials, so there's no decryption issue.)
+`sessions.db` is portable, copy the file to the new machine and the History page will show your previous debates immediately. (It contains transcripts, not credentials, so there's no decryption issue.)
 
 ### Recovery procedure
 
@@ -127,16 +127,16 @@ There is no automated secrets export/import feature today. Manual re-entry is th
 
 ## What is never stored
 
-- Plaintext API keys — never written anywhere.
-- Engine bearer tokens — generated at runtime, held in memory only.
-- Plaintext OAuth tokens — only the encrypted blob hits disk; in-memory access tokens are dropped between debate sessions.
-- Telemetry — TradingAgentsLab sends no analytics, no error reports, no usage data anywhere.
+- Plaintext API keys, never written anywhere.
+- Engine bearer tokens, generated at runtime, held in memory only.
+- Plaintext OAuth tokens, only the encrypted blob hits disk; in-memory access tokens are dropped between debate sessions.
+- Telemetry, TradingAgentsLab sends no analytics, no error reports, no usage data anywhere.
 
 ---
 
 ## Further reading
 
-- [Configuring LLM providers](configuring-llm-providers.md) — how to add and manage keys
-- [OAuth](oauth.md) — token lifecycle and refresh model
-- [Troubleshooting](troubleshooting.md) — encryption unavailable on Linux
-- [Getting started](getting-started.md) — initial setup
+- [Configuring LLM providers](configuring-llm-providers.md), how to add and manage keys
+- [OAuth](oauth.md), token lifecycle and refresh model
+- [Troubleshooting](troubleshooting.md), encryption unavailable on Linux
+- [Getting started](getting-started.md), initial setup
