@@ -7,6 +7,7 @@ import {
   type WatchlistEntry,
 } from '../lib/engine-client';
 import { setPendingTicker } from '../lib/handoff';
+import BatchRunner from '../components/BatchRunner';
 
 function formatRelative(iso: string): string {
   const ts = new Date(iso).getTime();
@@ -153,6 +154,10 @@ function Watchlist() {
       </form>
 
       {loadError && <div className={styles.errorBanner}>{loadError}</div>}
+
+      {entries && entries.length > 0 && (
+        <BatchRunner tickers={entries.map((e) => e.ticker)} />
+      )}
 
       {entries === null && !loadError && (
         <div className={styles.placeholder}>Loading watchlist…</div>
