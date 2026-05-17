@@ -12,9 +12,69 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-16 late-evening, mid-session)
+## Where we are right now (as of 2026-05-17 evening, end of session)
 
-### Today (2026-05-16) — website-build day + org transfer + monetization roadmap
+### Today (2026-05-17) — universal style rule + parent-site subpage brief + "wrap-up" trigger formalised
+
+A short session built on yesterday's foundation. Three concrete shipments:
+
+**1. "No em-dashes anywhere public-facing" locked as universal style rule.**
+- Founder explicitly extended the legal-only em-dash ban to all user-visible text: website, docs, KB, README, legal, error messages, modals. Hyphens in compound words still fine.
+- Saved to memory: `feedback_no_em_dashes.md`. Added to `MEMORY.md` index. Added bullet to `CLAUDE.md §3 Marketing / legal` (right after banned-phrasing list).
+- Mechanical scrub across both repos. Perl substitution with UTF-8 mode (em-dash U+2014, en-dash U+2013) → comma. Hand-tuned:
+  - Hero copy on `/` rewritten with parentheses: "Twelve specialised AI agents (analysts, researchers, a trader, risk seats) independently study a stock..."
+  - 4 comma-splices patched (period + capital where two independent clauses met)
+  - 5 heading captions converted to colons: `## sessions.db: local debate history`, `## Yahoo Finance: the free default`, `## Privacy: zero data collection`, etc.
+- Verified clean: zero em/en-dashes remain in public-facing files. TypeScript + build green on site.
+- Pushed both repos:
+  - `RBJGlobal/TradingAgentsLab`  `5f1a0a1`  19 files (README + 16 KB pages + CLAUDE.md)
+  - `RBJGlobal/TradingAgentsLab-Site`  `5bfdc7e`  31 files (all pages + components + re-synced KB)
+- Cloudflare Pages auto-deployed the site update.
+
+**2. `/products/tradingagentslab` subpage brief delivered to Clawless Site Developer.**
+- He DMed via ClaudeLink asking for paths, positioning paragraph, 5 capability beats, disclaimers to name, license posture, primary CTA target.
+- Replied with all 6 + banned/approved phrasing reminder + locked "Standalone trading companion for Clawless" framing + The Diligence as the multi-agent process brand.
+- He drafted the subpage end-to-end on `rbjglobal-site` main as local commit `da22f72`. Honoured all banned phrases (verified by grep), used the locked positioning sentence, included AGPL-3.0 + Apache-2.0 attribution + "not investment advice" / "does not place trades" disclaimers. Confirmed em-dash-free.
+- Status: NOT YET PUSHED. Founder reviews on rbjglobal.com (locally previewable at `cd /Users/junaidsiddiqi/Projects/rbjglobal-site && bun run dev` → http://localhost:3000/products/tradingagentslab) first thing tomorrow. If approved, he pushes.
+
+**3. "wrap-up" formalised as a structured close-of-session trigger.**
+- Founder defined the word: when he says "wrap-up," do the full structured close (memory + CLAUDE.md + Handover + WORKLOG + commit + inbox + report), not a generic farewell.
+- Added explicit subsection to `CLAUDE.md §4 Session discipline` enumerating the 7-step sequence so a fresh agent boot picks up the protocol.
+- Saved to memory: `feedback_wrapup_command.md`. Supersedes/generalizes the older `feedback_session_wrapup.md`.
+
+### Recent commits on this repo (all pushed)
+
+```
+5f1a0a1  docs: remove em-dashes from public-facing copy
+7852117  docs: session wrap — website-day arc + monetization roadmap context
+738c42f  chore: repoint repo URLs jaysidd → RBJGlobal
+77f59cf  ui: brand the multi-agent process "The Diligence"
+3480ee8  feat(webhooks): Phase 8a — Telegram / Slack / Discord / Generic webhooks v1
+```
+
+### Live state at session end
+
+- Desktop dev stack state UNKNOWN. It was left running from 2026-05-16 wrap for founder regression testing. Today's work was pure docs / website — no app interaction. If founder closed it, restart with `npm --prefix desktop run dev` from `/Users/junaidsiddiqi/Projects/TradingAgents/`. If still running, leave it; founder may resume regression testing tomorrow.
+- Cloudflare Pages auto-deploy of `5bfdc7e` should be live within a couple minutes of the push (no manual action needed).
+- `da22f72` on rbjglobal-site is LOCAL ONLY pending founder morning review.
+
+### Open items still pending (carried into tomorrow)
+
+1. **Settings blank-page bug in dev mode.** Untouched today. Still as documented below in the older 2026-05-15 details. Production was already pushed at `3480ee8`; rollback path stays clean if needed.
+2. **OG image generation.** Clawless Site Dev's Python+PIL script is in inbox from 2026-05-16. Not yet generated. Founder hasn't asked, but if he wants the social cards live, generate + drop at `app/opengraph-image.png` on the site repo, commit, push.
+3. **Stage 2 monetization research dispatch.** 5 queued questions at bottom of `project_monetization_roadmap.md` (SEC enforcement against AI-research platforms losing publishers exclusion / state adviser-law exposure / Lemon Squeezy TOS clearance / AGPL-3.0 + paid commercial license patterns / license-activation API patterns without account systems). Founder said "research tomorrow" two days ago. He may pull the trigger today/tomorrow; ask before dispatching agents since this will run a heavy research workload.
+4. **Stage 2 build itself.** Triggered by Apple Developer cert approval (timeline ~2 weeks). Engage Clawless Advisor + Clawless team for license-server pattern when it lands.
+5. **Founder regression notes from yesterday's testing.** Whatever surfaces becomes morning queue.
+
+### First moves when picking back up
+
+1. **Check inbox.** `mcp__claudelink__read_inbox`. Clawless Site Developer may have follow-ups on the subpage. Other agents may have pinged.
+2. **Confirm desktop dev stack state.** If founder closed it, restart with `npm --prefix desktop run dev`. If still running, leave it. Settings blank-page bug repro is in dev mode + DevTools.
+3. **Founder's morning review.** He'll either greenlight the rbjglobal subpage or send copy tweaks back. If greenlit, no action needed on TAL side (Clawless Site Dev pushes). If tweaks, fold them in via ClaudeLink reply.
+4. **Settings blank-page bug** (if founder hits it tonight, queue first thing).
+5. **Optional: OG image generation, Stage 2 research dispatch** — only on founder's explicit go.
+
+### Yesterday (2026-05-16) — website-build day + org transfer + monetization roadmap (compressed)
 
 This was the biggest single-session arc since Phase 0. Three threads:
 

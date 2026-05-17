@@ -6,6 +6,68 @@
 
 ---
 
+## 2026-05-17 (evening) — Em-dash style rule locked universal, rbjglobal subpage brief delivered, "wrap-up" formalised as a trigger
+
+**Goal:** Short maintenance session on the back of yesterday's website day. Founder declared a new style rule mid-session and asked for a structured definition of the "wrap-up" command.
+
+### Three shipments
+
+**1. "No em-dashes anywhere public-facing" locked as universal style rule.**
+- Extended what was previously a legal-pages-only rule to all user-visible text across all projects (TradingAgentsLab, Clawless, WhisprDesk, RBJ Global, Clawdemy).
+- `CLAUDE.md §3 Marketing / legal` bullet added right after banned-phrasing list. Exempts internal-only files (CLAUDE.md, Handover, WORKLOG, code comments, memory).
+- Memory file `feedback_no_em_dashes.md` written and added to `MEMORY.md` index.
+- Mechanical scrub: perl with UTF-8 mode hitting U+2014 (em-dash) and U+2013 (en-dash). Hand-tuned where bulk replace fell short:
+  - Hero copy on `/` rewritten with parentheses: "Twelve specialised AI agents (analysts, researchers, a trader, risk seats) independently study a stock..."
+  - 4 comma-splices patched (period + capital)
+  - 5 heading captions converted to colons (`## sessions.db: local debate history`, `## Yahoo Finance: the free default`, `## Privacy: zero data collection`, etc.)
+- Build + typecheck clean on site. Static export shape unchanged.
+- Commits pushed:
+  - `RBJGlobal/TradingAgentsLab`  `5f1a0a1`  19 files (README + 16 KB pages + CLAUDE.md)
+  - `RBJGlobal/TradingAgentsLab-Site`  `5bfdc7e`  31 files (all pages + components + re-synced KB)
+
+**2. `/products/tradingagentslab` subpage brief delivered to Clawless Site Developer via ClaudeLink.**
+- He asked for project folder paths, 2-3 sentence positioning paragraph, 5 capability beats, disclaimers to name, license posture, primary CTA target.
+- Replied with all 6 + banned/approved phrasing reminder + locked "Standalone trading companion for Clawless" framing + "The Diligence" as the multi-agent process brand.
+- Capability beats given: multi-agent debate via LangGraph / BYO API keys (incl. local LLMs via Ollama or LM Studio) / Yahoo + Alpaca data / per-session Cost Guard with hard budget caps / webhooks for forwarding to user's own broker.
+- License posture given for the subpage: "Free and open source (AGPL-3.0). Runs on the user's own machine." Stage 2 paid binary explicitly excluded from the subpage scope.
+- CTA: `https://tradingagentslab.ai/` primary, `github.com/RBJGlobal/TradingAgentsLab` secondary.
+- He drafted the subpage end-to-end as `da22f72` on rbjglobal-site main, LOCAL ONLY, awaiting founder's morning review. Founder previews via `bun run dev` then signs off or sends tweaks.
+
+**3. "wrap-up" formalised as a structured close-of-session trigger.**
+- Founder defined it explicitly: when he says "wrap-up," do the full structured close (memory sweep + CLAUDE.md update + Handover refresh + WORKLOG prepend + commit + push + inbox check + report), not a generic farewell.
+- Added explicit subsection to `CLAUDE.md §4 Session discipline` enumerating the 7-step sequence.
+- Saved memory file `feedback_wrapup_command.md`. Supersedes `feedback_session_wrapup.md` (kept for back-reference).
+
+### Commits this session
+
+```
+5f1a0a1  docs: remove em-dashes from public-facing copy           (main repo)
+5bfdc7e  copy: remove em-dashes site-wide                          (site repo)
+```
+
+Plus this WORKLOG + Handover + CLAUDE.md wrap-up sweep about to be committed.
+
+### Cross-product coordination
+
+- Clawless Site Developer: subpage brief delivered → he drafted `da22f72` on rbjglobal-site main → awaiting founder review. He confirmed no em-dashes already enforced on rbjglobal-site (family-wide rule, not just ours now).
+
+### Live state at end of session
+
+- Desktop dev stack state unknown. Left running yesterday for regression testing; today was pure docs work, no app interaction. Confirm tomorrow before starting.
+- Cloudflare Pages auto-deploy of `5bfdc7e` lives within a couple minutes of the push.
+- `da22f72` on rbjglobal-site LOCAL ONLY pending founder approval.
+
+### Next session opens with
+
+1. `mcp__claudelink__read_inbox`. Clawless Site Developer may have follow-ups.
+2. Confirm desktop dev stack state. If killed, restart with `npm --prefix desktop run dev`.
+3. Founder's morning review on rbjglobal `/products/tradingagentslab`. Either greenlit (no action TAL-side) or tweaks (fold into ClaudeLink reply).
+4. Settings blank-page bug, still queued from 2026-05-15. Founder may have hit it during last night's regression testing → check first thing.
+5. Founder regression notes from yesterday's testing become morning queue.
+6. Optional, on founder's explicit go: Stage 2 monetization research dispatch (5 questions queued in `project_monetization_roadmap.md`) or OG image generation from Clawless Site Dev's Python script (queued from 2026-05-16 inbox).
+
+---
+
 ## 2026-05-16 (late evening, second session) — Marketing+docs website built end-to-end, both repos transferred to RBJGlobal org, monetization roadmap locked
 
 **Goal:** Founder asked for a full marketing + docs website for TradingAgentsLab — brochure-only, AGPL-3.0 educational positioning, teaching artifact quality, distinct personality from the rest of the family. Delivered end-to-end live in one session.

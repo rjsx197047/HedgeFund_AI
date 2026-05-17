@@ -78,6 +78,20 @@ Why: sidesteps the SEC / financial-advisor regulatory surface entirely. Avoids t
 - **As you work:** update `backlog.md` when items move (pending → in progress → done) and add new items as you discover them.
 - **At end:** update `Handover.md` (current state, blockers, where to pick up) AND prepend a fresh entry to `WORKLOG.md` (date header, what shipped today, commit hashes, next-session-opens-with). Future-you (or a fresh Claude) will thank you.
 
+### "wrap-up" — trigger word
+
+When the founder says "wrap-up" (or "wrap up for the night," "let's wrap," etc.) treat it as a structured close-of-session command, not a generic farewell. Do all of the following before signing off:
+
+1. **Memory sweep.** Save anything durable, surprising, or non-obvious from the session to `~/.claude/projects/.../memory/` (new file or update existing). Locked decisions, founder preferences, voice rules, architectural pivots, deferred-but-promised items.
+2. **CLAUDE.md update.** If a new rule, posture, banned/approved term, or workflow trigger was introduced today, fold it into the right section here so it survives a fresh agent boot.
+3. **Handover.md refresh.** Replace the "Where we are right now" section with today's state. Cover: what threads ran, what shipped, commits pushed, live state (dev stack running?), open issues, what tomorrow opens with. Pretend a fresh Claude with zero memory will read it first thing.
+4. **WORKLOG.md prepend.** Add a new dated section at the top: goal, what shipped (with commit hashes), cross-product coordination, next-session-opens-with checklist.
+5. **Commit + push the docs sweep.** One commit, descriptive message. Ask before push only if non-doc code changed; pure doc/memory updates push automatically.
+6. **Inbox check.** Final `read_inbox` so nothing late stays unread until tomorrow.
+7. **Report.** One short paragraph back to founder: what got saved, what's queued for tomorrow, any state to be aware of (e.g., dev stack still running, pending review on another agent's work).
+
+Goal: if the terminal closes the moment the founder hits send on "wrap-up," next-day Claude can fully resume cold.
+
 ### Periodic upstream check
 
 - **Run `bash tools/upstream-check.sh` weekly** (or at the start of any session that's been more than a few days since the last). It fetches `upstream/main`, reports whether we're behind on tagged releases or unreleased commits, and exits non-zero when there's a merge to consider.
