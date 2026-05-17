@@ -1254,6 +1254,17 @@ function WebhooksTab({ availability }: WebhooksTabProps) {
         setSaveError('URL must start with http:// or https://');
         return;
       }
+      if (trimmed.kind === 'telegram') {
+        const token = extractTelegramToken(trimmed.url);
+        if (!token) {
+          setSaveError('Bot Token is required for Telegram.');
+          return;
+        }
+        if (!trimmed.telegram_chat_id) {
+          setSaveError('Chat ID is required for Telegram.');
+          return;
+        }
+      }
       const existing = webhooks.findIndex((w) => w.id === trimmed.id);
       const next =
         existing >= 0
@@ -1387,6 +1398,23 @@ function hostFromUrl(url: string): string {
   }
 }
 
+/** Telegram URLs embed the bot token. Settings UI asks for the bare token
+ * (closer to how BotFather presents it) and these helpers materialise the
+ * full Bot API URL on the way to storage and back. */
+const TELEGRAM_URL_PREFIX = 'https://api.telegram.org/bot';
+const TELEGRAM_URL_SUFFIX = '/sendMessage';
+
+function extractTelegramToken(url: string): string {
+  if (!url.startsWith(TELEGRAM_URL_PREFIX)) return '';
+  const rest = url.slice(TELEGRAM_URL_PREFIX.length);
+  const slash = rest.indexOf('/');
+  return slash >= 0 ? rest.slice(0, slash) : rest;
+}
+
+function buildTelegramUrl(token: string): string {
+  return `${TELEGRAM_URL_PREFIX}${token.trim()}${TELEGRAM_URL_SUFFIX}`;
+}
+
 interface WebhookEditorProps {
   config: WebhookConfig;
   onCancel: () => void;
@@ -1437,43 +1465,61 @@ function WebhookEditor({ config, onCancel, onSave }: WebhookEditorProps) {
         <p className={styles.hint}>{KIND_HINT[draft.kind]}</p>
       </div>
 
-      <div className={styles.field}>
-        <label className={styles.label}>URL</label>
-        <input
-          type="password"
-          className={styles.input}
-          value={draft.url}
-          onChange={(e) => setDraft({ ...draft, url: e.target.value })}
-          placeholder={
-            draft.kind === 'telegram'
-              ? 'https://api.telegram.org/bot<token>/sendMessage'
-              : draft.kind === 'slack'
+      {draft.kind === 'telegram' ? (
+        <>
+          <div className={styles.field}>
+            <label className={styles.label}>Bot Token</label>
+            <input
+              type="password"
+              className={styles.input}
+              value={extractTelegramToken(draft.url)}
+              onChange={(e) =>
+                setDraft({ ...draft, url: buildTelegramUrl(e.target.value) })
+              }
+              placeholder="123456789:ABCdef-GhIJklmnOPqrsTUVwxyz"
+              data-testid="webhook-url-input"
+            />
+            <p className={styles.hint}>
+              The token BotFather gave you on Telegram. Looks like{' '}
+              <code className={styles.code}>123456789:ABC...</code>. Stored
+              encrypted in your OS keychain; never shown back in the row preview.
+            </p>
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Chat ID</label>
+            <input
+              className={styles.input}
+              value={draft.telegram_chat_id ?? ''}
+              onChange={(e) =>
+                setDraft({ ...draft, telegram_chat_id: e.target.value })
+              }
+              placeholder="12345678 or -100123456789 for groups"
+              data-testid="webhook-chat-id-input"
+            />
+            <p className={styles.hint}>
+              Numeric Telegram chat id. Get yours by messaging{' '}
+              <code className={styles.code}>@userinfobot</code> on Telegram. For
+              group chats the id starts with a minus.
+            </p>
+          </div>
+        </>
+      ) : (
+        <div className={styles.field}>
+          <label className={styles.label}>URL</label>
+          <input
+            type="password"
+            className={styles.input}
+            value={draft.url}
+            onChange={(e) => setDraft({ ...draft, url: e.target.value })}
+            placeholder={
+              draft.kind === 'slack'
                 ? 'https://hooks.slack.com/services/...'
                 : draft.kind === 'discord'
                   ? 'https://discord.com/api/webhooks/<id>/<token>'
                   : 'https://your-receiver.example.com/hook'
-          }
-          data-testid="webhook-url-input"
-        />
-      </div>
-
-      {draft.kind === 'telegram' && (
-        <div className={styles.field}>
-          <label className={styles.label}>Chat ID</label>
-          <input
-            className={styles.input}
-            value={draft.telegram_chat_id ?? ''}
-            onChange={(e) =>
-              setDraft({ ...draft, telegram_chat_id: e.target.value })
             }
-            placeholder="12345678 or -100123456789 for groups"
-            data-testid="webhook-chat-id-input"
+            data-testid="webhook-url-input"
           />
-          <p className={styles.hint}>
-            Numeric Telegram chat id. Get yours by messaging{' '}
-            <code className={styles.code}>@userinfobot</code> on Telegram. For
-            group chats the id starts with a minus.
-          </p>
         </div>
       )}
 
