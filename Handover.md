@@ -12,23 +12,52 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-16 end-of-day)
+## Where we are right now (as of 2026-05-16 late-evening, mid-session)
 
-### Recent commits (all pushed)
+### Today (2026-05-16) — website-build day + org transfer + monetization roadmap
+
+This was the biggest single-session arc since Phase 0. Three threads:
+
+**1. Marketing + docs website built end-to-end and shipped live.**
+- Repo: `RBJGlobal/TradingAgentsLab-Site` (local path: `/Users/junaidsiddiqi/Projects/Trading_agent_site/`)
+- Live URLs: `https://tradingagentslab.ai` (canonical) + `https://tradingagentslab.com` (301 → .ai)
+- Stack: Next.js 15 App Router + React 19 + Tailwind v4 CSS-first + TypeScript strict + static export → Cloudflare Pages dashboard Git integration (no GH Actions)
+- Personality: dark `#0d1117` + warm amber `#f0a830` + JetBrains Mono headings — "Bloomberg Terminal translated to the web". Distinct from RBJ Global (cream/serif), Clawless (B&W), WhisprDesk.
+- 31 static routes: hero, how-it-works, about (with RBJ Global parent hierarchy callout), security, download, docs index, 16 KB doc pages synced from `docs/kb/` via `scripts/sync-docs.sh`, three legal pages.
+- Cross-product coordination: WhisprDesk dev provided full stack handoff + LinkedIn CTA pattern. Clawless Site Dev provided OG image script (queued — PNG not yet generated). rbjglobal.com now has parent-site coverage for TAL on homepage / products / about + JSON-LD subOrganization+sameAs arrays.
+- Independent senior-level audit (CodeRabbit code-reviewer + general-purpose architect) → 3 blockers + 1 high all fixed in `a26c0a4`. Medium-priority follow-ups cleared in `a4abc5b`.
+- 10 commits on `RBJGlobal/TradingAgentsLab-Site` main, all pushed.
+
+**2. Both repos transferred from `jaysidd` to `RBJGlobal` org.**
+- `RBJGlobal/TradingAgentsLab` (this repo, the desktop+engine)
+- `RBJGlobal/TradingAgentsLab-Site` (the marketing site)
+- All hardcoded `jaysidd/TradingAgentsLab` URLs swept and committed (`738c42f` here, multiple on the site). User-Agent / OpenRouter HTTP-Referer / Help menu / Settings → About all updated.
+- Local git remotes already repointed for both repos.
+- GitHub auto-redirects keep old URLs working but canonical references match the new home now.
+
+**3. Stage 1 / 2 / 3 monetization roadmap locked into memory.**
+- See `~/.claude/projects/-Users-junaidsiddiqi-Projects-TradingAgents/memory/project_monetization_roadmap.md` — comprehensive, includes Lemon Squeezy plan, license enforcement design (compile-time `TAL_BUILD_MODE` env-var gate, NOT obfuscation), explicit rejection of the Clawless-mirror close-source path, full Stage 2 launch sequence triggered by Apple Developer cert approval (~half-day work once started; Clawless team will pour the architecture pattern into TAL via ClaudeLink).
+- Source stays fully open on GitHub even after Stage 2. Paying customers buy convenience (signed installer + license activation + support), not source access. AGPL-3.0 stance unchanged.
+- Founder bio on /about: explicitly deferred to ~2-3 weeks (post-LLC + post-Apple-cert). See `project_founder_bio_deferred.md`.
+
+### Recent commits on this repo (all pushed)
 
 ```
+738c42f  chore: repoint repo URLs jaysidd → RBJGlobal
+77f59cf  ui: brand the multi-agent process "The Diligence"
 3480ee8  feat(webhooks): Phase 8a — Telegram / Slack / Discord / Generic webhooks v1
 bf2217d  test(e2e): Playwright + Electron smoke suite (5 tests) + 2 prod-mode bug fixes
 6b0d110  feat(cost-guard): Spend pill in StatusStrip + History sort + mid-stream tick
 ```
 
-### Stacked locally (NOT pushed)
+### Live state at session end
 
-```
-<next>   ui: "The Diligence" — brand the multi-agent process across visible UX touches
-```
+- Desktop dev stack STILL RUNNING — founder is regression-testing. Engine sees Alpaca + OAuth + gpt-5.4 traffic on the wire. Do NOT kill on tomorrow's session start without confirming.
+- If founder closed the window between sessions: bring it back up with `npm --prefix desktop run dev` from `/Users/junaidsiddiqi/Projects/TradingAgents/`.
 
-Small, targeted UX-only commit. Locks in the chosen process name. Engine wire protocol untouched (session.complete stays).
+### Open issue still unresolved — Settings page blanks in dev mode
+
+Carried from yesterday's wrap. Untouched today (website build consumed the day). Founder may have hit it during tonight's regression testing — check inbox + first-thing tomorrow.
 
 ### 🟡 Open issue from tonight — Settings page blanks in dev mode
 

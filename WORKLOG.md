@@ -6,6 +6,100 @@
 
 ---
 
+## 2026-05-16 (late evening, second session) — Marketing+docs website built end-to-end, both repos transferred to RBJGlobal org, monetization roadmap locked
+
+**Goal:** Founder asked for a full marketing + docs website for TradingAgentsLab — brochure-only, AGPL-3.0 educational positioning, teaching artifact quality, distinct personality from the rest of the family. Delivered end-to-end live in one session.
+
+### Website — `RBJGlobal/TradingAgentsLab-Site`
+
+**Stack chosen by coordination with WhisprDesk dev + matching Clawless / RBJ family precedent:**
+- Next.js 15 App Router + React 19 + TypeScript strict
+- Tailwind CSS v4 CSS-first `@theme` tokens (no `tailwind.config.js`)
+- Static export → Cloudflare Pages dashboard Git integration (NOT GH Actions — explicitly deleted the `.github/workflows/deploy.yml` I'd added)
+- `react-markdown` + `remark-gfm` + `rehype-slug` + `rehype-autolink-headings` for docs renderer (hand-rolled instead of Fumadocs — v1 simplicity)
+
+**Personality:**
+- Dark `#0d1117` + warm amber `#f0a830` + JetBrains Mono headings
+- Tagline shape: "AI-driven Diligence on any ticker."
+- "The Diligence" branded prominently as the multi-agent process
+- Distinct from sister sites: RBJ Global = warm cream + Newsreader serif (anthropic.com vibe), Clawless = B&W anti-corporate, WhisprDesk = royal blue + SF Pro
+
+**31 static routes shipped:**
+- `/` — hero, The Diligence demo card, agent flow, capabilities 3-up, posture
+- `/how-it-works/` — four-phase breakdown with per-agent descriptions
+- `/about/` — positioning lock + Family section with RBJ Global parent hierarchy callout + "you are here" badge on TAL product card
+- `/security/` — zero-data-collection posture, network-call disclosure
+- `/download/` — build-from-source steps (DMG TBD on Apple Dev cert)
+- `/docs/` — sidebar grouping over 16 KB pages synced from `docs/kb/` via `scripts/sync-docs.sh`
+- `/legal/{disclaimer,privacy,terms}/` — three-tier SEC-aware copy, em-dash-free per family rule, `robots: noindex` + excluded from sitemap, Travis County TX venue per family precedent
+
+**Cross-product coordination (via ClaudeLink):**
+- WhisprDesk dev → full stack handoff (Tailwind v4 patterns, CSP/HSTS, LinkedIn CTA pattern, `metadataBase` gotcha, GH Actions deploy.yml shape)
+- Clawless Site Dev → family OG-card generator pattern (Python+PIL, 1200x630, Georgia Bold wordmark, amber accent for TAL); also shipped parent-site coverage on rbjglobal.com (homepage product grid + /products/ + /about/ + JSON-LD subOrganization+sameAs)
+- Clawless Advisor → green-lit founder-bio question (founder picked B / defer)
+
+**Independent senior-level audit (CodeRabbit + general-purpose architect, parallel):**
+- 3 blockers: SITE_URL `.com` → `.ai` canonical, cross-doc markdown links 404, hardcoded fake price ticker = AI-washing risk
+- 1 high: mobile drawer focus management
+- All four fixed in `a26c0a4` on the site repo. Medium follow-ups (DocsSidebar active highlight, CSP font-src cleanup, PostureRow dead prop, AgentFlow dead color field, sync-docs stamp) all cleared in `a4abc5b`.
+
+**Deploy + DNS:**
+- Cloudflare Pages project `tradingagentslab-site` connected via dashboard Git integration to `RBJGlobal/TradingAgentsLab-Site` main → autobuild on every push, free PR previews
+- Both `.com` and `.ai` added as custom domains, certs auto-provisioned
+- `.com → .ai` 301 redirect rule deployed on the `.com` zone (NOT the .ai zone — common Cloudflare UI gotcha). Verified with `curl -sI https://tradingagentslab.com/about` → `HTTP/2 301 location: https://tradingagentslab.ai/about`
+- `.ai` is canonical (Pattern 1 in our taxonomy)
+
+**Site commits (10 total, all on origin/main):**
+```
+a4abc5b  chore: audit-pass medium-priority follow-ups
+a26c0a4  fix: audit-pass — canonical domain, doc links, fake ticker, drawer focus
+257f1f3  ui(nav): proper mobile menu (hamburger + drawer)
+4969ec7  ui(family): RBJ Global on top as parent, products underneath
+d136743  chore: fix WhisprDesk URL (whisprdesk.com, not whisperdesk.ai)
+094e3d6  chore: point LinkedIn link to dedicated TAL company page
+460cfbf  chore: drop GH Actions deploy in favour of Cloudflare dashboard Git integration
+ab7f38d  chore: repoint repo URLs jaysidd → RBJGlobal
+eba0de8  polish: legal page rules + LinkedIn footer link
+6131910  init: marketing + docs site scaffold
+```
+
+### GitHub org transfer
+
+- Founder created `github.com/RBJGlobal` org (matches LLC name).
+- `gh api -X POST repos/jaysidd/TradingAgentsLab/transfer` and same for `-Site` → both repos now under RBJGlobal.
+- All hardcoded `jaysidd/TradingAgentsLab` URLs swept across both repos. This repo commit: `738c42f`. Files touched: CLAUDE.md, Handover.md, README.md, backlog.md, docs/kb/getting-started.md (also the upstream copy synced into the site), desktop/electron/menu.ts, desktop/src/pages/Settings.tsx, engine/llm_providers.py (OpenRouter HTTP-Referer), engine/sentiment_sources.py (User-Agent).
+- Local remotes already repointed.
+
+### Monetization roadmap locked in memory
+
+`~/.claude/projects/-Users-junaidsiddiqi-Projects-TradingAgents/memory/project_monetization_roadmap.md` is comprehensive. Three stages, license-enforcement design (compile-time `TAL_BUILD_MODE` env-var gate), explicit rejection of Clawless-mirror close-source path, Stage 2 launch sequence triggered by Apple Developer cert approval.
+
+Highlights:
+- Stage 1 (current) — free OSS, AGPL-3.0, desktop-only, BYO key
+- Stage 2 (~half-day work once Apple cert lands) — 7-day trial → Lemon Squeezy $4.95/mo or $60/yr → signed DMG → license activation → read-only after expiry. **Source stays fully open on GitHub** — paying customers buy convenience, not source access. Pattern source: Clawless team (engage Advisor + Clawless team via ClaudeLink when timing arrives, ~half-day port).
+- Stage 3 (later, speculative) — hosted SaaS with free + paid tiers. Requires securities counsel review of the DESIGN before code. Cleanest path: hosted but BYO-key-in-browser.
+
+Per founder direct quote 2026-05-16: *"as far as the license server is concerned, Clawless Advisor is your best bet. And we're going to engage Clawless team because we have already built, polished, and have the design architect ready."*
+
+### Verification at session end
+
+- Site: `npm run typecheck` clean · `npm run build` clean · 31 static routes · ~106 KB First Load JS · live + indexed at tradingagentslab.ai
+- Desktop dev stack still running (founder regression-testing); engine logs show successful NVDA Diligence against Alpaca + OAuth gpt-5.4 path
+- Both repos all-pushed on `RBJGlobal` org
+- 10 site commits + 1 this-repo commit (`738c42f`) shipped today
+- Inbox processed (3 messages: WhisprDesk dev twice + Clawless Advisor + Clawless Site Dev twice; all FYIs, no action pending)
+
+### Next-session opens with
+
+1. **Check inbox first** — pattern from CLAUDE.md global instructions.
+2. **Confirm desktop dev stack state** — if still running from tonight's session, leave it; if killed, restart with `npm --prefix desktop run dev`.
+3. **Settings blank-page bug** — still queued from yesterday, untouched today. If founder hit it during tonight's regression run, debug accordingly. DevTools console approach unchanged.
+4. **Founder regression notes** — founder said "continue to regression test." Whatever they surface from tonight's runs becomes the morning's queue.
+5. **Possible OG image generation** — Clawless Site Dev's Python script is in inbox. Pick title (recommended: `TradingAgents` per their advisory), pick sub-tagline, generate PNG, drop at `app/opengraph-image.png` (NOT `public/og-image.png` — Next.js convention).
+6. **Possible Stage 2 monetization research dispatch** — founder said "research tomorrow." Five research questions queued at bottom of `project_monetization_roadmap.md`.
+
+---
+
 ## 2026-05-16 — Brand the multi-agent process "The Diligence"
 
 **Goal:** Founder wanted to name the multi-agent debate process with a trademark-able term that distinguishes from algorithmic trading + the overused "agentic AI" buzzword. Done.
