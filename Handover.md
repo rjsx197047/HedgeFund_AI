@@ -12,66 +12,121 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-17 evening, end of session)
+## Where we are right now (as of 2026-05-17 late evening, end of v1.0 closeout day)
 
-### Today (2026-05-17) — universal style rule + parent-site subpage brief + "wrap-up" trigger formalised
+### Today (2026-05-17) — Phase 1 closeout sprint: 14 commits merged to main, v1.0 shipped
 
-A short session built on yesterday's foundation. Three concrete shipments:
+A massive single-day sprint. Founder's brief at the start: "close phase 1 by end of day today." Result: shipped, reviewed, merged to main.
 
-**1. "No em-dashes anywhere public-facing" locked as universal style rule.**
-- Founder explicitly extended the legal-only em-dash ban to all user-visible text: website, docs, KB, README, legal, error messages, modals. Hyphens in compound words still fine.
-- Saved to memory: `feedback_no_em_dashes.md`. Added to `MEMORY.md` index. Added bullet to `CLAUDE.md §3 Marketing / legal` (right after banned-phrasing list).
-- Mechanical scrub across both repos. Perl substitution with UTF-8 mode (em-dash U+2014, en-dash U+2013) → comma. Hand-tuned:
-  - Hero copy on `/` rewritten with parentheses: "Twelve specialised AI agents (analysts, researchers, a trader, risk seats) independently study a stock..."
-  - 4 comma-splices patched (period + capital where two independent clauses met)
-  - 5 heading captions converted to colons: `## sessions.db: local debate history`, `## Yahoo Finance: the free default`, `## Privacy: zero data collection`, etc.
-- Verified clean: zero em/en-dashes remain in public-facing files. TypeScript + build green on site.
-- Pushed both repos:
-  - `RBJGlobal/TradingAgentsLab`  `5f1a0a1`  19 files (README + 16 KB pages + CLAUDE.md)
-  - `RBJGlobal/TradingAgentsLab-Site`  `5bfdc7e`  31 files (all pages + components + re-synced KB)
-- Cloudflare Pages auto-deployed the site update.
+**Headline: `bd94ea0` is the merge commit on `origin/main`.** 14 commits across desktop renderer + Electron main + Python engine + e2e tests + docs, all reviewed independently by two sub-agents (code-reviewer + architect) before merge.
 
-**2. `/products/tradingagentslab` subpage brief delivered to Clawless Site Developer.**
-- He DMed via ClaudeLink asking for paths, positioning paragraph, 5 capability beats, disclaimers to name, license posture, primary CTA target.
-- Replied with all 6 + banned/approved phrasing reminder + locked "Standalone trading companion for Clawless" framing + The Diligence as the multi-agent process brand.
-- He drafted the subpage end-to-end on `rbjglobal-site` main as local commit `da22f72`. Honoured all banned phrases (verified by grep), used the locked positioning sentence, included AGPL-3.0 + Apache-2.0 attribution + "not investment advice" / "does not place trades" disclaimers. Confirmed em-dash-free.
-- Status: NOT YET PUSHED. Founder reviews on rbjglobal.com (locally previewable at `cd /Users/junaidsiddiqi/Projects/rbjglobal-site && bun run dev` → http://localhost:3000/products/tradingagentslab) first thing tomorrow. If approved, he pushes.
+**What landed (in feature order, not commit order):**
 
-**3. "wrap-up" formalised as a structured close-of-session trigger.**
-- Founder defined the word: when he says "wrap-up," do the full structured close (memory + CLAUDE.md + Handover + WORKLOG + commit + inbox + report), not a generic farewell.
-- Added explicit subsection to `CLAUDE.md §4 Session discipline` enumerating the 7-step sequence so a fresh agent boot picks up the protocol.
-- Saved to memory: `feedback_wrapup_command.md`. Supersedes/generalizes the older `feedback_session_wrapup.md`.
+1. **Phase 8b multi-ticker batch runner on Watchlist.** New `desktop/src/components/BatchRunner.tsx` + new shared `desktop/src/lib/run-analysis.ts` helper. Sequential per-ticker debate, each one fires its own webhooks naturally, first cost-block aborts the whole batch.
+2. **Settings → About Legal & Disclaimers link** (three external links to website /legal pages).
+3. **8s AbortController timeout on `getSession`** in engine-client.ts (guards History detail view).
+4. **15s AbortController timeout on `testLLMConnection`** (added pre-merge per code-reviewer H2).
+5. **"Test connection" button per LLM provider row.** New `POST /llm/test` engine endpoint + 6 mocked pytests + renderer button + inline result.
+6. **Window-state persistence to `<userData>/window-state.json`** via new `desktop/electron/window-state.ts`.
+7. **Em-dash scrub across all user-facing renderer strings** (Settings, App, DebateStream, StatusStrip, UpstreamCheckModal, Watchlist, History) per the universal style rule.
+8. **Analyze.tsx refactor: ~180 lines of inlined request-assembly swapped for the shared `runAnalysis` helper.** ProviderConfig resolution + Alpaca data + CostGuard reservation + webhooks all delegated.
+9. **Telegram webhook UX: split URL field into Bot Token + Chat ID.** Renderer extracts / constructs the Bot API URL at storage boundaries. Engine + WebhookConfig schema unchanged.
+10. **Navigate-away WS survival.** Founder discovered mid-day: starting a debate then clicking Watchlist/History killed the engine stream. Fix: asymmetric routing in App.tsx — Analyze stays mounted (`display: contents/none`), other pages still mount/unmount. Founder verified.
+11. **BatchRunner unmount cleanup + mount-guard** (pre-merge fix per code-reviewer H1).
+12. **`tal:session-complete` dispatch moved INTO `runAnalysis`** (pre-merge fix per architect Med1 — caught a regression I introduced in the refactor that left the StatusStrip spend pill stale post-debate).
+13. **`{kind: 'no_provider'}` dead-code variant dropped** from RunAnalysisResult union (pre-merge per code-reviewer M5).
+14. **Backlog updated**: Phase 8a/8b marked done, Phase 8c (bidirectional Telegram) queued with full spec.
+
+**Independent review workflow used (worth re-using):**
+
+Spawned two parallel sub-agents on Sonnet before merge:
+- `coderabbit:code-reviewer` for line-level issues — flagged 10 (2 High, 5 Medium, 3 Low)
+- `general-purpose` agent in architect framing — flagged 6 (1 Med + 5 Low, plus forward-compat notes for Phase 6 + 8c)
+
+Triaged with founder, fixed 3 pre-merge blockers, queued the rest as v1.1 backlog. Memory: `feedback_independent_review_pattern.md`.
+
+**Cross-product coordination today:**
+
+- **Clawless Advisor** answered two architecture questions:
+  - Phase 6 LLM-proxy RPC spec: `sessions.create` → `chat.send` (deliver:false) → poll `sessions.history`, one long-lived `tal-debate-runner` agent per conversation. Memory: `project_openclaw_llm_rpc.md`. Phase 6 itself queued as 4-6hr v1.1 sprint.
+  - Phase 8c bidirectional Telegram: outbound long-polling pattern (engine polls `getUpdates`), zero internet exposure, allowlist per chat_id, per-day cost cap. ~4-5 days for feature parity. Memory: `project_phase_8c_bidirectional_telegram.md`. Don't start before Phase 6 stabilises.
+- **iLoveMD developer** asked for cross-family footer link info. Replied (FYI, no reply needed) with brand naming rule + sibling list + family-wide SEO rule. He'll add tradingagentslab.ai to iluvmd.com footer; we owe iluvmd.com on our footer (queued for tomorrow).
+- **Clawless Site Developer** confirmed brand naming locked overnight: "Trading Agents Lab" three words for readable text, compressed "TradingAgentsLab" for URL/code only. Memory: `project_brand_naming.md`. Already CLAUDE.md §3 locked.
+
+**Site updates this afternoon:**
+
+- **Bing Webmaster Tools verified** via `public/BingSiteAuth.xml` (site commit `f2ac440`). Sitemap submitted at `tradingagentslab.ai/sitemap.xml` after founder corrected initial submission (had pasted the verification file URL by mistake — Bing's sitemap is the actual `/sitemap.xml`). Bing status: Processing (slow cadence is normal).
+- **Google Search Console** sitemap submitted: success immediately, indexing should appear in days. Verification method founder set up separately on his end.
+- **Robots.txt + sitemap.xml verified correct** — sitemap excludes the three legal pages per family-wide SEO rule; robots.txt allows all + references the sitemap.
 
 ### Recent commits on this repo (all pushed)
 
 ```
-5f1a0a1  docs: remove em-dashes from public-facing copy
-7852117  docs: session wrap — website-day arc + monetization roadmap context
-738c42f  chore: repoint repo URLs jaysidd → RBJGlobal
-77f59cf  ui: brand the multi-agent process "The Diligence"
-3480ee8  feat(webhooks): Phase 8a — Telegram / Slack / Discord / Generic webhooks v1
+bd94ea0  Merge branch 'phase-1-closeout' into main (v1.0 closeout sprint)
+addb706  refactor(run-analysis): dispatch tal:session-complete from helper, drop dead no_provider variant
+b01fcf4  fix(engine-client): 15s AbortController timeout on testLLMConnection
+8a376cd  fix(batch): unmount cleanup prevents leaked loops + concurrent re-runs
+2f9e9fc  fix(analyze): debate WebSocket survives navigation away from Analyze
+e551f4e  docs(backlog): mark Phase 8a/8b done + queue Phase 8c bidirectional Telegram
+5ab767c  ui(webhooks): Telegram editor asks for Bot Token + Chat ID, not raw URL
+067895a  refactor(analyze): swap inlined request assembly for the shared runAnalysis helper
+0431a2b  ui: em-dash scrub across remaining renderer pages + components
+e0fe81d  feat(window): persist + restore window bounds across launches
+cd58183  feat(settings): "Test connection" button per LLM provider row
+56864a8  fix(engine-client): 8s AbortController timeout on getSession
+4655110  ui(settings): Legal & Disclaimers link + em-dash scrub + drop stale Phase row
+e6ffea6  feat(watchlist): Phase 8b — multi-ticker batch runner
+8035398  docs: lock brand-name rendering rule in CLAUDE.md §3
+```
+
+Site repo (`RBJGlobal/TradingAgentsLab-Site`):
+```
+f2ac440  chore(seo): add Bing Webmaster Tools verification file
+5bfdc7e  (yesterday) em-dash scrub
 ```
 
 ### Live state at session end
 
-- Desktop dev stack state UNKNOWN. It was left running from 2026-05-16 wrap for founder regression testing. Today's work was pure docs / website — no app interaction. If founder closed it, restart with `npm --prefix desktop run dev` from `/Users/junaidsiddiqi/Projects/TradingAgents/`. If still running, leave it; founder may resume regression testing tomorrow.
-- Cloudflare Pages auto-deploy of `5bfdc7e` should be live within a couple minutes of the push (no manual action needed).
-- `da22f72` on rbjglobal-site is LOCAL ONLY pending founder morning review.
+- **Desktop dev stack: FULLY KILLED at wrap.** Founder noticed two dock icons (two stale Electron mains from my mid-day restarts during testing) — killed both + vite + engine. Zero TAL processes running. Port 5173 free. If picking back up tomorrow, start fresh: `npm --prefix desktop run dev` from `/Users/junaidsiddiqi/Projects/TradingAgents/`.
+- **`main` is at `bd94ea0`** — pushed to origin. Founder smoke-tested phase-1-closeout in dev mode and confirmed the navigate-away fix before authorising merge.
+- **`phase-1-closeout` branch still exists** locally and on origin. Safe to delete (`git branch -d phase-1-closeout && git push origin --delete phase-1-closeout`) at founder's call; common convention is to wait a few days then prune.
+- **Site at `f2ac440`** on origin/main, Cloudflare auto-deployed. Bing verification + sitemap submitted, processing. Google sitemap submitted, success.
 
-### Open items still pending (carried into tomorrow)
+### Open items carried into tomorrow
 
-1. **Settings blank-page bug in dev mode.** Untouched today. Still as documented below in the older 2026-05-15 details. Production was already pushed at `3480ee8`; rollback path stays clean if needed.
-2. **OG image generation.** Clawless Site Dev's Python+PIL script is in inbox from 2026-05-16. Not yet generated. Founder hasn't asked, but if he wants the social cards live, generate + drop at `app/opengraph-image.png` on the site repo, commit, push.
-3. **Stage 2 monetization research dispatch.** 5 queued questions at bottom of `project_monetization_roadmap.md` (SEC enforcement against AI-research platforms losing publishers exclusion / state adviser-law exposure / Lemon Squeezy TOS clearance / AGPL-3.0 + paid commercial license patterns / license-activation API patterns without account systems). Founder said "research tomorrow" two days ago. He may pull the trigger today/tomorrow; ask before dispatching agents since this will run a heavy research workload.
-4. **Stage 2 build itself.** Triggered by Apple Developer cert approval (timeline ~2 weeks). Engage Clawless Advisor + Clawless team for license-server pattern when it lands.
-5. **Founder regression notes from yesterday's testing.** Whatever surfaces becomes morning queue.
+**Quick wins (~30 min each):**
+1. **Add iluvmd.com to TAL site footer.** iLoveMD developer asked, I queued it. `components/layout/Footer.tsx` line 51-53 area. Anchor text: "iLoveMD" (single word, matches our pattern). Same external-link wrapper as other siblings.
+2. **Delete merged `phase-1-closeout` branch** if founder is comfortable (local + remote).
 
-### First moves when picking back up
+**v1.1 backlog items from independent reviews (queued, not started):**
+3. **History page should listen for `tal:session-complete`** event to auto-refresh during batch runs (architect Low-1). Now possible since runAnalysis dispatches the event.
+4. **Playwright regression test** for the "navigate away during analysis, come back, debate still alive" flow (architect Low-3). Currently only the code comment defends against future routing-refactor regressions.
+5. **`sweepOrphanEngines` PID-file fix in e2e fixtures** (architect Low-2, code-reviewer L3). Current `pkill -f` kills the founder's dev engine whenever tests run. Real architectural fix is engine-runner.ts writing a PID file to userData, fixture kills by PID not by pattern.
+6. **WebhookConfig `telegram_bot_token` field** (architect Low-4). Currently `url` field stores the full Bot API URL even for Telegram entries (renderer constructs it). Cleaner: add explicit `telegram_bot_token` to the schema. Do before Phase 8c extends the schema.
 
-1. **Check inbox.** `mcp__claudelink__read_inbox`. Clawless Site Developer may have follow-ups on the subpage. Other agents may have pinged.
-2. **Confirm desktop dev stack state.** If founder closed it, restart with `npm --prefix desktop run dev`. If still running, leave it. Settings blank-page bug repro is in dev mode + DevTools.
-3. **Founder's morning review.** He'll either greenlight the rbjglobal subpage or send copy tweaks back. If greenlit, no action needed on TAL side (Clawless Site Dev pushes). If tweaks, fold them in via ClaudeLink reply.
-4. **Settings blank-page bug** (if founder hits it tonight, queue first thing).
+**Bigger v1.1 sprints (each needs its own day):**
+7. **Phase 6 Clawless gateway tap.** RPC spec captured in memory. ~4-6 hours of focused Python WebSocket adapter work. Adds a `clawless` provider to PROVIDER_PRIORITY.
+8. **Phase 8c bidirectional Telegram bot.** Architecture captured in memory. ~4-5 days for feature parity (1-2 day MVP). Outbound polling, allowlist, per-day cost cap, detached sidecar. Don't start before Phase 6 stable.
+
+**Search Console follow-up:**
+9. **Check Bing Webmaster Tools tomorrow morning** — sitemap should have flipped from Processing → Success overnight, URLs discovered should jump from 0 to ~22 (1 home + 5 marketing + 16 docs).
+10. **Check Google Search Console tomorrow morning** — first indexing pass results should appear; ranking takes days to weeks.
+
+**Pre-existing items unchanged from earlier wraps:**
+11. **OG image generation** — Clawless Site Dev's Python+PIL script still queued.
+12. **Stage 2 monetization research dispatch** — 5 queued questions in `project_monetization_roadmap.md`; awaits founder go.
+13. **Stage 2 build itself** — gated on Apple Developer cert approval (~2 weeks).
+
+### First moves when picking back up tomorrow
+
+1. **Check inbox.** `mcp__claudelink__read_inbox`. iLoveMD developer may have followed up. Clawless Advisor or other agents may have pinged.
+2. **Verify dev stack is OFF** (`ps aux | grep TradingAgents | grep -v grep`). Should be empty. If founder wants to use the app, `npm --prefix desktop run dev`.
+3. **Check Bing + Google Search Console** for sitemap status flip + any URL discovery issues.
+4. **Founder's morning queue** — whatever's top of mind. If nothing specific, the iluvmd.com footer add is the smallest unfinished item; Phase 6 Clawless tap or Phase 8c Telegram bot are the biggest next sprints.
+
+### Yesterday and earlier — compressed back-reference
+
+For context on em-dash rule, brand-naming lock, "wrap-up" trigger formalisation, website build day, monetization roadmap → see Handover history (this section was full of detail before the v1.0 closeout overwrote it). Memory files in `~/.claude/projects/-Users-junaidsiddiqi-Projects-TradingAgents/memory/` hold the durable locked decisions.
 5. **Optional: OG image generation, Stage 2 research dispatch** — only on founder's explicit go.
 
 ### Yesterday (2026-05-16) — website-build day + org transfer + monetization roadmap (compressed)

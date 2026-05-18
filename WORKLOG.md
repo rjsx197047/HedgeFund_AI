@@ -6,6 +6,87 @@
 
 ---
 
+## 2026-05-17 (late evening) — Phase 1 closeout v1.0 sprint: 14 commits merged to main + Bing/Google Search Console set up
+
+**Goal:** Founder's brief at start of day: "close phase 1 by end of day today" + "make sure we close phase 1 by end of day today, then talk about phase 2 which we were thinking about a paid plan and license server." Ambitious scope on a feature branch, independent reviews before merge, then site SEO housekeeping.
+
+**Outcome: v1.0 shipped to main.** Merge commit `bd94ea0` on `origin/main`. 14 commits across desktop renderer, Electron main, Python engine, e2e tests, docs. Independent code review (`coderabbit:code-reviewer` subagent) + independent architect review (`general-purpose` subagent) both confirmed merge-ready after 3 pre-merge fixes.
+
+### Sprint chronology
+
+**Morning:** Scoped the work into Tier A (Phase 6 Clawless tap + Settings blank-page bug + Phase 8b multi-ticker batch) + Tier B (polish bundle: Test Connection, Settings persistence, getSession timeout, Legal link). Created feature branch `phase-1-closeout` and pushed empty branch to origin for visibility.
+
+**Mid-morning to lunch:** Settings blank-page bug (`#64`) — not reproducible after fresh dev stack start; founder confirmed clean. Closed task. Phase 8b multi-ticker batch runner shipped (`e6ffea6`) with new `runAnalysis` helper in `desktop/src/lib/run-analysis.ts`. Tier B Legal & Disclaimers link (`4655110`) + em-dash scrub on Settings.tsx.
+
+**Afternoon:** Tier B remaining items — `getSession` 8s AbortController timeout (`56864a8`), Test Connection button with new `POST /llm/test` engine endpoint + 6 mocked pytests (`cd58183`), window-state persistence (`e0fe81d`). Em-dash scrub across all remaining renderer files (`0431a2b`). Analyze.tsx refactor: ~180 lines of inlined request-assembly swapped for the shared `runAnalysis` helper (`067895a`).
+
+**Late afternoon:** Telegram webhook UX surfaced via founder testing — "what does URL mean?" — refactored to Bot Token + Chat ID fields (`5ab767c`). Pinged Clawless Advisor about Phase 6 LLM-proxy RPC + Phase 8c bidirectional Telegram architecture; both answered comprehensively. Phase 6 deferred to v1.1 sprint per founder. Phase 8c queued with full architecture spec captured in memory.
+
+**Evening:** Founder discovered the navigate-away bug — debate WS dies when clicking Watchlist/History mid-stream. Fixed via asymmetric routing in App.tsx (`2f9e9fc`). Founder verified the fix works.
+
+**Late evening (pre-merge):** Independent reviews. Code-reviewer flagged 10 items (2 High, 5 Medium, 3 Low). Architect flagged 6 items (1 Medium, 5 Low + forward-compat notes). Fixed the 3 pre-merge blockers: BatchRunner unmount cleanup (`8a376cd`), testLLMConnection timeout (`b01fcf4`), runAnalysis dispatching `tal:session-complete` + dead `no_provider` variant removed (`addb706`). Queued everything else as v1.1 backlog. Merged to main, pushed.
+
+**End of day:** Site SEO housekeeping. Bing verification file at `public/BingSiteAuth.xml` on the site repo (`f2ac440`). Cloudflare auto-deployed. Founder verified Bing site ownership. Submitted sitemap to Bing (initially submitted the verification file URL by mistake; corrected to actual `tradingagentslab.ai/sitemap.xml`) — Bing Processing. Submitted same sitemap to Google Search Console — Success immediately. Robots.txt + sitemap.xml verified correct (legal pages excluded per family-wide SEO rule).
+
+### Shipped today (commit hashes)
+
+Desktop / engine (all on `main` after merge `bd94ea0`):
+
+```
+addb706  refactor(run-analysis): dispatch tal:session-complete from helper, drop dead no_provider variant
+b01fcf4  fix(engine-client): 15s AbortController timeout on testLLMConnection
+8a376cd  fix(batch): unmount cleanup prevents leaked loops + concurrent re-runs
+2f9e9fc  fix(analyze): debate WebSocket survives navigation away from Analyze
+e551f4e  docs(backlog): mark Phase 8a/8b done + queue Phase 8c bidirectional Telegram
+5ab767c  ui(webhooks): Telegram editor asks for Bot Token + Chat ID, not raw URL
+067895a  refactor(analyze): swap inlined request assembly for the shared runAnalysis helper
+0431a2b  ui: em-dash scrub across remaining renderer pages + components
+e0fe81d  feat(window): persist + restore window bounds across launches
+cd58183  feat(settings): "Test connection" button per LLM provider row
+56864a8  fix(engine-client): 8s AbortController timeout on getSession
+4655110  ui(settings): Legal & Disclaimers link + em-dash scrub + drop stale Phase row
+e6ffea6  feat(watchlist): Phase 8b — multi-ticker batch runner
+8035398  docs: lock brand-name rendering rule in CLAUDE.md §3   (earlier in day)
+```
+
+Site repo (`RBJGlobal/TradingAgentsLab-Site`):
+
+```
+f2ac440  chore(seo): add Bing Webmaster Tools verification file
+```
+
+### Cross-product coordination
+
+- **Clawless Advisor** (two architecture deep-dives):
+  - Phase 6 OpenClaw LLM RPC spec: `sessions.create` → `chat.send` (deliver:false) → poll `sessions.history`, one long-lived `tal-debate-runner` agent per debate conversation. Memory: `project_openclaw_llm_rpc.md`.
+  - Phase 8c bidirectional Telegram architecture: outbound long-polling pattern, zero internet exposure, ~4-5 days for parity. Memory: `project_phase_8c_bidirectional_telegram.md`.
+- **iLoveMD developer**: replied (FYI) with brand naming + sibling list + family-wide SEO rule for their cross-family footer build. We owe iluvmd.com on our footer in return.
+- **Clawless Site Developer**: confirmed brand naming locked overnight ("Trading Agents Lab" three words for readable, compressed for code).
+
+### Verification at end-of-day
+
+- 140/140 engine pytests
+- 6/6 Playwright e2e (including the analyze-stub debate stream)
+- 17/17 `bash tools/dev-smoke.sh`
+- `npm run type-check` + `npm run build` clean
+- Founder smoke-tested navigate-away survival manually before authorising merge
+- Bing sitemap submitted (Processing). Google sitemap submitted (Success).
+
+### Live state at session end (clean shutdown)
+
+- All TAL dev processes killed at wrap: 0 Electron, 0 vite, 0 engine. Two dock icons came from stale Electron mains; both terminated. Port 5173 free.
+- `main` at `bd94ea0` on origin.
+- `phase-1-closeout` branch still exists locally + remote; deletable on founder's call.
+
+### Next session opens with
+
+1. `mcp__claudelink__read_inbox` — iLoveMD developer may have followed up; Clawless Advisor may have pinged.
+2. Verify dev stack still OFF; restart only if founder wants to use the app.
+3. Bing + Google Search Console status check overnight (Processing → Success flip on Bing).
+4. **Smallest unfinished item: add iluvmd.com to TAL site footer** (~10 min). Then bigger v1.1 sprints are wide open: Phase 6 Clawless tap (4-6 hr), Phase 8c bidirectional Telegram (4-5 days), or the smaller v1.1 backlog items from the independent reviews (History tal:session-complete listener, Playwright nav-away regression test, e2e pkill PID-file fix, WebhookConfig telegram_bot_token field).
+
+---
+
 ## 2026-05-17 (evening) — Em-dash style rule locked universal, rbjglobal subpage brief delivered, "wrap-up" formalised as a trigger
 
 **Goal:** Short maintenance session on the back of yesterday's website day. Founder declared a new style rule mid-session and asked for a structured definition of the "wrap-up" command.
