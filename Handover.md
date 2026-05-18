@@ -12,7 +12,22 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-17 late evening, end of v1.0 closeout day)
+## Where we are right now (as of 2026-05-18, wrap-up still active)
+
+### Wrap-up extension (2026-05-18 early hours) — family AEO bundle landed on the site
+
+iLoveMD developer sent a family-wide ask to land an AI/AEO bundle (robots.txt explicit Allow rules for major AI crawlers + an llms.txt at site root following llmstxt.org). Handled as a wrap-up extension (cheap, Jay-coordinated family rollout, ~30 min as estimated).
+
+**What shipped on the site repo (`41d5551` on origin/main, Cloudflare auto-deployed):**
+
+- `app/robots.ts` extended: 10 explicit Allow rules for AI crawlers (GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, Claude-User, Claude-SearchBot, PerplexityBot, Perplexity-User, Google-Extended, Applebot-Extended). Sitemap line preserved. Implementation through Next.js MetadataRoute (typed, single source of truth) rather than a raw static file.
+- `public/llms.txt` created: 73-line machine-readable site summary per llmstxt.org. Tailored to quant/algo researcher audience (the highest-ROI angle per iLoveMD's analysis). Sections: TL;DR, Capabilities (12 real `/docs/*` links, no placeholders), Stack and openness, Audience, Roadmap signals, Disclaimers (three-tier surface referenced), Key pages, Family (RBJ Global, Clawdemy, Clawless, WhisprDesk, iLoveMD). Em-dash audit clean.
+
+Both surfaces verified live via curl. Reply sent to iLoveMD developer with commit SHA + confirmation (FYI, no reply needed).
+
+**Why this matters:** consumer surface for Cursor / Copilot / Claude Code / RAG frameworks today; possibly major AI engines later. Zero cost beyond 30 min, family pattern consistency, and a clean signal that we want AI crawlers indexing the site (vs. WAF/Cloudflare defaults that could silently start blocking unknown UAs in the future).
+
+### Today (2026-05-17) — Phase 1 closeout sprint: 14 commits merged to main, v1.0 shipped
 
 ### Today (2026-05-17) — Phase 1 closeout sprint: 14 commits merged to main, v1.0 shipped
 
@@ -90,7 +105,7 @@ f2ac440  chore(seo): add Bing Webmaster Tools verification file
 - **Desktop dev stack: FULLY KILLED at wrap.** Founder noticed two dock icons (two stale Electron mains from my mid-day restarts during testing) — killed both + vite + engine. Zero TAL processes running. Port 5173 free. If picking back up tomorrow, start fresh: `npm --prefix desktop run dev` from `/Users/junaidsiddiqi/Projects/TradingAgents/`.
 - **`main` is at `bd94ea0`** — pushed to origin. Founder smoke-tested phase-1-closeout in dev mode and confirmed the navigate-away fix before authorising merge.
 - **`phase-1-closeout` branch still exists** locally and on origin. Safe to delete (`git branch -d phase-1-closeout && git push origin --delete phase-1-closeout`) at founder's call; common convention is to wait a few days then prune.
-- **Site at `f2ac440`** on origin/main, Cloudflare auto-deployed. Bing verification + sitemap submitted, processing. Google sitemap submitted, success.
+- **Site at `41d5551`** on origin/main, Cloudflare auto-deployed. Bing verification + sitemap submitted, processing. Google sitemap submitted, success. AI/AEO bundle (robots.txt explicit Allows + llms.txt) landed in wrap-up extension.
 
 ### Open items carried into tomorrow
 
