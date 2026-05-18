@@ -1,0 +1,533 @@
+"""Phase 8c: bidirectional Telegram bot for ad-hoc Diligence runs.
+
+Architecture (verified with Clawless Advisor 2026-05-17):
+
+- Bot connects OUTBOUND to Telegram via `getUpdates` long-polling. Telegram
+  queues incoming messages, this module pulls them. No open ports on the
+  user's machine, no public URL, no cloud relay. Sidecar in the same
+  process as the FastAPI engine (lifecycle-tied to the desktop app for v1;
+  detached mode is queued v1.1).
+
+- Inbound message handler is strictly defensive:
+    1. Pull message, extract chat_id and text.
+    2. If chat_id not in allowlist AND command is not /start: silently drop.
+       Silent drop avoids leaking bot existence to scanners.
+    3. Parse text: bare ticker (`NVDA`), `/analyze TICKER`, `/start`, `/help`.
+    4. Enforce per-chat per-UTC-day cost cap before any LLM work.
+    5. Run live debate, format compact reply (Telegram caps at 4096 chars).
+    6. Increment per-chat daily counter by actual session cost.
+
+- Allowlist is the primary defense against token-drain abuse. Cap is the
+  secondary defense in case the bot token leaks. Per-chat counter persists
+  to a JSON file beside the SQLite DB so the cap survives engine restart
+  (otherwise an app-restart loop would evade the cap).
+
+- The bot reuses the existing `live_debate` orchestrator, the existing
+  `ProviderConfig` shape, and the existing `cost_guard` reservation flow.
+  It does NOT duplicate debate logic; it's a thin trigger surface.
+
+What v1 does NOT include:
+- Detached sidecar (survives app close). Queued v1.1.
+- Pairing-code first-run flow (`/start` -> approve in app UI). User adds
+  chat_ids manually in Settings for v1.
+- Streaming live updates per-agent into Telegram. Too noisy; v1 sends the
+  decision summary on session.complete only.
+- Multi-provider routing per chat. v1 uses the single default provider
+  config the renderer ships on `/telegram/start`.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+import sys
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
+
+import httpx
+
+from .data_providers import (
+    DataUnavailable,
+    Headline,
+    QuoteSummary,
+    default_provider,
+)
+from .live_debate import ProviderConfig, SentimentBlock, live_debate
+
+logger = logging.getLogger(__name__)
+
+# Telegram API constants. Long-poll timeout balances responsiveness against
+# request count; 25s is the value Clawless OpenClaw uses and it stays below
+# most NAT idle limits.
+_API_BASE = "https://api.telegram.org/bot"
+_LONG_POLL_TIMEOUT_S = 25
+_HTTP_TIMEOUT_S = _LONG_POLL_TIMEOUT_S + 10
+_REPLY_MAX_CHARS = 3900  # leave headroom below Telegram's 4096 ceiling
+
+# Ticker regex. Accepts bare ticker (uppercase letters, 1-8 chars, optional
+# `-XYZ` suffix for crypto and adrs). Anchored so partial matches in long
+# sentences are not treated as analyze requests; the user must send the
+# ticker by itself.
+_TICKER_RE = re.compile(r"^([A-Z]{1,8}(?:-[A-Z]{1,4})?)$")
+_ANALYZE_CMD_RE = re.compile(r"^/analyze(?:@\w+)?\s+([A-Z]{1,8}(?:-[A-Z]{1,4})?)$", re.IGNORECASE)
+
+
+@dataclass
+class TelegramBotConfig:
+    """Inbound configuration. Renderer ships this on `/telegram/start`."""
+
+    token: str
+    """Bot token from BotFather. URL-embedded auth, treat as a secret."""
+
+    allowlist: set[int] = field(default_factory=set)
+    """Numeric Telegram user IDs (chat_id values) allowed to trigger debates.
+    Empty set means: only /start replies, no debate triggers. Locked default."""
+
+    daily_cap_usd: float = 5.0
+    """Per-chat per-UTC-day spend cap. Enforced before each debate. The
+    chat receives a friendly reply when the cap is hit instead of running
+    a debate. Set to 0 to disable triggers for a chat (effectively kill
+    switch even if the chat is allowlisted)."""
+
+    provider_config: dict[str, Any] = field(default_factory=dict)
+    """The ProviderConfig dict the renderer is currently using on Analyze.
+    Bot-triggered debates run through the same provider, model, and key.
+    Stored only in memory in this process; never written to disk."""
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "TelegramBotConfig":
+        return TelegramBotConfig(
+            token=str(d["token"]),
+            allowlist={int(x) for x in (d.get("allowlist") or [])},
+            daily_cap_usd=float(d.get("daily_cap_usd", 5.0)),
+            provider_config=dict(d.get("provider_config") or {}),
+        )
+
+
+@dataclass
+class _BotStatus:
+    enabled: bool = False
+    polling: bool = False
+    allowlist_size: int = 0
+    last_update_id: Optional[int] = None
+    last_error: Optional[str] = None
+    daily_cap_usd: float = 0.0
+    daily_spend_usd: dict[str, float] = field(default_factory=dict)
+    """chat_id (str) -> dollars spent today (UTC). Reported to the renderer
+    so a Settings UI can show real-time usage per chat."""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "polling": self.polling,
+            "allowlist_size": self.allowlist_size,
+            "last_update_id": self.last_update_id,
+            "last_error": self.last_error,
+            "daily_cap_usd": self.daily_cap_usd,
+            "daily_spend_usd": dict(self.daily_spend_usd),
+        }
+
+
+# ---- Persistence -----------------------------------------------------------
+#
+# Per-chat daily spend is persisted to a JSON file beside the SQLite DB.
+# Format: {"date": "YYYY-MM-DD", "spend": {"<chat_id>": <usd>, ...}}.
+# If `date` doesn't match today's UTC date on load, the file is treated
+# as expired and the in-memory counter starts fresh. This way an app
+# restart at any hour cannot reset the day's tally and evade the cap.
+
+
+def _spend_file_path() -> Path:
+    """Sibling to the SQLite DB. Imported lazily so the storage module's
+    own initialization (which decides the user-data path) is not pulled
+    in at import time."""
+    from . import storage  # noqa: PLC0415 — circular avoidance
+
+    return Path(storage.db_path()).parent / "telegram_spend.json"
+
+
+def _today_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _load_spend() -> dict[str, float]:
+    """Return today's spend dict, or empty if file missing / stale / corrupt."""
+    path = _spend_file_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+        if data.get("date") != _today_utc():
+            return {}
+        return {str(k): float(v) for k, v in (data.get("spend") or {}).items()}
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        logger.warning("telegram_spend.json unreadable: %s", exc)
+        return {}
+
+
+def _save_spend(spend: dict[str, float]) -> None:
+    """Best-effort write. Failures are logged but do not abort dispatch."""
+    path = _spend_file_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"date": _today_utc(), "spend": spend}, separators=(",", ":"))
+        )
+    except OSError as exc:
+        logger.warning("failed to persist telegram_spend.json: %s", exc)
+
+
+# ---- The bot ---------------------------------------------------------------
+
+
+class TelegramBot:
+    """Owns the polling task, the inbound handler, and the per-chat spend
+    counter. One instance per engine process. Start/stop are idempotent."""
+
+    def __init__(self) -> None:
+        self._config: Optional[TelegramBotConfig] = None
+        self._task: Optional[asyncio.Task[None]] = None
+        self._client: Optional[httpx.AsyncClient] = None
+        self._status = _BotStatus()
+        # Per-chat in-flight tracker: chat_id -> bool. Prevents stacking
+        # multiple debates for the same user (each debate can be expensive
+        # and the user would just see overlapping replies).
+        self._busy: dict[int, bool] = {}
+        self._spend: dict[str, float] = {}
+
+    # ---- Public API ---------------------------------------------------
+
+    async def start(self, config: TelegramBotConfig) -> None:
+        """Start polling. Idempotent: if already running, a new start
+        cancels the existing task and restarts with fresh config. This
+        is how the renderer updates the allowlist or cap on the fly."""
+        if not config.token:
+            raise ValueError("telegram bot token is required")
+        await self.stop()
+        self._config = config
+        self._status = _BotStatus(
+            enabled=True,
+            polling=False,
+            allowlist_size=len(config.allowlist),
+            daily_cap_usd=config.daily_cap_usd,
+        )
+        self._spend = _load_spend()
+        self._status.daily_spend_usd = dict(self._spend)
+        self._client = httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S)
+        self._task = asyncio.create_task(self._poll_loop(), name="telegram-bot-poll")
+
+    async def stop(self) -> None:
+        """Stop polling. Idempotent; safe to call when not running."""
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+            self._task = None
+        if self._client is not None:
+            try:
+                await self._client.aclose()
+            except Exception:  # noqa: BLE001 — best-effort
+                pass
+            self._client = None
+        self._config = None
+        self._status = _BotStatus()
+        self._busy.clear()
+
+    def status(self) -> _BotStatus:
+        # Refresh dynamic fields before returning.
+        self._status.daily_spend_usd = dict(self._spend)
+        return self._status
+
+    # ---- Polling loop -------------------------------------------------
+
+    async def _poll_loop(self) -> None:
+        """Pull updates from Telegram and dispatch handlers. Re-entrant
+        on transient errors with exponential backoff."""
+        assert self._client is not None and self._config is not None
+        backoff = 1.0
+        self._status.polling = True
+        try:
+            while True:
+                try:
+                    updates = await self._get_updates(self._status.last_update_id)
+                    backoff = 1.0  # reset on success
+                except asyncio.CancelledError:
+                    raise
+                except httpx.HTTPError as exc:
+                    self._status.last_error = f"network: {exc}"
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 60.0)
+                    continue
+                except Exception as exc:  # noqa: BLE001 — keep loop alive
+                    self._status.last_error = f"{type(exc).__name__}: {exc}"
+                    logger.exception("telegram bot poll error")
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 60.0)
+                    continue
+
+                for update in updates:
+                    self._status.last_update_id = int(update.get("update_id", 0))
+                    message = update.get("message")
+                    if isinstance(message, dict):
+                        # Fire-and-forget so the polling loop keeps draining
+                        # Telegram's queue while a debate runs in another task.
+                        asyncio.create_task(
+                            self._handle_message(message),
+                            name=f"telegram-handle-{self._status.last_update_id}",
+                        )
+        finally:
+            self._status.polling = False
+
+    async def _get_updates(self, offset: Optional[int]) -> list[dict[str, Any]]:
+        assert self._client is not None and self._config is not None
+        params: dict[str, Any] = {
+            "timeout": _LONG_POLL_TIMEOUT_S,
+            "allowed_updates": ["message"],
+        }
+        if offset is not None:
+            params["offset"] = offset + 1
+        url = f"{_API_BASE}{self._config.token}/getUpdates"
+        resp = await self._client.get(url, params=params)
+        resp.raise_for_status()
+        data = resp.json()
+        if not data.get("ok"):
+            raise RuntimeError(f"telegram getUpdates not ok: {data}")
+        return list(data.get("result", []))
+
+    # ---- Handler ------------------------------------------------------
+
+    async def _handle_message(self, message: dict[str, Any]) -> None:
+        assert self._config is not None
+        text = str(message.get("text", "")).strip()
+        chat = message.get("chat") or {}
+        chat_id = chat.get("id")
+        if not isinstance(chat_id, int):
+            return  # bot DMs only carry int chat_ids; ignore the rest
+
+        # /start works even without allowlist so users can discover their
+        # chat_id without admin help. Other commands require allowlist.
+        cmd = text.split()[0].lower() if text else ""
+        if cmd.startswith("/start") or cmd.startswith("/whoami"):
+            await self._reply(
+                chat_id,
+                (
+                    "Hello. Your Telegram chat_id is `{cid}`.\n\n"
+                    "Have the operator of this bot add it to the allowlist "
+                    "in Trading Agents Lab Settings -> Telegram Bot before "
+                    "you can request a Diligence run. Once allowlisted, "
+                    "send a ticker like `NVDA` or `/analyze NVDA`."
+                ).format(cid=chat_id),
+            )
+            return
+
+        if chat_id not in self._config.allowlist:
+            # Silent drop. Don't leak the bot's existence to randoms.
+            return
+
+        if cmd.startswith("/help"):
+            await self._reply(
+                chat_id,
+                (
+                    "Trading Agents Lab bot.\n\n"
+                    "Send a ticker by itself (`NVDA`, `BTC-USD`) to run a "
+                    "Diligence. Or use `/analyze NVDA`. Daily spend cap is "
+                    "${:.2f} per chat.\n\n"
+                    "Output is educational only. Not investment advice."
+                ).format(self._config.daily_cap_usd),
+            )
+            return
+
+        ticker = self._parse_ticker(text)
+        if ticker is None:
+            await self._reply(
+                chat_id,
+                (
+                    "I didn't see a ticker. Send `NVDA`, `/analyze NVDA`, or "
+                    "`/help`."
+                ),
+            )
+            return
+
+        if self._busy.get(chat_id):
+            await self._reply(
+                chat_id,
+                "Still working on your previous request. Hold tight.",
+            )
+            return
+
+        # Cap check BEFORE any LLM work.
+        spent = self._spend.get(str(chat_id), 0.0)
+        if spent >= self._config.daily_cap_usd:
+            await self._reply(
+                chat_id,
+                (
+                    "Daily cap reached for this chat (${cap:.2f}). The cap "
+                    "resets at UTC midnight. Currently spent: ${spent:.2f}."
+                ).format(cap=self._config.daily_cap_usd, spent=spent),
+            )
+            return
+
+        self._busy[chat_id] = True
+        try:
+            await self._run_debate(chat_id=chat_id, ticker=ticker)
+        finally:
+            self._busy[chat_id] = False
+
+    @staticmethod
+    def _parse_ticker(text: str) -> Optional[str]:
+        """Return ticker uppercase, or None if the message isn't a ticker
+        request. Supports bare ticker and `/analyze TICKER`."""
+        if not text:
+            return None
+        cleaned = text.strip()
+        # `/analyze TICKER` (case-insensitive command, ticker uppercased)
+        m = _ANALYZE_CMD_RE.match(cleaned)
+        if m:
+            return m.group(1).upper()
+        # Bare ticker, all caps
+        m = _TICKER_RE.match(cleaned.upper())
+        if m:
+            return m.group(1)
+        return None
+
+    # ---- Debate runner ------------------------------------------------
+
+    async def _run_debate(self, *, chat_id: int, ticker: str) -> None:
+        assert self._config is not None
+        trade_date = _today_utc()
+
+        # Fetch data block for the prompt context. Failures are non-fatal:
+        # the debate still runs without summary / headlines if the data
+        # provider is unreachable.
+        summary: Optional[QuoteSummary] = None
+        headlines: list[Headline] = []
+        try:
+            summary = await default_provider.quote_summary(
+                ticker=ticker, trade_date=trade_date
+            )
+        except DataUnavailable:
+            pass
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            headlines = list(
+                await default_provider.news_headlines(ticker=ticker, limit=5)
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        provider_config = ProviderConfig.from_dict(self._config.provider_config)
+        if provider_config is None:
+            await self._reply(
+                chat_id,
+                (
+                    "No LLM provider configured. Set one up in Trading "
+                    "Agents Lab Settings -> LLM Providers and restart the "
+                    "bot from Settings -> Telegram Bot."
+                ),
+            )
+            return
+
+        await self._reply(
+            chat_id,
+            f"Running Diligence on {ticker} for {trade_date}. This usually takes a few minutes.",
+        )
+
+        decision: Optional[dict[str, Any]] = None
+        cost_usd: float = 0.0
+        live = False
+        try:
+            async for event in live_debate(
+                ticker=ticker,
+                trade_date=trade_date,
+                summary=summary,
+                headlines=headlines,
+                config=provider_config,
+                sentiment=SentimentBlock(),
+            ):
+                if event.get("type") == "session.complete":
+                    decision = event.get("decision")
+                    cost_usd = float(event.get("estimated_cost_usd") or 0.0)
+                    live = bool(event.get("live"))
+        except Exception as exc:  # noqa: BLE001 — surface, don't crash bot
+            logger.exception("debate failed for chat %s ticker %s", chat_id, ticker)
+            await self._reply(chat_id, f"Debate failed: {type(exc).__name__}: {exc}")
+            return
+
+        if decision is None:
+            await self._reply(
+                chat_id, "Debate finished without a decision. Please try again."
+            )
+            return
+
+        # Record spend before sending the reply. If the reply fails for any
+        # reason we still want the cap to reflect work that did happen.
+        if cost_usd > 0:
+            self._spend[str(chat_id)] = self._spend.get(str(chat_id), 0.0) + cost_usd
+            _save_spend(self._spend)
+            self._status.daily_spend_usd = dict(self._spend)
+
+        await self._reply(
+            chat_id,
+            _format_decision_reply(
+                ticker=ticker,
+                trade_date=trade_date,
+                decision=decision,
+                cost_usd=cost_usd,
+                live=live,
+                cap_usd=self._config.daily_cap_usd,
+                spent_today=self._spend.get(str(chat_id), 0.0),
+            ),
+        )
+
+    # ---- Outbound -----------------------------------------------------
+
+    async def _reply(self, chat_id: int, text: str) -> None:
+        assert self._client is not None and self._config is not None
+        # Truncate to Telegram's effective ceiling, preserving headroom for
+        # the trailing disclaimer line in the formatter (already accounted
+        # for via _REPLY_MAX_CHARS but defensive trim is cheap).
+        if len(text) > _REPLY_MAX_CHARS:
+            text = text[: _REPLY_MAX_CHARS - 1] + "…"
+        url = f"{_API_BASE}{self._config.token}/sendMessage"
+        try:
+            await self._client.post(
+                url,
+                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
+                timeout=10.0,
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("telegram sendMessage failed: %s", exc)
+
+
+def _format_decision_reply(
+    *,
+    ticker: str,
+    trade_date: str,
+    decision: dict[str, Any],
+    cost_usd: float,
+    live: bool,
+    cap_usd: float,
+    spent_today: float,
+) -> str:
+    action = str(decision.get("action", "HOLD")).upper()
+    confidence = float(decision.get("confidence", 0.0))
+    reasoning = str(decision.get("reasoning", "")).strip()
+    if len(reasoning) > 600:
+        reasoning = reasoning[:597] + "…"
+    mode = "live" if live else "stub"
+    return (
+        f"*{ticker}* on {trade_date}\n"
+        f"Decision: *{action}*  ({confidence * 100:.0f}% confidence)\n\n"
+        f"{reasoning}\n\n"
+        f"_Run mode: {mode}. Cost: ${cost_usd:.4f}. Today: "
+        f"${spent_today:.4f} / ${cap_usd:.2f}._\n"
+        f"_Educational output. Not investment advice. Not a recommendation._"
+    )

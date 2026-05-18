@@ -629,6 +629,77 @@ export async function testLLMConnection(args: {
   }
 }
 
+// ---- Phase 8c: bidirectional Telegram bot ---------------------------------
+//
+// Engine owns the polling loop. Renderer ships the bot token + allowlist +
+// daily cap + provider config on /telegram/start, calls /telegram/stop to
+// halt, and polls /telegram/status for the running state shown in the
+// Settings UI. The engine never persists the bot token; it lives only in
+// memory until the next /telegram/start.
+
+export interface TelegramBotStatus {
+  enabled: boolean;
+  polling: boolean;
+  allowlist_size: number;
+  last_update_id: number | null;
+  last_error: string | null;
+  daily_cap_usd: number;
+  daily_spend_usd: Record<string, number>;
+}
+
+export interface TelegramBotStartArgs {
+  token: string;
+  allowlist: number[];
+  daily_cap_usd: number;
+  provider_config?: Record<string, unknown>;
+}
+
+export async function getTelegramBotStatus(): Promise<TelegramBotStatus> {
+  const { port, token } = await handshake();
+  const res = await fetch(`http://127.0.0.1:${port}/telegram/status`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `getTelegramBotStatus failed: ${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as TelegramBotStatus;
+}
+
+export async function startTelegramBot(
+  args: TelegramBotStartArgs,
+): Promise<TelegramBotStatus> {
+  const { port, token } = await handshake();
+  const res = await fetch(`http://127.0.0.1:${port}/telegram/start`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`startTelegramBot failed: ${res.status} ${detail}`);
+  }
+  return (await res.json()) as TelegramBotStatus;
+}
+
+export async function stopTelegramBot(): Promise<TelegramBotStatus> {
+  const { port, token } = await handshake();
+  const res = await fetch(`http://127.0.0.1:${port}/telegram/stop`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `stopTelegramBot failed: ${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as TelegramBotStatus;
+}
+
 /** Probe localhost for running OpenAI-compatible LLM runtimes.
  *
  * Empty array is a normal response — it means the user has nothing

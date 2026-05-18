@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import time
+from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 from fastapi import (
@@ -42,11 +43,29 @@ from .llm_providers import adapter_for
 from . import cost_guard, local_llm_detect, sentiment_sources, storage
 from . import webhooks as webhook_dispatcher
 from .stub_debate import canned_debate
+from .telegram_bot import TelegramBot, TelegramBotConfig
 from .ticker import normalize_ticker
 
 
 def build_app(*, token: str) -> FastAPI:
     started_at = time.monotonic()
+
+    # Phase 8c: the Telegram bot is owned by the app instance so the
+    # lifespan hook can cleanly stop it on shutdown. Multiple in-process
+    # apps (tests) get their own bot; renderer manages a single instance
+    # in production via /telegram/start and /telegram/stop.
+    telegram_bot = TelegramBot()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # Engine starts with the bot stopped. Renderer must explicitly
+        # call /telegram/start after the user enables it in Settings.
+        # This keeps the engine bootable without any Telegram config and
+        # lets the renderer carry the source-of-truth for enable state.
+        try:
+            yield
+        finally:
+            await telegram_bot.stop()
 
     app = FastAPI(
         title="TradingAgentsLab Engine",
@@ -54,7 +73,9 @@ def build_app(*, token: str) -> FastAPI:
         docs_url=None,        # Disable Swagger — sidecar is private
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
+    app.state.telegram_bot = telegram_bot
 
     # Renderer runs on http://localhost:5173 in dev (Vite) and on `file://`
     # (Origin: "null") in production-mode Electron — the built bundle loads
@@ -273,6 +294,33 @@ def build_app(*, token: str) -> FastAPI:
                 await adapter.close()
             except Exception:  # noqa: BLE001 — best-effort cleanup
                 pass
+
+    @app.get("/telegram/status", dependencies=bearer)
+    async def telegram_status() -> dict[str, Any]:
+        return telegram_bot.status().to_dict()
+
+    @app.post("/telegram/start", dependencies=bearer)
+    async def telegram_start(req: TelegramBotStartRequest) -> dict[str, Any]:
+        """Start (or restart) the bot polling loop.
+
+        Token + allowlist + cap + provider config all come from the
+        renderer's safeStorage. Engine never persists the bot token or
+        provider credentials; per-chat daily spend IS persisted to a
+        sibling JSON file so an app restart cannot reset the cap.
+        """
+        try:
+            config = TelegramBotConfig.from_dict(req.model_dump())
+            await telegram_bot.start(config)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:  # noqa: BLE001 — surface, don't leak stack
+            raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}")
+        return telegram_bot.status().to_dict()
+
+    @app.post("/telegram/stop", dependencies=bearer)
+    async def telegram_stop() -> dict[str, Any]:
+        await telegram_bot.stop()
+        return telegram_bot.status().to_dict()
 
     @app.get("/llm/local-runtimes", dependencies=bearer)
     async def llm_local_runtimes() -> dict[str, Any]:
@@ -706,3 +754,17 @@ class LLMTestRequest(BaseModel):
     real debate."""
 
     provider_config: dict[str, Any]
+
+
+class TelegramBotStartRequest(BaseModel):
+    """Renderer payload to start (or restart) the Telegram bot.
+
+    The token is a secret URL-embedded auth credential; it ships from the
+    renderer's safeStorage on each /telegram/start call and is held in
+    memory only by the engine. Restart-to-update is the supported way to
+    rotate the token or update the allowlist."""
+
+    token: str = Field(min_length=20, max_length=120)
+    allowlist: list[int] = Field(default_factory=list)
+    daily_cap_usd: float = Field(default=5.0, ge=0, le=1000)
+    provider_config: dict[str, Any] = Field(default_factory=dict)
