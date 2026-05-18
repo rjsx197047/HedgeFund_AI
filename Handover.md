@@ -109,8 +109,9 @@ f2ac440  chore(seo): add Bing Webmaster Tools verification file
 8. **Phase 8c bidirectional Telegram bot.** Architecture captured in memory. ~4-5 days for feature parity (1-2 day MVP). Outbound polling, allowlist, per-day cost cap, detached sidecar. Don't start before Phase 6 stable.
 
 **Search Console follow-up:**
-9. **Check Bing Webmaster Tools tomorrow morning** — sitemap should have flipped from Processing → Success overnight, URLs discovered should jump from 0 to ~22 (1 home + 5 marketing + 16 docs).
+9. **Check Bing Webmaster Tools tomorrow morning** — sitemap should have flipped from Processing → Success overnight, URLs discovered should jump from 0 to ~22 (1 home + 5 marketing + 16 docs). **Heads-up from Global Sites Developer:** Bing's "last crawled" sentinel was at WCF MinValue (never actually crawled) at their audit time tonight. May self-resolve. **If still stuck Wednesday (~48hr from now), remove + resubmit the sitemap on Bing.**
 10. **Check Google Search Console tomorrow morning** — first indexing pass results should appear; ranking takes days to weeks.
+11. **IndexNow key file shipped tonight** on site repo as `1134928`. Curl-verified live at `https://tradingagentslab.ai/3d1551480f673d723f74adc750803f34c6648127b61d321ccfa33f780713ab66.txt`. Family-wide shared key per Global Sites Developer coordination. No tomorrow action required; bots discover the key via DNS / by submission. Note: this is the foundation for future PUSH-based URL submission to Bing + Yandex (one call notifies all engines that consume IndexNow).
 
 **Pre-existing items unchanged from earlier wraps:**
 11. **OG image generation** — Clawless Site Dev's Python+PIL script still queued.
