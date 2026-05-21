@@ -730,6 +730,35 @@ export async function approveTelegramChat(
   return (await res.json()) as TelegramBotStatus;
 }
 
+/** Push fresh provider_config to a running bot. Used to keep OAuth
+ * access tokens current; for API-key providers this is a no-op call
+ * the renderer can simply skip. Returns 409 if the bot is not running;
+ * the caller should treat that as a quiet skip, not an error to surface. */
+export async function refreshTelegramBotCredentials(
+  providerConfig: Record<string, unknown>,
+): Promise<TelegramBotStatus | null> {
+  const { port, token } = await handshake();
+  const res = await fetch(`http://127.0.0.1:${port}/telegram/refresh-credentials`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ provider_config: providerConfig }),
+  });
+  if (res.status === 409) {
+    // Bot not running. Renderer should clear its refresh interval.
+    return null;
+  }
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(
+      `refreshTelegramBotCredentials failed: ${res.status} ${detail}`,
+    );
+  }
+  return (await res.json()) as TelegramBotStatus;
+}
+
 /** Drop a pending entry without DMing the user. */
 export async function denyTelegramChat(
   chatId: number,

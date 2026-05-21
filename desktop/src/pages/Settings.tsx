@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './Settings.module.css';
 import {
   deleteSecret,
@@ -11,6 +11,7 @@ import {
 } from '../lib/secrets';
 import {
   disconnectOpenAIOAuth,
+  getOpenAICredentialsForRequest,
   getOpenAIOAuthStatus,
   onOAuthProgress,
   onOAuthPrompt,
@@ -30,7 +31,9 @@ import {
   getLocalRuntimes,
   getTelegramBotStatus,
   LOCAL_MODEL_SECRET_KEY,
+  OPENAI_CODEX_DEFAULT_MODEL,
   PROVIDER_SECRET_KEY,
+  refreshTelegramBotCredentials,
   startTelegramBot,
   stopTelegramBot,
   testLLMConnection,
@@ -56,7 +59,14 @@ import {
   type WebhookKind,
 } from '../lib/webhooks';
 
-type Tab = 'llm' | 'data' | 'webhooks' | 'clawless' | 'costguard' | 'about';
+type Tab =
+  | 'llm'
+  | 'data'
+  | 'webhooks'
+  | 'channels'
+  | 'clawless'
+  | 'costguard'
+  | 'about';
 
 interface TabDef {
   id: Tab;
@@ -82,6 +92,12 @@ const TABS: TabDef[] = [
     label: 'Webhooks',
     description:
       'Push the decision to Telegram, Slack, Discord, or any HTTPS endpoint when a debate finishes. Analysis only. Trading Agents Lab never executes trades; users bridge to their own brokerage on the receiving side.',
+  },
+  {
+    id: 'channels',
+    label: 'Channels',
+    description:
+      'Two-way integrations where you can message Trading Agents Lab from outside the desktop app and get a Diligence back. Telegram is the first channel. More may follow as users ask.',
   },
   {
     id: 'clawless',
@@ -341,6 +357,7 @@ function Settings() {
             />
           )}
           {active === 'webhooks' && <WebhooksTab availability={availability} />}
+          {active === 'channels' && <ChannelsTab />}
           {active === 'costguard' && <CostGuardTab />}
           {active === 'about' && (
             <AboutTab availability={availability} secretsCount={listings.length} />
@@ -1390,7 +1407,22 @@ function WebhooksTab({ availability }: WebhooksTabProps) {
           onSave={onSave}
         />
       )}
+    </div>
+  );
+}
 
+// ---- Channels tab ---------------------------------------------------------
+//
+// Two-way integrations where the user reaches into Trading Agents Lab from
+// outside the desktop app. Today this is just the Telegram bot. Future
+// candidates (Discord, Slack, iMessage Shortcuts, etc.) would each get
+// their own panel here. Kept separate from Webhooks because the mental
+// model is different: webhooks are outbound HTTP push on session.complete;
+// channels are inbound triggers that drive a new debate.
+
+function ChannelsTab() {
+  return (
+    <div>
       <TelegramBotPanel />
     </div>
   );
@@ -1929,9 +1961,11 @@ const TELEGRAM_ALLOWLIST_LS_KEY = 'tal.telegram.allowlist';
 const TELEGRAM_CAP_LS_KEY = 'tal.telegram.daily_cap';
 const TELEGRAM_PROVIDER_LS_KEY = 'tal.telegram.provider';
 
-// v1.1 supports the 4 API-key providers. OAuth + local need extra plumbing
-// (OAuth creds live in Electron main, local needs base_url) so they're
-// excluded here. Same pattern as testLLMConnection in engine-client.ts.
+// v1.2 supports all 4 API-key providers plus OpenAI OAuth (Codex). OAuth
+// access tokens are short-lived, so when the bot is on OpenAI OAuth the
+// panel kicks off a periodic refresh that pushes fresh tokens to the
+// engine via /telegram/refresh-credentials. Local LLM is still excluded
+// because the base_url + dynamic model picker plumbing isn't here yet.
 type BotProvider = 'openai' | 'anthropic' | 'openrouter' | 'gemini';
 const BOT_PROVIDERS: { value: BotProvider; label: string }[] = [
   { value: 'openai',     label: 'OpenAI' },
@@ -1955,6 +1989,77 @@ function parseAllowlist(text: string): number[] {
     .filter((n) => Number.isFinite(n) && n > 0);
 }
 
+/**
+ * Assemble the provider_config to ship to /telegram/start (or push via
+ * /telegram/refresh-credentials). For OpenAI, prefer OAuth if connected
+ * because the founder's intent on this product is "use the ChatGPT plan
+ * I already pay for"; an API key in the fallback slot is the API-key
+ * path. For everything else, pull the API key from safeStorage.
+ *
+ * Returns `null` if there's no usable credential for the chosen provider
+ * (renderer surfaces this as the "configure a key" error). Returns
+ * `{ kind: 'oauth' }` when OAuth was used, so the caller can decide
+ * whether to start the periodic refresh interval; an `api_key` result
+ * has stable creds and needs no refresh.
+ */
+async function buildBotProviderConfig(provider: BotProvider): Promise<
+  | { kind: 'api_key'; config: Record<string, unknown> }
+  | { kind: 'oauth'; config: Record<string, unknown> }
+  | null
+> {
+  const model = BOT_PROVIDER_DEFAULT_MODEL[provider];
+
+  if (provider === 'openai') {
+    // OAuth preferred. `getOpenAICredentialsForRequest` refreshes silently
+    // if the cached token is within 60s of expiry; on full failure it
+    // returns null and we fall through to the API-key path.
+    try {
+      const creds = await getOpenAICredentialsForRequest();
+      if (creds) {
+        return {
+          kind: 'oauth',
+          config: {
+            provider: 'openai',
+            auth: {
+              type: 'oauth',
+              access: creds.access,
+              refresh: creds.refresh,
+              expires: creds.expires,
+              account_id: creds.accountId,
+            },
+            // OpenAI Codex backend uses a different default model than the
+            // API path (Codex rejects gpt-4o-mini etc.). Mirror the Analyze
+            // page's OAuth default.
+            model: OPENAI_CODEX_DEFAULT_MODEL,
+            max_tokens: 400,
+          },
+        };
+      }
+    } catch {
+      // Fall through to API-key path. The OAuth bridge may be unavailable
+      // (preload not loaded) or the user may not have connected OAuth.
+    }
+  }
+
+  const apiKey = await getSecret(PROVIDER_SECRET_KEY[provider]);
+  if (!apiKey) {
+    return null;
+  }
+  return {
+    kind: 'api_key',
+    config: {
+      provider,
+      auth: { type: 'api_key', api_key: apiKey },
+      model,
+      max_tokens: 400,
+    },
+  };
+}
+
+// Refresh OAuth tokens this often. OpenAI access tokens are typically 1hr;
+// 45 minutes leaves comfortable headroom but doesn't churn unnecessarily.
+const OAUTH_REFRESH_INTERVAL_MS = 45 * 60 * 1000;
+
 function TelegramBotPanel() {
   const [token, setToken] = useState('');
   const [hasStoredToken, setHasStoredToken] = useState(false);
@@ -1964,6 +2069,50 @@ function TelegramBotPanel() {
   const [status, setStatus] = useState<TelegramBotStatus | null>(null);
   const [busy, setBusy] = useState<'starting' | 'stopping' | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // OAuth refresh interval. Only armed when the bot is started with
+  // OpenAI OAuth credentials; cleared on Stop or panel unmount. Holds
+  // the interval handle so we can call clearInterval on stop / restart.
+  const oauthRefreshRef = useRef<number | null>(null);
+
+  const clearOAuthRefresh = useCallback(() => {
+    if (oauthRefreshRef.current !== null) {
+      window.clearInterval(oauthRefreshRef.current);
+      oauthRefreshRef.current = null;
+    }
+  }, []);
+
+  const startOAuthRefresh = useCallback((provider: BotProvider) => {
+    // Refresh interval is only meaningful when OAuth is the auth path.
+    // OAuth is OpenAI-only today; if more providers grow OAuth the gate
+    // moves here.
+    if (provider !== 'openai') return;
+    clearOAuthRefresh();
+    oauthRefreshRef.current = window.setInterval(async () => {
+      try {
+        const built = await buildBotProviderConfig(provider);
+        if (built === null || built.kind !== 'oauth') {
+          // OAuth no longer available (user disconnected, etc.). The
+          // last-pushed token will eventually expire and the next debate
+          // will fail with a friendly error. Stop refreshing.
+          clearOAuthRefresh();
+          return;
+        }
+        const refreshed = await refreshTelegramBotCredentials(built.config);
+        if (refreshed === null) {
+          // Engine says bot isn't running. Stop refreshing.
+          clearOAuthRefresh();
+        }
+      } catch {
+        // Network blips and other transient errors are fine; the next
+        // tick will retry. Don't surface to the UI; it would be noise.
+      }
+    }, OAUTH_REFRESH_INTERVAL_MS);
+  }, [clearOAuthRefresh]);
+
+  // Clear the interval on unmount so we don't leak when the user
+  // navigates away from Settings.
+  useEffect(() => () => clearOAuthRefresh(), [clearOAuthRefresh]);
 
   const refresh = useCallback(async () => {
     try {
@@ -2035,19 +2184,18 @@ function TelegramBotPanel() {
       setError('Daily cap must be a non-negative dollar amount.');
       return;
     }
-    // Provider config snapshot. v1.1: user picks the provider per bot via
-    // the dropdown above. API key is pulled from the matching safeStorage
-    // slot the user already configured for the Analyze flow. OAuth + local
-    // are excluded here for the same reason as testLLMConnection (OAuth
-    // creds live in main; local needs base_url plumbing) and can be added
-    // if users ask for them.
-    const providerKey = await getSecret(PROVIDER_SECRET_KEY[botProvider]);
-    if (!providerKey) {
+    // v1.2: build provider_config with OAuth-awareness for OpenAI. For
+    // other providers and the OpenAI API-key fallback, this resolves to
+    // the same API-key shape v1.1 used.
+    const built = await buildBotProviderConfig(botProvider);
+    if (built === null) {
       const label =
         BOT_PROVIDERS.find((p) => p.value === botProvider)?.label ?? botProvider;
-      setError(
-        `No ${label} API key configured. Set one in the LLM Providers tab before starting the bot, or pick a different provider above.`,
-      );
+      const oauthHint =
+        botProvider === 'openai'
+          ? ' Either sign in with OpenAI OAuth in the LLM Providers tab, or paste an API key in the OpenAI API-key fallback row.'
+          : ' Set one in the LLM Providers tab, or pick a different provider above.';
+      setError(`No ${label} credentials configured.${oauthHint}`);
       return;
     }
     setBusy('starting');
@@ -2069,20 +2217,25 @@ function TelegramBotPanel() {
         token: effectiveToken,
         allowlist,
         daily_cap_usd: cap,
-        provider_config: {
-          provider: botProvider,
-          auth: { type: 'api_key', api_key: providerKey },
-          model: BOT_PROVIDER_DEFAULT_MODEL[botProvider],
-          max_tokens: 400,
-        },
+        provider_config: built.config,
       });
       setStatus(s);
+      // Arm the refresh loop after the bot is confirmed running. The
+      // first refresh fires OAUTH_REFRESH_INTERVAL_MS after start, which
+      // is well within the typical 1hr OAuth lifetime.
+      if (built.kind === 'oauth') {
+        startOAuthRefresh(botProvider);
+      } else {
+        // Switched away from OAuth (or chose a non-OAuth provider on
+        // restart). Make sure any prior refresh loop is gone.
+        clearOAuthRefresh();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(null);
     }
-  }, [token, hasStoredToken, allowlistText, capText, botProvider]);
+  }, [token, hasStoredToken, allowlistText, capText, botProvider, startOAuthRefresh, clearOAuthRefresh]);
 
   const onStop = useCallback(async () => {
     setBusy('stopping');
@@ -2090,12 +2243,13 @@ function TelegramBotPanel() {
     try {
       const s = await stopTelegramBot();
       setStatus(s);
+      clearOAuthRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(null);
     }
-  }, []);
+  }, [clearOAuthRefresh]);
 
   const polling = status?.polling ?? false;
   const spendEntries = Object.entries(status?.daily_spend_usd ?? {});
@@ -2243,9 +2397,13 @@ function TelegramBotPanel() {
             ))}
           </select>
           <span className={styles.hint} style={{ marginTop: 4, display: 'block' }}>
-            Uses the API key stored for this provider in the LLM Providers tab.
-            Default model: {BOT_PROVIDER_DEFAULT_MODEL[botProvider]}. OAuth and
-            local runtimes are not supported for the bot in this release.
+            Uses the credential stored for this provider in the LLM Providers
+            tab. For OpenAI, OAuth (Codex) is preferred when connected; an
+            API key in the OpenAI fallback row is used otherwise. Default
+            model: {botProvider === 'openai'
+              ? `${BOT_PROVIDER_DEFAULT_MODEL.openai} (API key) or ${OPENAI_CODEX_DEFAULT_MODEL} (OAuth)`
+              : BOT_PROVIDER_DEFAULT_MODEL[botProvider]}.
+            Local runtimes are not yet supported for the bot.
           </span>
         </label>
 

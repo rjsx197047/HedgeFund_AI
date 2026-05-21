@@ -348,6 +348,26 @@ def build_app(*, token: str) -> FastAPI:
             )
         return telegram_bot.status().to_dict()
 
+    @app.post("/telegram/refresh-credentials", dependencies=bearer)
+    async def telegram_refresh_credentials(
+        req: TelegramRefreshCredentialsRequest,
+    ) -> dict[str, Any]:
+        """Update the bot's provider_config in place. Used by the renderer
+        to push fresh OpenAI OAuth access tokens on a periodic interval
+        before the previous one expires; the bot otherwise wouldn't be
+        able to run debates more than ~1hr after start when on OAuth.
+
+        Returns 409 if the bot is not running. The renderer is expected
+        to silently skip the refresh in that case rather than treat it
+        as a hard error."""
+        ok = telegram_bot.refresh_credentials(req.provider_config)
+        if not ok:
+            raise HTTPException(
+                status_code=409,
+                detail="telegram bot is not running; nothing to refresh",
+            )
+        return telegram_bot.status().to_dict()
+
     @app.get("/llm/local-runtimes", dependencies=bearer)
     async def llm_local_runtimes() -> dict[str, Any]:
         """Probe localhost for OpenAI-compatible LLM runtimes.
@@ -801,3 +821,11 @@ class TelegramChatActionRequest(BaseModel):
     Pydantic int type handles that range natively."""
 
     chat_id: int
+
+
+class TelegramRefreshCredentialsRequest(BaseModel):
+    """Renderer pushes fresh provider_config (OAuth-aware) on a periodic
+    interval so the engine always has a non-expired access token for the
+    next bot-triggered debate."""
+
+    provider_config: dict[str, Any]

@@ -47,7 +47,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import httpx
 
@@ -85,6 +85,77 @@ _PHASE_PROGRESS_LABEL: dict[str, str] = {
     "researchers": "Analyst phase complete. Researchers debating now.",
     "trader": "Researchers complete. Trader synthesizing.",
     "risk": "Trader complete. Risk committee reviewing.",
+}
+
+# v1.2 reply modes. "summary" sends the phase headers + final decision
+# (current default). "full" additionally sends every agent.message as a
+# separate Telegram message so the mobile user sees the full transcript.
+# Mode is per-chat, persisted to telegram_chat_modes.json so it survives
+# engine restart and feels stable across sessions.
+ReplyMode = Literal["summary", "full"]
+DEFAULT_REPLY_MODE: ReplyMode = "summary"
+
+# Friendly labels for agent roles in full-mode Telegram replies. The
+# upstream agent names are snake_case; we humanize for display. Anything
+# missing from this map falls back to the raw agent name title-cased.
+_AGENT_LABEL: dict[str, str] = {
+    "technical_analyst": "Technical Analyst",
+    "fundamental_analyst": "Fundamental Analyst",
+    "news_analyst": "News Analyst",
+    "sentiment_analyst": "Sentiment Analyst",
+    "bull_researcher": "Bull Researcher",
+    "bear_researcher": "Bear Researcher",
+    "research_manager": "Research Manager",
+    "trader": "Trader",
+    "risk_conservative": "Risk (Conservative)",
+    "risk_neutral": "Risk (Neutral)",
+    "risk_aggressive": "Risk (Aggressive)",
+    "portfolio_manager": "Portfolio Manager",
+}
+
+# Per-agent message length cap. Telegram allows 4096 chars per message;
+# 3500 leaves room for the role header + truncation marker + any markdown
+# the agent's content already contains.
+_AGENT_REPLY_MAX_CHARS = 3500
+
+# v1.2 command menu. Telegram clients show this list when the user types
+# "/" in a chat with the bot. setMyCommands is bot-wide; published once
+# on each start() so a token rotation or new feature flag picks up new
+# entries. Order matters: Telegram shows the list in this order.
+_BOT_COMMANDS: list[dict[str, str]] = [
+    {"command": "analyze", "description": "Run a Diligence (e.g. /analyze NVDA)"},
+    {"command": "full",    "description": "Stream every agent's reasoning live"},
+    {"command": "summary", "description": "Phase headers + decision only (default)"},
+    {"command": "mode",    "description": "Show the current reply mode"},
+    {"command": "help",    "description": "Show all commands and current mode"},
+    {"command": "start",   "description": "Request approval to use the bot"},
+]
+
+# v1.3 persistent reply keyboard. Telegram shows this 2x2 grid below the
+# message input so approved users can tap a button instead of typing a
+# slash command. Each button label is a human phrase; the handler maps it
+# back to the matching slash command. Telegram persists the keyboard
+# across the chat once shown, so we attach it to messages going to
+# allowlisted users only (pending/non-allowlisted users keep the regular
+# keyboard so they can type freely).
+_REPLY_KEYBOARD: dict[str, Any] = {
+    "keyboard": [
+        [{"text": "Full debate mode"}, {"text": "Summary mode"}],
+        [{"text": "Current mode"},     {"text": "Help"}],
+    ],
+    "resize_keyboard": True,
+    "is_persistent": True,
+    "input_field_placeholder": "Send a ticker or tap a button",
+}
+
+# Friendly-label -> command mapping. Tapping the keyboard sends the button
+# text as a message; we normalize to the slash command before the existing
+# command dispatch fires. Match is case-insensitive on the exact label.
+_LABEL_TO_COMMAND: dict[str, str] = {
+    "full debate mode": "/full",
+    "summary mode":     "/summary",
+    "current mode":     "/mode",
+    "help":             "/help",
 }
 
 
@@ -224,6 +295,42 @@ def _save_spend(spend: dict[str, float]) -> None:
         logger.warning("failed to persist telegram_spend.json: %s", exc)
 
 
+# Per-chat reply mode persistence. Separate file from spend because modes
+# don't expire daily and benefit from being independent of the date check.
+# Format: {"<chat_id>": "summary" | "full", ...}.
+
+
+def _modes_file_path() -> Path:
+    from . import storage  # noqa: PLC0415
+
+    return Path(storage.db_path()).parent / "telegram_chat_modes.json"
+
+
+def _load_modes() -> dict[str, ReplyMode]:
+    path = _modes_file_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+        out: dict[str, ReplyMode] = {}
+        for k, v in data.items():
+            if v in ("summary", "full"):
+                out[str(k)] = v  # type: ignore[assignment]
+        return out
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        logger.warning("telegram_chat_modes.json unreadable: %s", exc)
+        return {}
+
+
+def _save_modes(modes: dict[str, ReplyMode]) -> None:
+    path = _modes_file_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(modes, separators=(",", ":")))
+    except OSError as exc:
+        logger.warning("failed to persist telegram_chat_modes.json: %s", exc)
+
+
 # ---- The bot ---------------------------------------------------------------
 
 
@@ -245,6 +352,10 @@ class TelegramBot:
         # run flow. Operator approves via /telegram/approve; stays in
         # memory only because the queue is short-lived (PENDING_TTL_S).
         self._pending: dict[int, PendingApproval] = {}
+        # Per-chat reply mode. v1.2 user preference: summary (phase
+        # headers + decision) or full (every agent.message streamed).
+        # Persisted to telegram_chat_modes.json so restarts are seamless.
+        self._modes: dict[str, ReplyMode] = {}
 
     # ---- Public API ---------------------------------------------------
 
@@ -264,8 +375,32 @@ class TelegramBot:
         )
         self._spend = _load_spend()
         self._status.daily_spend_usd = dict(self._spend)
+        self._modes = _load_modes()
         self._client = httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S)
+        # Publish the command menu so typing "/" in Telegram autocompletes
+        # the available commands with descriptions. Fire-and-forget: this
+        # is best-effort UX, not a startup precondition. A network blip
+        # should not block the polling loop.
+        asyncio.create_task(self._publish_commands(), name="telegram-bot-publish-commands")
         self._task = asyncio.create_task(self._poll_loop(), name="telegram-bot-poll")
+
+    async def _publish_commands(self) -> None:
+        """Register the command list with Telegram so the / menu populates.
+
+        Idempotent on Telegram's side: calling setMyCommands with the same
+        list is a no-op. Failures are logged but don't abort bot startup.
+        """
+        if self._client is None or self._config is None:
+            return
+        url = f"{_API_BASE}{self._config.token}/setMyCommands"
+        try:
+            await self._client.post(
+                url,
+                json={"commands": _BOT_COMMANDS},
+                timeout=10.0,
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("telegram setMyCommands failed: %s", exc)
 
     async def stop(self) -> None:
         """Stop polling. Idempotent; safe to call when not running."""
@@ -286,6 +421,9 @@ class TelegramBot:
         self._status = _BotStatus()
         self._busy.clear()
         self._pending.clear()
+        # Modes are NOT cleared here: they persist on disk and survive a
+        # restart by design. Clearing in-memory just frees a small map.
+        self._modes.clear()
 
     def status(self) -> _BotStatus:
         # Refresh dynamic fields before returning.
@@ -328,10 +466,15 @@ class TelegramBot:
                 chat_id,
                 (
                     "You're approved. Send a ticker like `NVDA` or "
-                    "`/analyze NVDA` to run a Diligence. Daily spend cap "
-                    "is ${cap:.2f}.\n\n"
+                    "`/analyze NVDA` to run a Diligence.\n\n"
+                    "Modes:\n"
+                    "  /summary  phase headers + final decision (default)\n"
+                    "  /full     stream every agent's reasoning live\n"
+                    "  /help     full command list\n\n"
+                    "Daily spend cap is ${cap:.2f}.\n\n"
                     "_Educational output only. Not investment advice._"
                 ).format(cap=self._config.daily_cap_usd),
+                with_keyboard=True,
             )
         except Exception:  # noqa: BLE001 — DM failure shouldn't roll back approval
             logger.warning("approval DM failed for chat %s", chat_id)
@@ -342,6 +485,31 @@ class TelegramBot:
         if there was an entry to drop, False otherwise."""
         self._prune_pending()
         return self._pending.pop(chat_id, None) is not None
+
+    def refresh_credentials(self, provider_config: dict[str, Any]) -> bool:
+        """Update the in-memory provider_config used for bot-triggered
+        debates. Called by the renderer on a periodic interval when the
+        active provider is OpenAI OAuth, so the engine always has a
+        non-expired access token ready for the next debate.
+
+        Returns True if the bot is running and credentials were updated,
+        False if the bot is stopped (the renderer should handle the
+        latter by simply skipping the refresh until next interval)."""
+        if self._config is None:
+            return False
+        self._config.provider_config = dict(provider_config)
+        return True
+
+    # ---- Reply mode (v1.2) --------------------------------------------
+
+    def _mode_for(self, chat_id: int) -> ReplyMode:
+        return self._modes.get(str(chat_id), DEFAULT_REPLY_MODE)
+
+    def _set_mode(self, chat_id: int, mode: ReplyMode) -> None:
+        if mode not in ("summary", "full"):
+            return
+        self._modes[str(chat_id)] = mode
+        _save_modes(self._modes)
 
     # ---- Polling loop -------------------------------------------------
 
@@ -409,6 +577,14 @@ class TelegramBot:
         if not isinstance(chat_id, int):
             return  # bot DMs only carry int chat_ids; ignore the rest
 
+        # v1.3 reply-keyboard normalization. Tapping a button on the
+        # persistent keyboard sends the friendly label as text; map it
+        # back to the matching slash command so the existing dispatch
+        # below treats both inputs identically.
+        normalized = _LABEL_TO_COMMAND.get(text.lower())
+        if normalized is not None:
+            text = normalized
+
         cmd = text.split()[0].lower() if text else ""
 
         # /start handler. Three states:
@@ -420,12 +596,21 @@ class TelegramBot:
         if cmd.startswith("/start") or cmd.startswith("/whoami"):
             self._prune_pending()
             if chat_id in self._config.allowlist:
+                # /start from an already-allowlisted user is typically the
+                # operator pinging the bot after a restart to confirm it's
+                # online. Skip the "you're approved" framing (they know);
+                # surface system-ready status + the current mode so the
+                # ping returns useful state, not just a yes.
+                mode = self._mode_for(chat_id)
                 await self._reply(
                     chat_id,
                     (
-                        "You're already approved. Send a ticker like `NVDA` "
-                        "or `/analyze NVDA` to run a Diligence."
-                    ),
+                        "Trading Agents Lab is ready.\n\n"
+                        "Mode: *{mode}*. Send a ticker like `NVDA` or "
+                        "`/analyze NVDA` to run a Diligence. Send `/help` "
+                        "for the command list."
+                    ).format(mode=mode),
+                    with_keyboard=True,
                 )
                 return
             first_name = str(
@@ -463,16 +648,59 @@ class TelegramBot:
             # existence to randoms who didn't go through /start.
             return
 
+        # Mode toggles. /full and /summary set the per-chat reply mode
+        # and persist it across restarts. /mode echoes the current state
+        # so the user can sanity-check before sending a ticker.
+        if cmd.startswith("/full"):
+            self._set_mode(chat_id, "full")
+            await self._reply(
+                chat_id,
+                (
+                    "Full debate mode on. You'll get every agent's reasoning "
+                    "streamed as the debate runs (around a dozen messages "
+                    "per ticker), followed by the final decision card. Send "
+                    "`/summary` to switch back."
+                ),
+                with_keyboard=True,
+            )
+            return
+        if cmd.startswith("/summary"):
+            self._set_mode(chat_id, "summary")
+            await self._reply(
+                chat_id,
+                (
+                    "Summary mode on. You'll get phase headers and the final "
+                    "decision card. Send `/full` to get the full transcript "
+                    "streamed instead."
+                ),
+                with_keyboard=True,
+            )
+            return
+        if cmd.startswith("/mode"):
+            mode = self._mode_for(chat_id)
+            await self._reply(
+                chat_id,
+                f"Current mode: *{mode}*. Toggle with `/full` or `/summary`.",
+                with_keyboard=True,
+            )
+            return
+
         if cmd.startswith("/help"):
+            mode = self._mode_for(chat_id)
             await self._reply(
                 chat_id,
                 (
                     "Trading Agents Lab bot.\n\n"
                     "Send a ticker by itself (`NVDA`, `BTC-USD`) to run a "
-                    "Diligence. Or use `/analyze NVDA`. Daily spend cap is "
-                    "${:.2f} per chat.\n\n"
+                    "Diligence. Or use `/analyze NVDA`.\n\n"
+                    "Modes (per chat, persisted across restarts):\n"
+                    "  /summary  phase headers + final decision (default)\n"
+                    "  /full     every agent's reasoning streamed live\n"
+                    "  /mode     show the current mode\n\n"
+                    "Currently: *{mode}*. Daily spend cap is ${cap:.2f}.\n\n"
                     "Output is educational only. Not investment advice."
-                ).format(self._config.daily_cap_usd),
+                ).format(mode=mode, cap=self._config.daily_cap_usd),
+                with_keyboard=True,
             )
             return
 
@@ -484,6 +712,7 @@ class TelegramBot:
                     "I didn't see a ticker. Send `NVDA`, `/analyze NVDA`, or "
                     "`/help`."
                 ),
+                with_keyboard=True,
             )
             return
 
@@ -491,6 +720,7 @@ class TelegramBot:
             await self._reply(
                 chat_id,
                 "Still working on your previous request. Hold tight.",
+                with_keyboard=True,
             )
             return
 
@@ -503,6 +733,7 @@ class TelegramBot:
                     "Daily cap reached for this chat (${cap:.2f}). The cap "
                     "resets at UTC midnight. Currently spent: ${spent:.2f}."
                 ).format(cap=self._config.daily_cap_usd, spent=spent),
+                with_keyboard=True,
             )
             return
 
@@ -570,8 +801,10 @@ class TelegramBot:
         await self._reply(
             chat_id,
             f"Running Diligence on {ticker} for {trade_date}. This usually takes a few minutes.",
+            with_keyboard=True,
         )
 
+        mode = self._mode_for(chat_id)
         decision: Optional[dict[str, Any]] = None
         cost_usd: float = 0.0
         live = False
@@ -593,6 +826,14 @@ class TelegramBot:
                     label = _PHASE_PROGRESS_LABEL.get(str(event.get("to") or ""))
                     if label:
                         await self._reply(chat_id, label)
+                elif etype == "agent.message" and mode == "full":
+                    # v1.2: in full mode, forward every agent's reasoning
+                    # as its own Telegram message. The Analyze page shows
+                    # these tagged by role; we mirror the same shape so a
+                    # mobile reader gets the full transcript.
+                    await self._reply(
+                        chat_id, _format_agent_message(event)
+                    )
                 elif etype == "session.complete":
                     decision = event.get("decision")
                     cost_usd = float(event.get("estimated_cost_usd") or 0.0)
@@ -626,11 +867,21 @@ class TelegramBot:
                 cap_usd=self._config.daily_cap_usd,
                 spent_today=self._spend.get(str(chat_id), 0.0),
             ),
+            with_keyboard=True,
         )
 
     # ---- Outbound -----------------------------------------------------
 
-    async def _reply(self, chat_id: int, text: str) -> None:
+    async def _reply(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        with_keyboard: bool = False,
+    ) -> None:
+        """Send a Telegram DM. Pass `with_keyboard=True` to attach the
+        persistent reply keyboard (for allowlisted users). Pending users
+        get the standard keyboard so they can still type freely."""
         assert self._client is not None and self._config is not None
         # Truncate to Telegram's effective ceiling, preserving headroom for
         # the trailing disclaimer line in the formatter (already accounted
@@ -638,14 +889,36 @@ class TelegramBot:
         if len(text) > _REPLY_MAX_CHARS:
             text = text[: _REPLY_MAX_CHARS - 1] + "…"
         url = f"{_API_BASE}{self._config.token}/sendMessage"
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "Markdown",
+        }
+        if with_keyboard:
+            payload["reply_markup"] = _REPLY_KEYBOARD
         try:
-            await self._client.post(
-                url,
-                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
-                timeout=10.0,
-            )
+            await self._client.post(url, json=payload, timeout=10.0)
         except httpx.HTTPError as exc:
             logger.warning("telegram sendMessage failed: %s", exc)
+
+
+def _format_agent_message(event: dict[str, Any]) -> str:
+    """Render an `agent.message` event for Telegram full-mode streaming.
+
+    The Analyze page tags each message with role + phase; we surface the
+    same info as a Markdown header so a mobile reader gets the same
+    structure they'd see on the desktop transcript.
+    """
+    agent = str(event.get("agent") or "agent")
+    phase = str(event.get("phase") or "")
+    content = str(event.get("content") or "").strip()
+    label = _AGENT_LABEL.get(agent, agent.replace("_", " ").title())
+    if len(content) > _AGENT_REPLY_MAX_CHARS:
+        content = content[: _AGENT_REPLY_MAX_CHARS - 1] + "…"
+    header = f"*[{label}]*"
+    if phase:
+        header += f" _phase: {phase}_"
+    return f"{header}\n\n{content}"
 
 
 def _format_decision_reply(
