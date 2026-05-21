@@ -131,6 +131,33 @@ _BOT_COMMANDS: list[dict[str, str]] = [
     {"command": "start",   "description": "Request approval to use the bot"},
 ]
 
+# v1.3 persistent reply keyboard. Telegram shows this 2x2 grid below the
+# message input so approved users can tap a button instead of typing a
+# slash command. Each button label is a human phrase; the handler maps it
+# back to the matching slash command. Telegram persists the keyboard
+# across the chat once shown, so we attach it to messages going to
+# allowlisted users only (pending/non-allowlisted users keep the regular
+# keyboard so they can type freely).
+_REPLY_KEYBOARD: dict[str, Any] = {
+    "keyboard": [
+        [{"text": "Full debate mode"}, {"text": "Summary mode"}],
+        [{"text": "Current mode"},     {"text": "Help"}],
+    ],
+    "resize_keyboard": True,
+    "is_persistent": True,
+    "input_field_placeholder": "Send a ticker or tap a button",
+}
+
+# Friendly-label -> command mapping. Tapping the keyboard sends the button
+# text as a message; we normalize to the slash command before the existing
+# command dispatch fires. Match is case-insensitive on the exact label.
+_LABEL_TO_COMMAND: dict[str, str] = {
+    "full debate mode": "/full",
+    "summary mode":     "/summary",
+    "current mode":     "/mode",
+    "help":             "/help",
+}
+
 
 @dataclass
 class TelegramBotConfig:
@@ -447,6 +474,7 @@ class TelegramBot:
                     "Daily spend cap is ${cap:.2f}.\n\n"
                     "_Educational output only. Not investment advice._"
                 ).format(cap=self._config.daily_cap_usd),
+                with_keyboard=True,
             )
         except Exception:  # noqa: BLE001 — DM failure shouldn't roll back approval
             logger.warning("approval DM failed for chat %s", chat_id)
@@ -549,6 +577,14 @@ class TelegramBot:
         if not isinstance(chat_id, int):
             return  # bot DMs only carry int chat_ids; ignore the rest
 
+        # v1.3 reply-keyboard normalization. Tapping a button on the
+        # persistent keyboard sends the friendly label as text; map it
+        # back to the matching slash command so the existing dispatch
+        # below treats both inputs identically.
+        normalized = _LABEL_TO_COMMAND.get(text.lower())
+        if normalized is not None:
+            text = normalized
+
         cmd = text.split()[0].lower() if text else ""
 
         # /start handler. Three states:
@@ -566,6 +602,7 @@ class TelegramBot:
                         "You're already approved. Send a ticker like `NVDA` "
                         "or `/analyze NVDA` to run a Diligence."
                     ),
+                    with_keyboard=True,
                 )
                 return
             first_name = str(
@@ -616,6 +653,7 @@ class TelegramBot:
                     "per ticker), followed by the final decision card. Send "
                     "`/summary` to switch back."
                 ),
+                with_keyboard=True,
             )
             return
         if cmd.startswith("/summary"):
@@ -627,6 +665,7 @@ class TelegramBot:
                     "decision card. Send `/full` to get the full transcript "
                     "streamed instead."
                 ),
+                with_keyboard=True,
             )
             return
         if cmd.startswith("/mode"):
@@ -634,6 +673,7 @@ class TelegramBot:
             await self._reply(
                 chat_id,
                 f"Current mode: *{mode}*. Toggle with `/full` or `/summary`.",
+                with_keyboard=True,
             )
             return
 
@@ -652,6 +692,7 @@ class TelegramBot:
                     "Currently: *{mode}*. Daily spend cap is ${cap:.2f}.\n\n"
                     "Output is educational only. Not investment advice."
                 ).format(mode=mode, cap=self._config.daily_cap_usd),
+                with_keyboard=True,
             )
             return
 
@@ -663,6 +704,7 @@ class TelegramBot:
                     "I didn't see a ticker. Send `NVDA`, `/analyze NVDA`, or "
                     "`/help`."
                 ),
+                with_keyboard=True,
             )
             return
 
@@ -670,6 +712,7 @@ class TelegramBot:
             await self._reply(
                 chat_id,
                 "Still working on your previous request. Hold tight.",
+                with_keyboard=True,
             )
             return
 
@@ -682,6 +725,7 @@ class TelegramBot:
                     "Daily cap reached for this chat (${cap:.2f}). The cap "
                     "resets at UTC midnight. Currently spent: ${spent:.2f}."
                 ).format(cap=self._config.daily_cap_usd, spent=spent),
+                with_keyboard=True,
             )
             return
 
@@ -749,6 +793,7 @@ class TelegramBot:
         await self._reply(
             chat_id,
             f"Running Diligence on {ticker} for {trade_date}. This usually takes a few minutes.",
+            with_keyboard=True,
         )
 
         mode = self._mode_for(chat_id)
@@ -814,11 +859,21 @@ class TelegramBot:
                 cap_usd=self._config.daily_cap_usd,
                 spent_today=self._spend.get(str(chat_id), 0.0),
             ),
+            with_keyboard=True,
         )
 
     # ---- Outbound -----------------------------------------------------
 
-    async def _reply(self, chat_id: int, text: str) -> None:
+    async def _reply(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        with_keyboard: bool = False,
+    ) -> None:
+        """Send a Telegram DM. Pass `with_keyboard=True` to attach the
+        persistent reply keyboard (for allowlisted users). Pending users
+        get the standard keyboard so they can still type freely."""
         assert self._client is not None and self._config is not None
         # Truncate to Telegram's effective ceiling, preserving headroom for
         # the trailing disclaimer line in the formatter (already accounted
@@ -826,12 +881,15 @@ class TelegramBot:
         if len(text) > _REPLY_MAX_CHARS:
             text = text[: _REPLY_MAX_CHARS - 1] + "…"
         url = f"{_API_BASE}{self._config.token}/sendMessage"
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "Markdown",
+        }
+        if with_keyboard:
+            payload["reply_markup"] = _REPLY_KEYBOARD
         try:
-            await self._client.post(
-                url,
-                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
-                timeout=10.0,
-            )
+            await self._client.post(url, json=payload, timeout=10.0)
         except httpx.HTTPError as exc:
             logger.warning("telegram sendMessage failed: %s", exc)
 

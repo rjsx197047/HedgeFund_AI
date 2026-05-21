@@ -796,6 +796,138 @@ async def test_summary_mode_does_not_stream_agent_messages(patch_httpx_client):
     assert any("*HOLD*" in t for t in texts)
 
 
+# ---- Persistent reply keyboard (v1.3) -------------------------------------
+
+
+def _has_keyboard(payload: dict[str, Any]) -> bool:
+    """True if the sendMessage payload includes the persistent reply keyboard."""
+    markup = payload.get("reply_markup") or {}
+    return bool(markup.get("keyboard")) and markup.get("is_persistent") is True
+
+
+@pytest.mark.asyncio
+async def test_pending_user_reply_has_no_keyboard(patch_httpx_client):
+    """Non-allowlisted users get the regular keyboard so they can type freely."""
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist=set(), daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates([_start_msg(chat_id=42, first_name="Bob")])
+        await asyncio.sleep(0.15)
+    finally:
+        await bot.stop()
+    assert len(transport.sent_messages) == 1
+    assert not _has_keyboard(transport.sent_messages[0])
+
+
+@pytest.mark.asyncio
+async def test_allowlisted_already_approved_reply_has_keyboard(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist={99}, daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates([_start_msg(chat_id=99, first_name="Alice")])
+        await asyncio.sleep(0.15)
+    finally:
+        await bot.stop()
+    assert len(transport.sent_messages) == 1
+    assert _has_keyboard(transport.sent_messages[0])
+
+
+@pytest.mark.asyncio
+async def test_full_command_reply_has_keyboard(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist={42}, daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates([_msg(chat_id=42, text="/full", update_id=1)])
+        await asyncio.sleep(0.15)
+    finally:
+        await bot.stop()
+    assert len(transport.sent_messages) == 1
+    assert _has_keyboard(transport.sent_messages[0])
+
+
+@pytest.mark.asyncio
+async def test_friendly_label_full_mode_maps_to_slash(patch_httpx_client):
+    """Tapping the 'Full debate mode' button sends that literal text;
+    the handler should normalize it to /full behavior."""
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist={42}, daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates(
+            [_msg(chat_id=42, text="Full debate mode", update_id=1)]
+        )
+        await asyncio.sleep(0.15)
+        # Check mode BEFORE stop() — stop() clears the in-memory map.
+        # (The disk file persists; a fresh bot would reload it.)
+        assert bot._mode_for(42) == "full"
+        # The bot replied with the same "Full debate mode on" text the
+        # /full slash command produces.
+        assert any(
+            "Full debate mode on" in m["text"] for m in transport.sent_messages
+        )
+    finally:
+        await bot.stop()
+
+
+@pytest.mark.asyncio
+async def test_friendly_label_summary_maps_to_slash(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist={42}, daily_cap_usd=5.0)
+    await bot.start(config)
+    bot._set_mode(42, "full")
+    try:
+        transport.enqueue_updates(
+            [_msg(chat_id=42, text="Summary mode", update_id=1)]
+        )
+        await asyncio.sleep(0.15)
+    finally:
+        await bot.stop()
+    assert bot._mode_for(42) == "summary"
+
+
+@pytest.mark.asyncio
+async def test_friendly_label_help_maps_to_slash(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist={42}, daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates(
+            [_msg(chat_id=42, text="Help", update_id=1)]
+        )
+        await asyncio.sleep(0.15)
+    finally:
+        await bot.stop()
+    assert any(
+        "Trading Agents Lab bot" in m["text"] for m in transport.sent_messages
+    )
+
+
+@pytest.mark.asyncio
+async def test_friendly_label_case_insensitive(patch_httpx_client):
+    """Match should be case-insensitive so users on autocaps mobiles work too."""
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist={42}, daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates(
+            [_msg(chat_id=42, text="FULL DEBATE MODE", update_id=1)]
+        )
+        await asyncio.sleep(0.15)
+        assert bot._mode_for(42) == "full"
+    finally:
+        await bot.stop()
+
+
 # ---- Bot command menu (setMyCommands) -------------------------------------
 
 
