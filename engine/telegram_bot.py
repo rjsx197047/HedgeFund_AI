@@ -118,6 +118,19 @@ _AGENT_LABEL: dict[str, str] = {
 # the agent's content already contains.
 _AGENT_REPLY_MAX_CHARS = 3500
 
+# v1.2 command menu. Telegram clients show this list when the user types
+# "/" in a chat with the bot. setMyCommands is bot-wide; published once
+# on each start() so a token rotation or new feature flag picks up new
+# entries. Order matters: Telegram shows the list in this order.
+_BOT_COMMANDS: list[dict[str, str]] = [
+    {"command": "analyze", "description": "Run a Diligence (e.g. /analyze NVDA)"},
+    {"command": "full",    "description": "Stream every agent's reasoning live"},
+    {"command": "summary", "description": "Phase headers + decision only (default)"},
+    {"command": "mode",    "description": "Show the current reply mode"},
+    {"command": "help",    "description": "Show all commands and current mode"},
+    {"command": "start",   "description": "Request approval to use the bot"},
+]
+
 
 @dataclass
 class TelegramBotConfig:
@@ -337,7 +350,30 @@ class TelegramBot:
         self._status.daily_spend_usd = dict(self._spend)
         self._modes = _load_modes()
         self._client = httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S)
+        # Publish the command menu so typing "/" in Telegram autocompletes
+        # the available commands with descriptions. Fire-and-forget: this
+        # is best-effort UX, not a startup precondition. A network blip
+        # should not block the polling loop.
+        asyncio.create_task(self._publish_commands(), name="telegram-bot-publish-commands")
         self._task = asyncio.create_task(self._poll_loop(), name="telegram-bot-poll")
+
+    async def _publish_commands(self) -> None:
+        """Register the command list with Telegram so the / menu populates.
+
+        Idempotent on Telegram's side: calling setMyCommands with the same
+        list is a no-op. Failures are logged but don't abort bot startup.
+        """
+        if self._client is None or self._config is None:
+            return
+        url = f"{_API_BASE}{self._config.token}/setMyCommands"
+        try:
+            await self._client.post(
+                url,
+                json={"commands": _BOT_COMMANDS},
+                timeout=10.0,
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("telegram setMyCommands failed: %s", exc)
 
     async def stop(self) -> None:
         """Stop polling. Idempotent; safe to call when not running."""

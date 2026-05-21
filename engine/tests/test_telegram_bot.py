@@ -56,6 +56,7 @@ class FakeTelegramTransport(httpx.AsyncBaseTransport):
 
     def __init__(self) -> None:
         self.sent_messages: list[dict[str, Any]] = []
+        self.set_commands_calls: list[dict[str, Any]] = []
         self._update_queue: list[list[dict[str, Any]]] = []
 
     def enqueue_updates(self, updates: list[dict[str, Any]]) -> None:
@@ -78,6 +79,13 @@ class FakeTelegramTransport(httpx.AsyncBaseTransport):
             return httpx.Response(
                 200,
                 json={"ok": True, "result": {}},
+                request=request,
+            )
+        if url_path.endswith("/setMyCommands"):
+            self.set_commands_calls.append(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={"ok": True, "result": True},
                 request=request,
             )
         return httpx.Response(404, json={"ok": False}, request=request)
@@ -786,6 +794,37 @@ async def test_summary_mode_does_not_stream_agent_messages(patch_httpx_client):
     texts = [m["text"] for m in transport.sent_messages]
     assert not any("should NOT be forwarded" in t for t in texts)
     assert any("*HOLD*" in t for t in texts)
+
+
+# ---- Bot command menu (setMyCommands) -------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_start_publishes_command_menu(patch_httpx_client):
+    """On bot start, setMyCommands fires so typing / in Telegram shows
+    the autocomplete menu with our 6 commands."""
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist={42}, daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        # Give the publish task a moment to run; it's fire-and-forget on
+        # start() so the polling loop isn't blocked.
+        for _ in range(20):
+            await asyncio.sleep(0.05)
+            if transport.set_commands_calls:
+                break
+    finally:
+        await bot.stop()
+
+    assert len(transport.set_commands_calls) == 1
+    payload = transport.set_commands_calls[0]
+    names = [c["command"] for c in payload["commands"]]
+    # All six v1.2 commands present.
+    assert set(names) == {"analyze", "full", "summary", "mode", "help", "start"}
+    # Every entry has a non-empty description.
+    for c in payload["commands"]:
+        assert c.get("description", "").strip() != ""
 
 
 # ---- Credential refresh (v1.2 OAuth) --------------------------------------
