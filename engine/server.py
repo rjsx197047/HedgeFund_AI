@@ -322,6 +322,32 @@ def build_app(*, token: str) -> FastAPI:
         await telegram_bot.stop()
         return telegram_bot.status().to_dict()
 
+    @app.post("/telegram/approve", dependencies=bearer)
+    async def telegram_approve(req: TelegramChatActionRequest) -> dict[str, Any]:
+        """Move a pending chat_id into the live allowlist. The bot DMs the
+        user "you're approved" on success. Idempotent: re-approving an
+        already-approved chat returns ok without side effect."""
+        ok = await telegram_bot.approve(req.chat_id)
+        if not ok:
+            raise HTTPException(
+                status_code=404,
+                detail=f"no pending request for chat_id {req.chat_id}",
+            )
+        return telegram_bot.status().to_dict()
+
+    @app.post("/telegram/deny", dependencies=bearer)
+    async def telegram_deny(req: TelegramChatActionRequest) -> dict[str, Any]:
+        """Drop a pending entry without DMing the user. Returns 404 if
+        there was no pending entry for the chat_id (already approved /
+        denied / expired)."""
+        ok = telegram_bot.deny(req.chat_id)
+        if not ok:
+            raise HTTPException(
+                status_code=404,
+                detail=f"no pending request for chat_id {req.chat_id}",
+            )
+        return telegram_bot.status().to_dict()
+
     @app.get("/llm/local-runtimes", dependencies=bearer)
     async def llm_local_runtimes() -> dict[str, Any]:
         """Probe localhost for OpenAI-compatible LLM runtimes.
@@ -768,3 +794,10 @@ class TelegramBotStartRequest(BaseModel):
     allowlist: list[int] = Field(default_factory=list)
     daily_cap_usd: float = Field(default=5.0, ge=0, le=1000)
     provider_config: dict[str, Any] = Field(default_factory=dict)
+
+
+class TelegramChatActionRequest(BaseModel):
+    """Approve/Deny target. Telegram chat_ids are int64 on the wire; the
+    Pydantic int type handles that range natively."""
+
+    chat_id: int

@@ -139,6 +139,31 @@ async def _stub_live_debate_factory(cost_usd: float = 0.01, action: str = "HOLD"
     return stub
 
 
+async def _stub_live_debate_with_phases(cost_usd: float = 0.01):
+    """Same as `_stub_live_debate_factory` but also yields phase transitions
+    so the bot's progress-streaming path is exercised."""
+
+    async def stub(*_args, **_kwargs):  # noqa: ANN202
+        yield {"type": "session.start", "ticker": "NVDA", "trade_date": "2026-05-18"}
+        yield {"type": "phase.transition", "from": "analysts", "to": "researchers"}
+        yield {"type": "phase.transition", "from": "researchers", "to": "trader"}
+        yield {"type": "phase.transition", "from": "trader", "to": "risk"}
+        yield {
+            "type": "session.complete",
+            "ticker": "NVDA",
+            "trade_date": "2026-05-18",
+            "decision": {
+                "action": "HOLD",
+                "confidence": 0.55,
+                "reasoning": "Synthetic test reasoning.",
+            },
+            "live": True,
+            "estimated_cost_usd": cost_usd,
+        }
+
+    return stub
+
+
 # ---- Ticker parsing --------------------------------------------------------
 
 
@@ -318,3 +343,333 @@ async def test_invalid_input_friendly_reply(patch_httpx_client):
         await bot.stop()
     assert len(transport.sent_messages) == 1
     assert "didn't see a ticker" in transport.sent_messages[0]["text"]
+
+
+# ---- Pairing flow (v1.1) ---------------------------------------------------
+
+
+def _start_msg(
+    chat_id: int, first_name: str = "", username: str = "", update_id: int = 1
+) -> dict[str, Any]:
+    """/start message with Telegram's typical chat metadata fields."""
+    return {
+        "update_id": update_id,
+        "message": {
+            "message_id": update_id * 10,
+            "chat": {
+                "id": chat_id,
+                "type": "private",
+                "first_name": first_name,
+                "username": username,
+            },
+            "from": {
+                "id": chat_id,
+                "first_name": first_name,
+                "username": username,
+            },
+            "text": "/start",
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_start_from_new_user_creates_pending_entry(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist=set(), daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates(
+            [_start_msg(chat_id=42, first_name="Bob", username="bob_t")]
+        )
+        await asyncio.sleep(0.15)
+        # Capture pending state BEFORE stop() clears it.
+        pending = list(bot._pending.values())
+    finally:
+        await bot.stop()
+
+    assert len(pending) == 1
+    p = pending[0]
+    assert p.chat_id == 42
+    assert p.first_name == "Bob"
+    assert p.username == "bob_t"
+
+    # Bot also replies with the "you're queued" message including the name.
+    assert len(transport.sent_messages) == 1
+    text = transport.sent_messages[0]["text"]
+    assert "Hello Bob" in text
+    assert "chat_id is `42`" in text
+    assert "queued" in text
+
+
+@pytest.mark.asyncio
+async def test_start_from_already_allowlisted_user_friendly_reply(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist={99}, daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates([_start_msg(chat_id=99, first_name="Alice")])
+        await asyncio.sleep(0.15)
+        # Should NOT have created a pending entry for an already-allowlisted user.
+        pending_count = len(bot._pending)
+    finally:
+        await bot.stop()
+
+    assert pending_count == 0
+    assert len(transport.sent_messages) == 1
+    assert "already approved" in transport.sent_messages[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_repeated_start_does_not_duplicate_pending(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist=set(), daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates(
+            [_start_msg(chat_id=42, first_name="Bob", update_id=1)]
+        )
+        await asyncio.sleep(0.1)
+        transport.enqueue_updates(
+            [_start_msg(chat_id=42, first_name="Bob", update_id=2)]
+        )
+        await asyncio.sleep(0.1)
+        # Still only ONE pending entry for chat 42.
+        pending_count = len(bot._pending)
+    finally:
+        await bot.stop()
+
+    assert pending_count == 1
+
+
+@pytest.mark.asyncio
+async def test_approve_moves_to_allowlist_and_dms_user(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist=set(), daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates(
+            [_start_msg(chat_id=77, first_name="Charlie")]
+        )
+        await asyncio.sleep(0.15)
+        # Wipe the "queued" reply so the next assert only sees the approval DM.
+        transport.sent_messages.clear()
+
+        ok = await bot.approve(77)
+        assert ok is True
+        assert 77 in config.allowlist
+        assert 77 not in bot._pending
+
+        # Bot DMs the approved user.
+        assert len(transport.sent_messages) == 1
+        assert "approved" in transport.sent_messages[0]["text"].lower()
+    finally:
+        await bot.stop()
+
+
+@pytest.mark.asyncio
+async def test_approve_unknown_chat_returns_false(patch_httpx_client):
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist=set(), daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        ok = await bot.approve(99999)
+        assert ok is False
+        assert 99999 not in config.allowlist
+    finally:
+        await bot.stop()
+
+
+@pytest.mark.asyncio
+async def test_approve_idempotent_for_already_allowlisted(patch_httpx_client):
+    """Re-approving an already-approved chat should return True without
+    side effect. This matters because the renderer might race the prune
+    or click Approve twice; neither should look like an error."""
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist={55}, daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        ok = await bot.approve(55)
+        assert ok is True
+        assert 55 in config.allowlist
+        # Idempotent re-DMs the user (it's confirmation, not new info).
+        assert len(transport.sent_messages) == 1
+    finally:
+        await bot.stop()
+
+
+@pytest.mark.asyncio
+async def test_deny_drops_pending_without_dm(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist=set(), daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates(
+            [_start_msg(chat_id=88, first_name="Dave")]
+        )
+        await asyncio.sleep(0.15)
+        transport.sent_messages.clear()
+
+        ok = bot.deny(88)
+        assert ok is True
+        assert 88 not in bot._pending
+        assert 88 not in config.allowlist
+        # No DM to the denied user.
+        assert transport.sent_messages == []
+    finally:
+        await bot.stop()
+
+
+@pytest.mark.asyncio
+async def test_pending_entries_expire(patch_httpx_client):
+    """Stale /start requests should be pruned after PENDING_TTL_S."""
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist=set(), daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates(
+            [_start_msg(chat_id=11, first_name="Eve")]
+        )
+        await asyncio.sleep(0.15)
+        assert 11 in bot._pending
+
+        # Fast-forward the stored first_seen to simulate the TTL passing
+        # without actually sleeping for half an hour.
+        import time as _time
+        bot._pending[11].first_seen = (
+            _time.time() - telegram_bot.PENDING_TTL_S - 1
+        )
+        bot._prune_pending()
+        assert 11 not in bot._pending
+    finally:
+        await bot.stop()
+
+
+@pytest.mark.asyncio
+async def test_status_reports_pending_approvals(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist=set(), daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates(
+            [_start_msg(chat_id=21, first_name="Fay", username="fay_x")]
+        )
+        await asyncio.sleep(0.15)
+
+        snap = bot.status().to_dict()
+        assert snap["allowlist_size"] == 0
+        assert len(snap["pending_approvals"]) == 1
+        entry = snap["pending_approvals"][0]
+        assert entry["chat_id"] == 21
+        assert entry["first_name"] == "Fay"
+        assert entry["username"] == "fay_x"
+    finally:
+        await bot.stop()
+
+
+# ---- Per-agent streaming (v1.1) -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_per_agent_streaming_sends_progress_per_phase(patch_httpx_client):
+    """Bot forwards phase.transition events as short status DMs so the
+    mobile user sees movement during a 5+ minute debate."""
+    transport = patch_httpx_client
+    stub = await _stub_live_debate_with_phases(cost_usd=0.005)
+    bot = TelegramBot()
+    config = TelegramBotConfig(
+        token="X" * 40,
+        allowlist={42},
+        daily_cap_usd=5.0,
+        provider_config={
+            "provider": "openai",
+            "api_key": "sk-test",
+            "model": "gpt-4o-mini",
+        },
+    )
+
+    with patch.object(telegram_bot, "live_debate", stub), \
+         patch.object(telegram_bot.default_provider, "quote_summary", side_effect=Exception("no net")), \
+         patch.object(telegram_bot.default_provider, "news_headlines", side_effect=Exception("no net")):
+        await bot.start(config)
+        try:
+            transport.enqueue_updates([_msg(chat_id=42, text="NVDA", update_id=1)])
+            # Wait until the decision card has been sent (the very last
+            # message), then take the snapshot.
+            for _ in range(40):
+                await asyncio.sleep(0.05)
+                if any("*HOLD*" in m.get("text", "") for m in transport.sent_messages):
+                    break
+        finally:
+            await bot.stop()
+
+    texts = [m["text"] for m in transport.sent_messages]
+    # 1 "Running Diligence" ack + 3 phase progress messages + 1 decision = 5.
+    # The "analysts" phase is the initial state of the engine state machine,
+    # so phase.transition arrives only for researchers / trader / risk.
+    assert any("Running Diligence" in t for t in texts)
+    assert any("Researchers debating" in t for t in texts)
+    assert any("Trader synthesizing" in t for t in texts)
+    assert any("Risk committee reviewing" in t for t in texts)
+    assert any("*HOLD*" in t for t in texts)
+
+
+@pytest.mark.asyncio
+async def test_per_agent_streaming_ignores_unknown_phase(patch_httpx_client):
+    """phase.transition to a future-added phase that isn't in
+    _PHASE_PROGRESS_LABEL should be silently skipped, not forwarded
+    as a literal phase string."""
+
+    async def stub_with_unknown_phase(*_args, **_kwargs):  # noqa: ANN202
+        yield {"type": "phase.transition", "from": "analysts", "to": "researchers"}
+        yield {"type": "phase.transition", "from": "researchers", "to": "future_phase_v3"}
+        yield {
+            "type": "session.complete",
+            "ticker": "NVDA",
+            "trade_date": "2026-05-18",
+            "decision": {
+                "action": "HOLD",
+                "confidence": 0.5,
+                "reasoning": "x",
+            },
+            "live": True,
+            "estimated_cost_usd": 0.001,
+        }
+
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(
+        token="X" * 40,
+        allowlist={42},
+        daily_cap_usd=5.0,
+        provider_config={
+            "provider": "openai",
+            "api_key": "sk-test",
+            "model": "gpt-4o-mini",
+        },
+    )
+
+    with patch.object(telegram_bot, "live_debate", stub_with_unknown_phase), \
+         patch.object(telegram_bot.default_provider, "quote_summary", side_effect=Exception("no net")), \
+         patch.object(telegram_bot.default_provider, "news_headlines", side_effect=Exception("no net")):
+        await bot.start(config)
+        try:
+            transport.enqueue_updates([_msg(chat_id=42, text="NVDA", update_id=1)])
+            for _ in range(40):
+                await asyncio.sleep(0.05)
+                if any("*HOLD*" in m.get("text", "") for m in transport.sent_messages):
+                    break
+        finally:
+            await bot.stop()
+
+    texts = [m["text"] for m in transport.sent_messages]
+    # Known phase forwarded, unknown phase silently dropped.
+    assert any("Researchers debating" in t for t in texts)
+    assert not any("future_phase_v3" in t for t in texts)

@@ -637,6 +637,13 @@ export async function testLLMConnection(args: {
 // Settings UI. The engine never persists the bot token; it lives only in
 // memory until the next /telegram/start.
 
+export interface TelegramPendingApproval {
+  chat_id: number;
+  first_name: string;
+  username: string;
+  first_seen: number; // epoch seconds
+}
+
 export interface TelegramBotStatus {
   enabled: boolean;
   polling: boolean;
@@ -645,6 +652,7 @@ export interface TelegramBotStatus {
   last_error: string | null;
   daily_cap_usd: number;
   daily_spend_usd: Record<string, number>;
+  pending_approvals: TelegramPendingApproval[];
 }
 
 export interface TelegramBotStartArgs {
@@ -696,6 +704,48 @@ export async function stopTelegramBot(): Promise<TelegramBotStatus> {
     throw new Error(
       `stopTelegramBot failed: ${res.status} ${res.statusText}`,
     );
+  }
+  return (await res.json()) as TelegramBotStatus;
+}
+
+/** Move a pending chat_id into the live allowlist. The bot DMs the user
+ * "you're approved" on success. 404 if there's no pending entry (already
+ * approved, denied, or expired). */
+export async function approveTelegramChat(
+  chatId: number,
+): Promise<TelegramBotStatus> {
+  const { port, token } = await handshake();
+  const res = await fetch(`http://127.0.0.1:${port}/telegram/approve`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ chat_id: chatId }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`approveTelegramChat failed: ${res.status} ${detail}`);
+  }
+  return (await res.json()) as TelegramBotStatus;
+}
+
+/** Drop a pending entry without DMing the user. */
+export async function denyTelegramChat(
+  chatId: number,
+): Promise<TelegramBotStatus> {
+  const { port, token } = await handshake();
+  const res = await fetch(`http://127.0.0.1:${port}/telegram/deny`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ chat_id: chatId }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`denyTelegramChat failed: ${res.status} ${detail}`);
   }
   return (await res.json()) as TelegramBotStatus;
 }

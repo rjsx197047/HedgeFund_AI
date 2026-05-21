@@ -76,6 +76,17 @@ _REPLY_MAX_CHARS = 3900  # leave headroom below Telegram's 4096 ceiling
 _TICKER_RE = re.compile(r"^([A-Z]{1,8}(?:-[A-Z]{1,4})?)$")
 _ANALYZE_CMD_RE = re.compile(r"^/analyze(?:@\w+)?\s+([A-Z]{1,8}(?:-[A-Z]{1,4})?)$", re.IGNORECASE)
 
+# v1.1 progress streaming. For each phase boundary the live_debate yields,
+# the bot sends one short status message so the mobile user sees movement.
+# Map keys are the engine's phase names (see live_debate.py); values are
+# the human strings sent to Telegram. Unknown phases (future additions)
+# are silently skipped to keep the noise floor bounded.
+_PHASE_PROGRESS_LABEL: dict[str, str] = {
+    "researchers": "Analyst phase complete. Researchers debating now.",
+    "trader": "Researchers complete. Trader synthesizing.",
+    "risk": "Trader complete. Risk committee reviewing.",
+}
+
 
 @dataclass
 class TelegramBotConfig:
@@ -110,6 +121,33 @@ class TelegramBotConfig:
 
 
 @dataclass
+class PendingApproval:
+    """A first-run /start from a non-allowlisted user. Operator approves or
+    denies via the Settings panel. Entries auto-expire after PENDING_TTL_S
+    so a forgotten queue doesn't grow without bound."""
+
+    chat_id: int
+    first_name: str
+    username: str  # Telegram @handle without the @, or "" if user has none
+    first_seen: float  # epoch seconds
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "chat_id": self.chat_id,
+            "first_name": self.first_name,
+            "username": self.username,
+            "first_seen": self.first_seen,
+        }
+
+
+# Pending approvals expire after this many seconds. 30 minutes is long enough
+# for a slow human approval workflow (operator may not be at the laptop) but
+# short enough that a stale queue doesn't accumulate stranger requests over
+# weeks.
+PENDING_TTL_S = 30 * 60
+
+
+@dataclass
 class _BotStatus:
     enabled: bool = False
     polling: bool = False
@@ -120,6 +158,9 @@ class _BotStatus:
     daily_spend_usd: dict[str, float] = field(default_factory=dict)
     """chat_id (str) -> dollars spent today (UTC). Reported to the renderer
     so a Settings UI can show real-time usage per chat."""
+    pending_approvals: list[dict[str, Any]] = field(default_factory=list)
+    """First-run /start requests awaiting operator approval. v1.1 pairing-
+    flow UX. Each entry has chat_id, first_name, username, first_seen."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -130,6 +171,7 @@ class _BotStatus:
             "last_error": self.last_error,
             "daily_cap_usd": self.daily_cap_usd,
             "daily_spend_usd": dict(self.daily_spend_usd),
+            "pending_approvals": list(self.pending_approvals),
         }
 
 
@@ -199,6 +241,10 @@ class TelegramBot:
         # and the user would just see overlapping replies).
         self._busy: dict[int, bool] = {}
         self._spend: dict[str, float] = {}
+        # Pending approval queue: chat_id -> PendingApproval. v1.1 first-
+        # run flow. Operator approves via /telegram/approve; stays in
+        # memory only because the queue is short-lived (PENDING_TTL_S).
+        self._pending: dict[int, PendingApproval] = {}
 
     # ---- Public API ---------------------------------------------------
 
@@ -239,11 +285,63 @@ class TelegramBot:
         self._config = None
         self._status = _BotStatus()
         self._busy.clear()
+        self._pending.clear()
 
     def status(self) -> _BotStatus:
         # Refresh dynamic fields before returning.
         self._status.daily_spend_usd = dict(self._spend)
+        self._prune_pending()
+        self._status.pending_approvals = [
+            p.to_dict() for p in self._pending.values()
+        ]
+        if self._config is not None:
+            self._status.allowlist_size = len(self._config.allowlist)
         return self._status
+
+    def _prune_pending(self) -> None:
+        """Drop expired pending entries. Called on status reads and on
+        each handler invocation so a stranger's old /start eventually
+        disappears even if the operator never opens Settings."""
+        cutoff = time.time() - PENDING_TTL_S
+        for cid in [c for c, p in self._pending.items() if p.first_seen < cutoff]:
+            self._pending.pop(cid, None)
+
+    async def approve(self, chat_id: int) -> bool:
+        """Move a pending chat_id into the allowlist and DM the user.
+
+        Returns True if the entry was approved, False if there was no
+        pending entry for that chat_id (already approved or expired).
+        Idempotent: re-approving an already-allowlisted chat is a no-op
+        that returns True so the renderer can confirm state without
+        racing the prune.
+        """
+        if self._config is None:
+            return False
+        self._prune_pending()
+        pending = self._pending.pop(chat_id, None)
+        already_in = chat_id in self._config.allowlist
+        if pending is None and not already_in:
+            return False
+        self._config.allowlist.add(chat_id)
+        try:
+            await self._reply(
+                chat_id,
+                (
+                    "You're approved. Send a ticker like `NVDA` or "
+                    "`/analyze NVDA` to run a Diligence. Daily spend cap "
+                    "is ${cap:.2f}.\n\n"
+                    "_Educational output only. Not investment advice._"
+                ).format(cap=self._config.daily_cap_usd),
+            )
+        except Exception:  # noqa: BLE001 — DM failure shouldn't roll back approval
+            logger.warning("approval DM failed for chat %s", chat_id)
+        return True
+
+    def deny(self, chat_id: int) -> bool:
+        """Drop a pending entry without notifying the user. Returns True
+        if there was an entry to drop, False otherwise."""
+        self._prune_pending()
+        return self._pending.pop(chat_id, None) is not None
 
     # ---- Polling loop -------------------------------------------------
 
@@ -311,24 +409,58 @@ class TelegramBot:
         if not isinstance(chat_id, int):
             return  # bot DMs only carry int chat_ids; ignore the rest
 
-        # /start works even without allowlist so users can discover their
-        # chat_id without admin help. Other commands require allowlist.
         cmd = text.split()[0].lower() if text else ""
+
+        # /start handler. Three states:
+        #   1. already allowlisted -> friendly "you're already in" reply
+        #   2. has a pending entry -> "still waiting" reply
+        #   3. brand new          -> create pending entry, reply queued
+        # /start always replies so the user knows the bot heard them; the
+        # silent-drop posture only applies to debate triggers, not pairing.
         if cmd.startswith("/start") or cmd.startswith("/whoami"):
+            self._prune_pending()
+            if chat_id in self._config.allowlist:
+                await self._reply(
+                    chat_id,
+                    (
+                        "You're already approved. Send a ticker like `NVDA` "
+                        "or `/analyze NVDA` to run a Diligence."
+                    ),
+                )
+                return
+            first_name = str(
+                (chat.get("first_name") or message.get("from", {}).get("first_name") or "")
+            )[:80]
+            username = str(
+                (chat.get("username") or message.get("from", {}).get("username") or "")
+            )[:64]
+            if chat_id not in self._pending:
+                self._pending[chat_id] = PendingApproval(
+                    chat_id=chat_id,
+                    first_name=first_name,
+                    username=username,
+                    first_seen=time.time(),
+                )
+            ttl_min = PENDING_TTL_S // 60
             await self._reply(
                 chat_id,
                 (
-                    "Hello. Your Telegram chat_id is `{cid}`.\n\n"
-                    "Have the operator of this bot add it to the allowlist "
-                    "in Trading Agents Lab Settings -> Telegram Bot before "
-                    "you can request a Diligence run. Once allowlisted, "
-                    "send a ticker like `NVDA` or `/analyze NVDA`."
-                ).format(cid=chat_id),
+                    "Hello{name}. Your chat_id is `{cid}`.\n\n"
+                    "I've queued your request. The bot operator can approve "
+                    "you from the Trading Agents Lab Settings panel. The "
+                    "queue entry expires in {ttl} minutes if not approved; "
+                    "send `/start` again to re-queue."
+                ).format(
+                    name=f" {first_name}" if first_name else "",
+                    cid=chat_id,
+                    ttl=ttl_min,
+                ),
             )
             return
 
         if chat_id not in self._config.allowlist:
-            # Silent drop. Don't leak the bot's existence to randoms.
+            # Silent drop for debate triggers. Don't leak the bot's
+            # existence to randoms who didn't go through /start.
             return
 
         if cmd.startswith("/help"):
@@ -452,7 +584,16 @@ class TelegramBot:
                 config=provider_config,
                 sentiment=SentimentBlock(),
             ):
-                if event.get("type") == "session.complete":
+                etype = event.get("type")
+                if etype == "phase.transition":
+                    # v1.1: forward mid-debate phase boundaries so the user
+                    # on mobile sees progress instead of a 5-minute silence.
+                    # Only forward transitions with a recognized "to" phase
+                    # to avoid spam from spurious or future-added phases.
+                    label = _PHASE_PROGRESS_LABEL.get(str(event.get("to") or ""))
+                    if label:
+                        await self._reply(chat_id, label)
+                elif etype == "session.complete":
                     decision = event.get("decision")
                     cost_usd = float(event.get("estimated_cost_usd") or 0.0)
                     live = bool(event.get("live"))
