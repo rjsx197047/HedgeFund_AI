@@ -596,12 +596,20 @@ class TelegramBot:
         if cmd.startswith("/start") or cmd.startswith("/whoami"):
             self._prune_pending()
             if chat_id in self._config.allowlist:
+                # /start from an already-allowlisted user is typically the
+                # operator pinging the bot after a restart to confirm it's
+                # online. Skip the "you're approved" framing (they know);
+                # surface system-ready status + the current mode so the
+                # ping returns useful state, not just a yes.
+                mode = self._mode_for(chat_id)
                 await self._reply(
                     chat_id,
                     (
-                        "You're already approved. Send a ticker like `NVDA` "
-                        "or `/analyze NVDA` to run a Diligence."
-                    ),
+                        "Trading Agents Lab is ready.\n\n"
+                        "Mode: *{mode}*. Send a ticker like `NVDA` or "
+                        "`/analyze NVDA` to run a Diligence. Send `/help` "
+                        "for the command list."
+                    ).format(mode=mode),
                     with_keyboard=True,
                 )
                 return

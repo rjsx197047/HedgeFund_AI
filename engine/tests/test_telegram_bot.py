@@ -428,7 +428,12 @@ async def test_start_from_already_allowlisted_user_friendly_reply(patch_httpx_cl
 
     assert pending_count == 0
     assert len(transport.sent_messages) == 1
-    assert "already approved" in transport.sent_messages[0]["text"]
+    text = transport.sent_messages[0]["text"]
+    # System-ready framing instead of "you're approved" (which felt awkward
+    # for the operator's own ping-after-restart). Mode is surfaced so the
+    # ping returns useful state.
+    assert "Trading Agents Lab is ready" in text
+    assert "Mode:" in text
 
 
 @pytest.mark.asyncio
