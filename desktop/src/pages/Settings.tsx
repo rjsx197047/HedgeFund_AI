@@ -26,12 +26,16 @@ import {
 } from '../lib/cost-guard';
 import {
   getLocalRuntimes,
+  getTelegramBotStatus,
   LOCAL_MODEL_SECRET_KEY,
   PROVIDER_SECRET_KEY,
+  startTelegramBot,
+  stopTelegramBot,
   testLLMConnection,
   type LLMProvider,
   type LLMTestResult,
   type LocalRuntime,
+  type TelegramBotStatus,
 } from '../lib/engine-client';
 import {
   loadLocalConfig,
@@ -1383,6 +1387,8 @@ function WebhooksTab({ availability }: WebhooksTabProps) {
           onSave={onSave}
         />
       )}
+
+      <TelegramBotPanel />
     </div>
   );
 }
@@ -1896,6 +1902,286 @@ function formatUsdShort(value: number): string {
   if (value >= 1) return `$${value.toFixed(2)}`;
   if (value >= 0.01) return `$${value.toFixed(3)}`;
   return `$${value.toFixed(4)}`;
+}
+
+// ---- Telegram bot (bidirectional, Phase 8c) -------------------------------
+//
+// Sits at the bottom of the Webhooks tab because the user mental model for
+// anything Telegram-related lives there. Webhooks above this panel are
+// OUTBOUND only (engine pushes session.complete to Telegram). The bot
+// below is BIDIRECTIONAL: it lets a user message the bot from Telegram
+// to trigger a fresh Diligence run. Same bot token can power both.
+//
+// Persistence:
+// - Bot token in OS keychain (safeStorage) under `telegram:bot-token`
+// - Allowlist + cap in localStorage (non-secret config)
+// - Provider config snapshotted from current OpenAI API key at start time
+//
+// Engine side persists per-chat daily spend across restarts so the cap is
+// resistant to app-reboot evasion; see engine/telegram_bot.py for details.
+
+const TELEGRAM_BOT_TOKEN_KEY = 'telegram:bot-token';
+const TELEGRAM_ALLOWLIST_LS_KEY = 'tal.telegram.allowlist';
+const TELEGRAM_CAP_LS_KEY = 'tal.telegram.daily_cap';
+
+function parseAllowlist(text: string): number[] {
+  return text
+    .split(/[\s,\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+function TelegramBotPanel() {
+  const [token, setToken] = useState('');
+  const [hasStoredToken, setHasStoredToken] = useState(false);
+  const [allowlistText, setAllowlistText] = useState('');
+  const [capText, setCapText] = useState('5.00');
+  const [status, setStatus] = useState<TelegramBotStatus | null>(null);
+  const [busy, setBusy] = useState<'starting' | 'stopping' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const s = await getTelegramBotStatus();
+      setStatus(s);
+    } catch {
+      setStatus(null);
+    }
+  }, []);
+
+  // Initial load: pull persisted config + current bot status.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const existing = await getSecret(TELEGRAM_BOT_TOKEN_KEY);
+        setHasStoredToken(Boolean(existing));
+      } catch {
+        setHasStoredToken(false);
+      }
+      try {
+        const al = localStorage.getItem(TELEGRAM_ALLOWLIST_LS_KEY);
+        if (al) setAllowlistText(al);
+      } catch {
+        // localStorage failures are non-fatal for this read.
+      }
+      try {
+        const cap = localStorage.getItem(TELEGRAM_CAP_LS_KEY);
+        if (cap) setCapText(cap);
+      } catch {
+        // non-fatal
+      }
+      void refresh();
+    })();
+  }, [refresh]);
+
+  // Poll status every 4s while the panel is mounted so the spend counters
+  // and polling pill stay current as messages arrive from Telegram.
+  useEffect(() => {
+    const id = window.setInterval(() => void refresh(), 4000);
+    return () => window.clearInterval(id);
+  }, [refresh]);
+
+  const onStart = useCallback(async () => {
+    setError(null);
+    const effectiveToken = token.trim() || (hasStoredToken
+      ? (await getSecret(TELEGRAM_BOT_TOKEN_KEY)) ?? ''
+      : '');
+    if (!effectiveToken) {
+      setError('Bot token is required. Paste the token from BotFather.');
+      return;
+    }
+    const allowlist = parseAllowlist(allowlistText);
+    if (allowlist.length === 0) {
+      setError(
+        'Allowlist is empty. Add at least one numeric Telegram user ID, one per line. Message /start to your bot to discover yours.',
+      );
+      return;
+    }
+    const cap = parseFloat(capText);
+    if (!Number.isFinite(cap) || cap < 0) {
+      setError('Daily cap must be a non-negative dollar amount.');
+      return;
+    }
+    // Provider config snapshot. For MVP the bot uses OpenAI with the key
+    // already stored for the Analyze flow. Future enhancement could let
+    // users pick a separate provider per bot.
+    const openaiKey = await getSecret(PROVIDER_SECRET_KEY.openai);
+    if (!openaiKey) {
+      setError(
+        'No OpenAI API key configured. Set one in the LLM Providers tab before starting the bot. (MVP only supports OpenAI; multi-provider routing is queued.)',
+      );
+      return;
+    }
+    setBusy('starting');
+    try {
+      // Persist before starting so a restart picks up the same config.
+      if (token.trim()) {
+        await setSecret(TELEGRAM_BOT_TOKEN_KEY, token.trim());
+        setHasStoredToken(true);
+        setToken('');
+      }
+      try {
+        localStorage.setItem(TELEGRAM_ALLOWLIST_LS_KEY, allowlistText.trim());
+        localStorage.setItem(TELEGRAM_CAP_LS_KEY, capText.trim());
+      } catch {
+        // non-fatal; engine state remains the source of truth
+      }
+      const s = await startTelegramBot({
+        token: effectiveToken,
+        allowlist,
+        daily_cap_usd: cap,
+        provider_config: {
+          provider: 'openai',
+          auth: { type: 'api_key', api_key: openaiKey },
+          model: 'gpt-4o-mini',
+          max_tokens: 400,
+        },
+      });
+      setStatus(s);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }, [token, hasStoredToken, allowlistText, capText]);
+
+  const onStop = useCallback(async () => {
+    setBusy('stopping');
+    setError(null);
+    try {
+      const s = await stopTelegramBot();
+      setStatus(s);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
+  const polling = status?.polling ?? false;
+  const spendEntries = Object.entries(status?.daily_spend_usd ?? {});
+
+  return (
+    <div className={styles.phaseGuard} style={{ marginTop: 32 }}>
+      <strong>Telegram Bot (bidirectional)</strong>
+      <br />
+      <br />
+      Message the bot a ticker like <code>NVDA</code> from your phone and get
+      a Diligence run back. The bot polls Telegram outbound, so nothing is
+      exposed to the internet from your machine. Allowlist is required; the
+      bot drops messages from anyone else silently. Per-chat daily spend
+      cap prevents token-drain abuse if your bot token leaks.
+      <br />
+      <br />
+      <em>
+        Educational and research purposes only. The bot returns the same
+        decision text the desktop app shows, with the same disclaimers.
+      </em>
+
+      <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+        <label style={{ display: 'block' }}>
+          <span className={styles.fieldLabel}>
+            Bot Token{hasStoredToken ? ' (stored, leave blank to keep)' : ''}
+          </span>
+          <input
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder={hasStoredToken ? '••••••••' : 'paste from BotFather'}
+            className={styles.input}
+            spellCheck={false}
+            autoComplete="off"
+            data-testid="telegram-bot-token"
+          />
+        </label>
+
+        <label style={{ display: 'block' }}>
+          <span className={styles.fieldLabel}>
+            Allowlist (numeric chat IDs, one per line)
+          </span>
+          <textarea
+            value={allowlistText}
+            onChange={(e) => setAllowlistText(e.target.value)}
+            placeholder={'12345678\n23456789'}
+            className={styles.input}
+            rows={3}
+            spellCheck={false}
+            data-testid="telegram-bot-allowlist"
+          />
+        </label>
+
+        <label style={{ display: 'block' }}>
+          <span className={styles.fieldLabel}>
+            Daily cap per chat (USD)
+          </span>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={capText}
+            onChange={(e) => setCapText(e.target.value)}
+            className={styles.input}
+            style={{ maxWidth: 120 }}
+            data-testid="telegram-bot-cap"
+          />
+        </label>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {polling ? (
+            <>
+              <button
+                type="button"
+                className={styles.actionSecondary}
+                onClick={onStop}
+                disabled={busy !== null}
+                data-testid="telegram-bot-stop"
+              >
+                {busy === 'stopping' ? 'Stopping…' : 'Stop bot'}
+              </button>
+              <span className={styles.pill} data-testid="telegram-bot-status">
+                polling
+              </span>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className={styles.actionPrimary}
+                onClick={onStart}
+                disabled={busy !== null}
+                data-testid="telegram-bot-start"
+              >
+                {busy === 'starting' ? 'Starting…' : 'Save & Start'}
+              </button>
+              <span className={styles.pill} data-testid="telegram-bot-status">
+                stopped
+              </span>
+            </>
+          )}
+          {status?.last_error && (
+            <span className={styles.formError}>
+              last error: {status.last_error}
+            </span>
+          )}
+        </div>
+
+        {error && <p className={styles.formError}>{error}</p>}
+
+        {spendEntries.length > 0 && (
+          <div className={styles.hint} style={{ marginTop: 8 }}>
+            <strong>Today&apos;s spend (UTC):</strong>{' '}
+            {spendEntries
+              .map(
+                ([cid, usd]) =>
+                  `chat ${cid}: ${formatUsdShort(Number(usd))}`,
+              )
+              .join(' · ')}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default Settings;
