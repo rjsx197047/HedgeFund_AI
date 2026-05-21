@@ -106,12 +106,14 @@ def patch_httpx_client(fake_transport, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def isolate_spend_file(tmp_path, monkeypatch):
-    """Redirect _spend_file_path() to a per-test tmp directory so the
-    cap-persistence file doesn't bleed between tests or pollute the dev
-    SQLite location."""
-    target = tmp_path / "telegram_spend.json"
-    monkeypatch.setattr(telegram_bot, "_spend_file_path", lambda: target)
-    yield target
+    """Redirect _spend_file_path() and _modes_file_path() to per-test tmp
+    paths so the persistence files don't bleed between tests or pollute
+    the dev SQLite location."""
+    spend_target = tmp_path / "telegram_spend.json"
+    modes_target = tmp_path / "telegram_chat_modes.json"
+    monkeypatch.setattr(telegram_bot, "_spend_file_path", lambda: spend_target)
+    monkeypatch.setattr(telegram_bot, "_modes_file_path", lambda: modes_target)
+    yield spend_target
 
 
 async def _stub_live_debate_factory(cost_usd: float = 0.01, action: str = "HOLD"):
@@ -619,6 +621,211 @@ async def test_per_agent_streaming_sends_progress_per_phase(patch_httpx_client):
     assert any("Trader synthesizing" in t for t in texts)
     assert any("Risk committee reviewing" in t for t in texts)
     assert any("*HOLD*" in t for t in texts)
+
+
+# ---- Reply mode (v1.2 /full /summary) -------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_summary_mode_is_default(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist={42}, daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        assert bot._mode_for(42) == "summary"
+    finally:
+        await bot.stop()
+
+
+@pytest.mark.asyncio
+async def test_full_command_sets_mode_and_persists(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist={42}, daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        transport.enqueue_updates([_msg(chat_id=42, text="/full", update_id=1)])
+        await asyncio.sleep(0.15)
+
+        assert bot._mode_for(42) == "full"
+        assert "Full debate mode on" in transport.sent_messages[0]["text"]
+    finally:
+        await bot.stop()
+
+    # Mode persisted to JSON file. Reload via a fresh bot to confirm.
+    bot2 = TelegramBot()
+    await bot2.start(config)
+    try:
+        assert bot2._mode_for(42) == "full"
+    finally:
+        await bot2.stop()
+
+
+@pytest.mark.asyncio
+async def test_summary_command_resets_mode(patch_httpx_client):
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(token="X" * 40, allowlist={42}, daily_cap_usd=5.0)
+    await bot.start(config)
+    try:
+        # Start in full
+        bot._set_mode(42, "full")
+        transport.enqueue_updates([_msg(chat_id=42, text="/summary", update_id=1)])
+        await asyncio.sleep(0.15)
+
+        assert bot._mode_for(42) == "summary"
+        assert "Summary mode on" in transport.sent_messages[0]["text"]
+    finally:
+        await bot.stop()
+
+
+@pytest.mark.asyncio
+async def test_full_mode_streams_agent_messages(patch_httpx_client):
+    """In full mode, every agent.message event becomes a Telegram DM."""
+
+    async def stub_with_agents(*_args, **_kwargs):  # noqa: ANN202
+        yield {"type": "session.start", "ticker": "NVDA", "trade_date": "2026-05-20"}
+        yield {"type": "phase.transition", "from": "analysts", "to": "researchers"}
+        yield {
+            "type": "agent.message",
+            "agent": "bull_researcher",
+            "phase": "researchers",
+            "content": "NVDA fundamentals look strong.",
+        }
+        yield {
+            "type": "agent.message",
+            "agent": "bear_researcher",
+            "phase": "researchers",
+            "content": "But the multiple is stretched.",
+        }
+        yield {
+            "type": "session.complete",
+            "ticker": "NVDA",
+            "trade_date": "2026-05-20",
+            "decision": {"action": "HOLD", "confidence": 0.5, "reasoning": "x"},
+            "live": True,
+            "estimated_cost_usd": 0.001,
+        }
+
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(
+        token="X" * 40,
+        allowlist={42},
+        daily_cap_usd=5.0,
+        provider_config={"provider": "openai", "api_key": "sk-test", "model": "gpt-4o-mini"},
+    )
+
+    with patch.object(telegram_bot, "live_debate", stub_with_agents), \
+         patch.object(telegram_bot.default_provider, "quote_summary", side_effect=Exception("no net")), \
+         patch.object(telegram_bot.default_provider, "news_headlines", side_effect=Exception("no net")):
+        await bot.start(config)
+        try:
+            bot._set_mode(42, "full")
+            transport.enqueue_updates([_msg(chat_id=42, text="NVDA", update_id=1)])
+            for _ in range(40):
+                await asyncio.sleep(0.05)
+                if any("*HOLD*" in m.get("text", "") for m in transport.sent_messages):
+                    break
+        finally:
+            await bot.stop()
+
+    texts = [m["text"] for m in transport.sent_messages]
+    # The two agent messages each got their own DM with the role header.
+    assert any("[Bull Researcher]" in t and "fundamentals look strong" in t for t in texts)
+    assert any("[Bear Researcher]" in t and "multiple is stretched" in t for t in texts)
+    # Decision card still arrives last.
+    assert any("*HOLD*" in t for t in texts)
+
+
+@pytest.mark.asyncio
+async def test_summary_mode_does_not_stream_agent_messages(patch_httpx_client):
+    """In summary mode (default), agent.message events do NOT become DMs."""
+
+    async def stub_with_agents(*_args, **_kwargs):  # noqa: ANN202
+        yield {"type": "session.start", "ticker": "NVDA", "trade_date": "2026-05-20"}
+        yield {
+            "type": "agent.message",
+            "agent": "bull_researcher",
+            "phase": "researchers",
+            "content": "this should NOT be forwarded",
+        }
+        yield {
+            "type": "session.complete",
+            "ticker": "NVDA",
+            "trade_date": "2026-05-20",
+            "decision": {"action": "HOLD", "confidence": 0.5, "reasoning": "x"},
+            "live": True,
+            "estimated_cost_usd": 0.001,
+        }
+
+    transport = patch_httpx_client
+    bot = TelegramBot()
+    config = TelegramBotConfig(
+        token="X" * 40,
+        allowlist={42},
+        daily_cap_usd=5.0,
+        provider_config={"provider": "openai", "api_key": "sk-test", "model": "gpt-4o-mini"},
+    )
+
+    with patch.object(telegram_bot, "live_debate", stub_with_agents), \
+         patch.object(telegram_bot.default_provider, "quote_summary", side_effect=Exception("no net")), \
+         patch.object(telegram_bot.default_provider, "news_headlines", side_effect=Exception("no net")):
+        await bot.start(config)
+        try:
+            # Default mode is summary; don't toggle.
+            transport.enqueue_updates([_msg(chat_id=42, text="NVDA", update_id=1)])
+            for _ in range(40):
+                await asyncio.sleep(0.05)
+                if any("*HOLD*" in m.get("text", "") for m in transport.sent_messages):
+                    break
+        finally:
+            await bot.stop()
+
+    texts = [m["text"] for m in transport.sent_messages]
+    assert not any("should NOT be forwarded" in t for t in texts)
+    assert any("*HOLD*" in t for t in texts)
+
+
+# ---- Credential refresh (v1.2 OAuth) --------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_refresh_credentials_updates_running_bot(patch_httpx_client):
+    bot = TelegramBot()
+    config = TelegramBotConfig(
+        token="X" * 40,
+        allowlist={42},
+        daily_cap_usd=5.0,
+        provider_config={
+            "provider": "openai",
+            "auth": {"type": "oauth", "access": "old", "refresh": "r", "expires": 0},
+            "model": "gpt-5.4",
+        },
+    )
+    await bot.start(config)
+    try:
+        new_pc = {
+            "provider": "openai",
+            "auth": {"type": "oauth", "access": "new", "refresh": "r", "expires": 999},
+            "model": "gpt-5.4",
+        }
+        ok = bot.refresh_credentials(new_pc)
+        assert ok is True
+        assert bot._config is not None
+        # In-place update of the provider_config.
+        assert bot._config.provider_config["auth"]["access"] == "new"
+    finally:
+        await bot.stop()
+
+
+@pytest.mark.asyncio
+async def test_refresh_credentials_returns_false_when_stopped():
+    bot = TelegramBot()
+    # Never started.
+    ok = bot.refresh_credentials({"provider": "openai"})
+    assert ok is False
 
 
 @pytest.mark.asyncio
