@@ -25,6 +25,8 @@ import {
   type SpendState,
 } from '../lib/cost-guard';
 import {
+  approveTelegramChat,
+  denyTelegramChat,
   getLocalRuntimes,
   getTelegramBotStatus,
   LOCAL_MODEL_SECRET_KEY,
@@ -36,6 +38,7 @@ import {
   type LLMTestResult,
   type LocalRuntime,
   type TelegramBotStatus,
+  type TelegramPendingApproval,
 } from '../lib/engine-client';
 import {
   loadLocalConfig,
@@ -1914,8 +1917,9 @@ function formatUsdShort(value: number): string {
 //
 // Persistence:
 // - Bot token in OS keychain (safeStorage) under `telegram:bot-token`
-// - Allowlist + cap in localStorage (non-secret config)
-// - Provider config snapshotted from current OpenAI API key at start time
+// - Allowlist + cap + selected provider in localStorage (non-secret config)
+// - Provider API key looked up in safeStorage from PROVIDER_SECRET_KEY at
+//   start time, matched to the user's provider dropdown choice
 //
 // Engine side persists per-chat daily spend across restarts so the cap is
 // resistant to app-reboot evasion; see engine/telegram_bot.py for details.
@@ -1923,6 +1927,24 @@ function formatUsdShort(value: number): string {
 const TELEGRAM_BOT_TOKEN_KEY = 'telegram:bot-token';
 const TELEGRAM_ALLOWLIST_LS_KEY = 'tal.telegram.allowlist';
 const TELEGRAM_CAP_LS_KEY = 'tal.telegram.daily_cap';
+const TELEGRAM_PROVIDER_LS_KEY = 'tal.telegram.provider';
+
+// v1.1 supports the 4 API-key providers. OAuth + local need extra plumbing
+// (OAuth creds live in Electron main, local needs base_url) so they're
+// excluded here. Same pattern as testLLMConnection in engine-client.ts.
+type BotProvider = 'openai' | 'anthropic' | 'openrouter' | 'gemini';
+const BOT_PROVIDERS: { value: BotProvider; label: string }[] = [
+  { value: 'openai',     label: 'OpenAI' },
+  { value: 'anthropic',  label: 'Anthropic' },
+  { value: 'openrouter', label: 'OpenRouter' },
+  { value: 'gemini',     label: 'Google Gemini' },
+];
+const BOT_PROVIDER_DEFAULT_MODEL: Record<BotProvider, string> = {
+  openai:     'gpt-4o-mini',
+  anthropic:  'claude-haiku-4-5',
+  openrouter: 'openai/gpt-4o-mini',
+  gemini:     'gemini-2.0-flash',
+};
 
 function parseAllowlist(text: string): number[] {
   return text
@@ -1938,6 +1960,7 @@ function TelegramBotPanel() {
   const [hasStoredToken, setHasStoredToken] = useState(false);
   const [allowlistText, setAllowlistText] = useState('');
   const [capText, setCapText] = useState('5.00');
+  const [botProvider, setBotProvider] = useState<BotProvider>('openai');
   const [status, setStatus] = useState<TelegramBotStatus | null>(null);
   const [busy, setBusy] = useState<'starting' | 'stopping' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1969,6 +1992,14 @@ function TelegramBotPanel() {
       try {
         const cap = localStorage.getItem(TELEGRAM_CAP_LS_KEY);
         if (cap) setCapText(cap);
+      } catch {
+        // non-fatal
+      }
+      try {
+        const p = localStorage.getItem(TELEGRAM_PROVIDER_LS_KEY);
+        if (p && BOT_PROVIDERS.some((bp) => bp.value === p)) {
+          setBotProvider(p as BotProvider);
+        }
       } catch {
         // non-fatal
       }
@@ -2004,13 +2035,18 @@ function TelegramBotPanel() {
       setError('Daily cap must be a non-negative dollar amount.');
       return;
     }
-    // Provider config snapshot. For MVP the bot uses OpenAI with the key
-    // already stored for the Analyze flow. Future enhancement could let
-    // users pick a separate provider per bot.
-    const openaiKey = await getSecret(PROVIDER_SECRET_KEY.openai);
-    if (!openaiKey) {
+    // Provider config snapshot. v1.1: user picks the provider per bot via
+    // the dropdown above. API key is pulled from the matching safeStorage
+    // slot the user already configured for the Analyze flow. OAuth + local
+    // are excluded here for the same reason as testLLMConnection (OAuth
+    // creds live in main; local needs base_url plumbing) and can be added
+    // if users ask for them.
+    const providerKey = await getSecret(PROVIDER_SECRET_KEY[botProvider]);
+    if (!providerKey) {
+      const label =
+        BOT_PROVIDERS.find((p) => p.value === botProvider)?.label ?? botProvider;
       setError(
-        'No OpenAI API key configured. Set one in the LLM Providers tab before starting the bot. (MVP only supports OpenAI; multi-provider routing is queued.)',
+        `No ${label} API key configured. Set one in the LLM Providers tab before starting the bot, or pick a different provider above.`,
       );
       return;
     }
@@ -2025,6 +2061,7 @@ function TelegramBotPanel() {
       try {
         localStorage.setItem(TELEGRAM_ALLOWLIST_LS_KEY, allowlistText.trim());
         localStorage.setItem(TELEGRAM_CAP_LS_KEY, capText.trim());
+        localStorage.setItem(TELEGRAM_PROVIDER_LS_KEY, botProvider);
       } catch {
         // non-fatal; engine state remains the source of truth
       }
@@ -2033,9 +2070,9 @@ function TelegramBotPanel() {
         allowlist,
         daily_cap_usd: cap,
         provider_config: {
-          provider: 'openai',
-          auth: { type: 'api_key', api_key: openaiKey },
-          model: 'gpt-4o-mini',
+          provider: botProvider,
+          auth: { type: 'api_key', api_key: providerKey },
+          model: BOT_PROVIDER_DEFAULT_MODEL[botProvider],
           max_tokens: 400,
         },
       });
@@ -2045,7 +2082,7 @@ function TelegramBotPanel() {
     } finally {
       setBusy(null);
     }
-  }, [token, hasStoredToken, allowlistText, capText]);
+  }, [token, hasStoredToken, allowlistText, capText, botProvider]);
 
   const onStop = useCallback(async () => {
     setBusy('stopping');
@@ -2062,6 +2099,40 @@ function TelegramBotPanel() {
 
   const polling = status?.polling ?? false;
   const spendEntries = Object.entries(status?.daily_spend_usd ?? {});
+  const pending: TelegramPendingApproval[] = status?.pending_approvals ?? [];
+
+  const onApprove = useCallback(async (chatId: number) => {
+    setError(null);
+    try {
+      const s = await approveTelegramChat(chatId);
+      setStatus(s);
+      // Reflect the new allowlist member in the textarea so the user sees
+      // the change without having to reload.
+      setAllowlistText((prev) => {
+        const lines = parseAllowlist(prev);
+        if (lines.includes(chatId)) return prev;
+        const next = [...lines, chatId].join('\n');
+        try {
+          localStorage.setItem(TELEGRAM_ALLOWLIST_LS_KEY, next);
+        } catch {
+          // non-fatal
+        }
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  const onDeny = useCallback(async (chatId: number) => {
+    setError(null);
+    try {
+      const s = await denyTelegramChat(chatId);
+      setStatus(s);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
 
   return (
     <div className={styles.phaseGuard} style={{ marginTop: 32 }}>
@@ -2080,6 +2151,63 @@ function TelegramBotPanel() {
         decision text the desktop app shows, with the same disclaimers.
       </em>
 
+      {pending.length > 0 && (
+        <div
+          style={{
+            marginTop: 16,
+            padding: 12,
+            border: '1px solid var(--color-accent)',
+            borderRadius: 4,
+          }}
+          data-testid="telegram-pending-list"
+        >
+          <strong>Pending approval{pending.length > 1 ? 's' : ''}</strong>
+          <p className={styles.hint} style={{ marginTop: 4 }}>
+            Someone messaged <code>/start</code> to the bot. Approve to add
+            them to the allowlist and let them trigger Diligence runs; the
+            bot will DM them on approval. Deny silently drops the request.
+            Entries expire automatically after 30 minutes.
+          </p>
+          <ul className={styles.list} style={{ marginTop: 10 }}>
+            {pending.map((p) => (
+              <li
+                key={p.chat_id}
+                className={styles.row}
+                data-testid={`telegram-pending-${p.chat_id}`}
+              >
+                <div className={styles.rowMain}>
+                  <div className={styles.rowName}>
+                    {p.first_name || '(no name)'}{' '}
+                    {p.username && (
+                      <span className={styles.pill}>@{p.username}</span>
+                    )}
+                    <span className={styles.pill}>chat {p.chat_id}</span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    className={styles.actionPrimary}
+                    onClick={() => void onApprove(p.chat_id)}
+                    data-testid={`telegram-approve-${p.chat_id}`}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.actionSecondary}
+                    onClick={() => void onDeny(p.chat_id)}
+                    data-testid={`telegram-deny-${p.chat_id}`}
+                  >
+                    Deny
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
         <label style={{ display: 'block' }}>
           <span className={styles.fieldLabel}>
@@ -2095,6 +2223,30 @@ function TelegramBotPanel() {
             autoComplete="off"
             data-testid="telegram-bot-token"
           />
+        </label>
+
+        <label style={{ display: 'block' }}>
+          <span className={styles.fieldLabel}>
+            LLM provider for bot-triggered debates
+          </span>
+          <select
+            value={botProvider}
+            onChange={(e) => setBotProvider(e.target.value as BotProvider)}
+            className={styles.input}
+            style={{ maxWidth: 240 }}
+            data-testid="telegram-bot-provider"
+          >
+            {BOT_PROVIDERS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <span className={styles.hint} style={{ marginTop: 4, display: 'block' }}>
+            Uses the API key stored for this provider in the LLM Providers tab.
+            Default model: {BOT_PROVIDER_DEFAULT_MODEL[botProvider]}. OAuth and
+            local runtimes are not supported for the bot in this release.
+          </span>
         </label>
 
         <label style={{ display: 'block' }}>
