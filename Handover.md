@@ -12,24 +12,91 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-18, wrap-up still active)
+## Where we are right now (as of 2026-05-21, end of day, wrap-up complete)
 
-### Wrap-up extension (2026-05-18 early hours) — family AEO bundle landed on the site
+### Headline
 
-iLoveMD developer sent a family-wide ask to land an AI/AEO bundle (robots.txt explicit Allow rules for major AI crawlers + an llms.txt at site root following llmstxt.org). Handled as a wrap-up extension (cheap, Jay-coordinated family rollout, ~30 min as estimated).
+**Phase 8c bidirectional Telegram bot is fully shipped to main.** Multi-day arc starting 2026-05-18 (MVP) → 2026-05-19 (v1.1) → 2026-05-20-21 (v1.2 + v1.3). Latest TAL main: `122c12a`. Site has gained an interactive React Flow visualization (`/flow`), a dedicated Telegram section on `/tour`, a homepage "Run a Diligence from anywhere" callout, and a ClaudeLink sibling card on `/family`. Latest site main: `163d81c`.
 
-**What shipped on the site repo (`41d5551` on origin/main, Cloudflare auto-deployed):**
+### Today (2026-05-21) — Telegram polish + interactive flow + ClaudeLink family rollout
 
-- `app/robots.ts` extended: 10 explicit Allow rules for AI crawlers (GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, Claude-User, Claude-SearchBot, PerplexityBot, Perplexity-User, Google-Extended, Applebot-Extended). Sitemap line preserved. Implementation through Next.js MetadataRoute (typed, single source of truth) rather than a raw static file.
-- `public/llms.txt` created: 73-line machine-readable site summary per llmstxt.org. Tailored to quant/algo researcher audience (the highest-ROI angle per iLoveMD's analysis). Sections: TL;DR, Capabilities (12 real `/docs/*` links, no placeholders), Stack and openness, Audience, Roadmap signals, Disclaimers (three-tier surface referenced), Key pages, Family (RBJ Global, Clawdemy, Clawless, WhisprDesk, iLoveMD). Em-dash audit clean.
+Long day, three threads:
 
-Both surfaces verified live via curl. Reply sent to iLoveMD developer with commit SHA + confirmation (FYI, no reply needed).
+**Thread 1: Telegram v1.2 + v1.3 ship-out.** Founder dogfooded the MVP via Telegram, gave feedback per session, each piece landed on the same branch then merged to main as one bundle:
+- Channels tab (Telegram moves out of Webhooks into its own dedicated Settings tab; the operator's mental model now matches the code)
+- Full-debate streaming with per-chat `/full` and `/summary` slash commands, persisted to `telegram_chat_modes.json` so user mode survives engine restart
+- OAuth-for-bot plumbing (lifted the API-key-only limitation; renderer pushes fresh OpenAI OAuth tokens to a new `/telegram/refresh-credentials` engine endpoint every 45 minutes so access tokens never expire mid-bot)
+- `setMyCommands` so typing `/` in Telegram pops the autocomplete menu with 6 commands and descriptions
+- Persistent reply keyboard (2x2 grid: Full debate mode / Summary mode / Current mode / Help) with friendly-label normalization back to slash commands
+- Wording fix: `/start` from an already-allowlisted user now returns "Trading Agents Lab is ready. Mode: *summary*. ..." instead of the awkward "You're already approved" (founder voice feedback)
+- All merged in one go: TAL main `122c12a`. 183 engine tests + 43 telegram-specific pass.
 
-**Why this matters:** consumer surface for Cursor / Copilot / Claude Code / RAG frameworks today; possibly major AI engines later. Zero cost beyond 30 min, family pattern consistency, and a clean signal that we want AI crawlers indexing the site (vs. WAF/Cloudflare defaults that could silently start blocking unknown UAs in the future).
+**Thread 2: Interactive React Flow on the marketing site.** Founder asked about "Claude Design" (real product, launched 2026-04-17, Anthropic Labs); confirmed via web search but determined it's a Figma/Canva-style standalone-visual generator, not the right fit for embedded interactive React in our Next.js codebase. See `project_claude_design.md` memory.
 
-### Today (2026-05-17) — Phase 1 closeout sprint: 14 commits merged to main, v1.0 shipped
+Built `/flow` with `@xyflow/react` v12. Twelve agent nodes in four swim-lane columns (Analysts / Researchers / Trader / Risk + Decision) with auto-loop playback, click-to-detail side panel, locked canvas (no pan, no zoom — the diagram is a visual, not a workspace). Refined per founder review (per-column header positions to fix label overlap, removed React Flow's default controls panel that clashed with dark theme). Discoverable via homepage "See the flow live" CTA + sitemap. Live at `/flow/` (site `e16f6c5`). Technical notes captured in `reference_xyflow_react_notes.md` memory for any other family site (the Global Sites Developer is now building a mesh viz on `claudelink.ai` with the same stack).
 
-### Today (2026-05-17) — Phase 1 closeout sprint: 14 commits merged to main, v1.0 shipped
+**Thread 3: ClaudeLink reciprocal on `/family` + `llms.txt`.** Global Sites Developer FYI'd that `claudelink.ai` is now a full RBJ Global family member; added the reciprocal SiblingCard + JSON-LD subOrganization entry on our `/family` page, and one new line in our `llms.txt` Family section. Bundled with the React Flow push (site `163d81c`). Reply sent to Global Sites Developer with React Flow technical answers for their mesh-viz prototype.
+
+**Cross-product:**
+- **WhisprDesk SIGTERM issue from 2026-05-21 morning was traced to environmental.** Static audit on both sides ruled out any cross-app kill path in the codebases. WhisprDesk dev confirmed the timing (TAL Electron start at 23:30:14 = WhisprDesk SIGTERM at exitCode 15) but the kill is coming from the founder's launch workflow (a shell script he runs as "restart TAL"), not from either codebase. Founder is investigating his own script on his side. Nothing for us to fix.
+- **Cross-product family graph now consistent.** All five sibling sites + ClaudeLink reference each other correctly in JSON-LD, llms.txt, and footer collapse links.
+
+### Recent commits (all pushed)
+
+TAL engine repo:
+```
+122c12a  Merge phase-8c-v1.2-oauth-and-full into main (v1.2 + v1.3 bundle)
+4f684b2  fix(telegram): system-ready status on /start instead of "you're approved"
+8284ff7  feat(phase-8c): persistent reply keyboard for Telegram bot (v1.3)
+5b5abc5  feat(phase-8c): publish bot commands via setMyCommands on start
+1965876  feat(phase-8c): v1.2 channels tab + full streaming + OAuth-for-bot
+eeaebdc  Merge phase-8c-v1.1-enhancements into main (multi-provider + pairing + streaming)
+269d353  Merge phase-8c-telegram-bot into main (MVP, 2026-05-18)
+```
+
+Site repo (today's pushes):
+```
+163d81c  feat(family): add ClaudeLink to /family + llms.txt
+e16f6c5  feat(flow): interactive twelve-agent debate flow at /flow
+41cbf61  feat(home): "Run a Diligence from anywhere" Telegram section on homepage
+0349c0a  feat(tour): add Channels section with Telegram bot screenshots
+```
+
+### Live state at session end
+
+- **Dev stack: KILLED.** Both site dev server (`npm run dev` on :3000) and TAL desktop dev stack killed. Zero processes from either repo running. Confirmed via `lsof -ti:3000`, `lsof -ti:5173`, and `ps`.
+- **TAL main is at `122c12a`.** Phase 8c fully shipped. `phase-8c-v1.2-oauth-and-full` branch still exists locally + remotely; safe to delete on founder's call. `phase-8c-telegram-bot` and `phase-8c-v1.1-enhancements` branches similarly safe to prune.
+- **Site main is at `163d81c`.** Cloudflare auto-deployed. All four of today's pushes are live.
+- **Inbox clear.** Two FYI replies sent today (Global Sites Developer on ClaudeLink family entry + React Flow technical notes); no responses expected.
+
+### Open items carried into tomorrow
+
+**Quick wins (~30 min each):**
+
+1. **Delete merged Phase 8c branches** (`phase-8c-telegram-bot`, `phase-8c-v1.1-enhancements`, `phase-8c-v1.2-oauth-and-full`) on founder's call.
+2. **iluvmd.com footer add** (from 2026-05-17 iLoveMD dev ask, still queued).
+3. **Refresh `/tour` desktop screenshots** if any UI changed since the original 2026-05-09 captures (some Settings panels may have minor v1.0 / v1.1 / v1.2 drift; canonical filenames + redaction process documented in `project_tour_page_refresh_sop.md`).
+
+**Backlog items the founder can pick from tomorrow:**
+
+4. **Phase 6 Clawless gateway tap** (RPC spec in memory `project_openclaw_llm_rpc.md`, ~4-6 hours; adds a `clawless` provider that routes LLM calls through the OpenClaw gateway).
+5. **Detached sidecar for Telegram bot** (the "magic" v1.4+ feature: bot survives app close, ~1 day; PID file + Electron menu changes; spec in memory `project_phase_8c_bidirectional_telegram.md`).
+6. **WebhookConfig `telegram_bot_token` field** (from architect review during phase-1-closeout; currently `url` field stores the full Bot API URL for telegram webhooks, cleaner to add an explicit token field).
+7. **Playwright regression test** for the navigate-away-during-debate flow (architect Low-3 from phase-1-closeout review).
+
+**Cross-product follow-ups:**
+
+8. **Bing Search Console** — last check was 2026-05-18 (was Processing). Worth glancing to confirm sitemap flipped to Success.
+9. **WhisprDesk SIGTERM root cause** — founder is investigating his own launch script; he may come back with a fix that doesn't need our involvement, but worth a status check.
+
+### First moves when picking up tomorrow
+
+1. **Check inbox.** `mcp__claudelink__read_inbox`. Late messages from Global Sites Developer or iLoveMD developer may have landed.
+2. **Verify dev stack is OFF** (`ps aux | grep TradingAgents | grep -v grep`). Should be empty.
+3. **Founder's morning queue** — whatever's top of mind. Per founder's wrap message, "we will pick up tomorrow on the app itself" — so likely an item from the desktop app backlog (Phase 6 Clawless tap is the largest queued sprint; smaller items from the v1.1 review backlog above are also fair game).
+4. **Optionally:** check Bing Search Console + delete the merged Phase 8c branches if founder's comfortable.
+
+### Earlier this week (2026-05-17) — Phase 1 closeout sprint: 14 commits merged to main, v1.0 shipped
 
 A massive single-day sprint. Founder's brief at the start: "close phase 1 by end of day today." Result: shipped, reviewed, merged to main.
 

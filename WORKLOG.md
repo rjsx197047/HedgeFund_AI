@@ -6,6 +6,52 @@
 
 ---
 
+## 2026-05-21 — Telegram polish (v1.2 + v1.3) ships + interactive React Flow lands on the site + ClaudeLink family reciprocal
+
+**Goal:** Continue Phase 8c Telegram work the founder kicked off 2026-05-18, dogfood-iterate-ship the remaining polish, then surface Telegram on the marketing site so it's discoverable from the front door. End-of-day surprise: interactive flowchart prototype (founder excited about it after we discussed Anthropic's "Claude Design" product, which turned out to be Figma-style not React-component-style).
+
+**Outcome:** Phase 8c is fully done. Site has a new interactive `/flow` page, a Telegram section on `/tour`, a homepage Telegram callout, and a ClaudeLink sibling card on `/family`. Six commits across the two repos. Both repos are clean on main, zero processes running.
+
+### Engine + desktop (TAL repo)
+
+All merged in one v1.2 bundle to main as `122c12a`. The branch (`phase-8c-v1.2-oauth-and-full`) was already pushed Tuesday with three commits, founder reviewed via Telegram dogfooding today and gave per-piece feedback that became three additional commits before the merge:
+
+- `1965876` (Tuesday, on branch) — Channels tab (Telegram moves out of Webhooks into its own dedicated Settings tab), full-debate streaming with per-chat `/full` / `/summary` modes (persisted to `telegram_chat_modes.json`), OAuth-for-bot plumbing with `/telegram/refresh-credentials` endpoint + 45-min token refresh interval on the renderer.
+- `5b5abc5` (today, on branch) — `setMyCommands` publishes the 6 bot commands so `/` autocomplete works in Telegram.
+- `8284ff7` (today, on branch) — Persistent reply keyboard (2x2 grid with friendly labels) + handler normalization back to slash commands.
+- `4f684b2` (today, on branch) — Wording fix per founder voice feedback: "Trading Agents Lab is ready. Mode: *summary*..." replaces the awkward "You're already approved" reply on `/start` from operator pings.
+- `122c12a` (today) — Merge to main. 183 engine tests + 43 telegram-specific pass; renderer tsc clean.
+
+### Site (Trading_agent_site repo)
+
+Four pushes to site main, all live on `tradingagentslab.ai` via Cloudflare:
+
+- `0349c0a` — `/tour` page gets a new "08 · Channels" section with 6 redacted Telegram screenshots (PII removed: left chat sidebar cropped via Pillow at x=590, real chat_id cropped off the desktop Channels-tab screenshot). Memory SOP at `project_tour_page_refresh_sop.md` extended with canonical Telegram filenames + redaction requirement.
+- `41cbf61` — Homepage gains "Run a Diligence from anywhere" section between FlowSection and PostureSection. Surfaces the bidirectional Telegram bot as a differentiator vs the upstream Python terminal.
+- `e16f6c5` — `/flow` page: interactive React Flow visualization (`@xyflow/react` v12) of the twelve-agent debate. Auto-loops, click any node for detail panel, canvas locked. Built from scratch in ~400 LOC. Discoverable via homepage "See the flow live" CTA.
+- `163d81c` — ClaudeLink reciprocal: new SiblingCard on `/family` + JSON-LD subOrganization entry + one line in `llms.txt` Family section. Per Global Sites Developer FYI.
+
+### Cross-product coordination
+
+- **WhisprDesk SIGTERM cross-app issue from 2026-05-21 morning:** ruled out as TAL-side via static audit on both codebases (all `pkill` patterns are path-scoped to `TradingAgents/...` or absolute to TAL's venv; vite-plugin-electron's tree-kill stays within its own Electron PID; no single-instance lock). WhisprDesk dev confirmed timing (TAL Electron start at 23:30:14 = their SIGTERM exitCode 15) but the kill is environmental — coming from the founder's launch workflow (a shell script he runs to "restart TAL"). Founder is investigating his own script. Nothing for us to fix on either side.
+- **ClaudeLink (claudelink.ai) joined the RBJ Global family today.** Global Sites Developer dispatched the canonical copy + asked for reciprocal entries. Bundled with the React Flow push. Reply sent confirming the family graph is now consistent on our end.
+- **Global Sites Developer is building a mesh viz on claudelink.ai with the same React Flow stack.** They asked five technical questions after seeing our `/flow` prototype; replied inline with package version (`@xyflow/react` v12), Next 15 static-export gotchas (no `dynamic ssr:false` from Server Components — just `'use client'` and direct import), built-in `animated: true` for flowing edges, custom node TypeScript shape, the module-scope `nodeTypes` footgun, and a layout pitfall I hit on the prototype. All captured permanently in memory `reference_xyflow_react_notes.md`.
+
+### Memory updates
+
+- Created `project_claude_design.md` — what Claude Design (Anthropic, launched 2026-04-17) is and isn't a fit for, so we don't re-evaluate next time.
+- Created `reference_xyflow_react_notes.md` — concrete @xyflow/react v12 gotchas under Next 15 static export, for any future family site adding interactive viz.
+- Extended `project_tour_page_refresh_sop.md` with canonical Telegram screenshot filenames and the redaction requirement.
+
+### Next session opens with
+
+- Check inbox (`mcp__claudelink__read_inbox`).
+- Verify dev stack is off (`ps aux | grep TradingAgents | grep -v grep`).
+- Founder's morning queue per his wrap message: "tomorrow on the app itself any items in the backlog." Phase 6 Clawless gateway tap (~4-6 hours) is the largest queued sprint; smaller items from the v1.1 review backlog (WebhookConfig `telegram_bot_token` field, Playwright nav-away regression test, detached sidecar for the Telegram bot) are also fair game.
+- Optional: glance at Bing Search Console (was Processing as of 2026-05-18), delete merged Phase 8c branches.
+
+---
+
 ## 2026-05-17 (late evening) — Phase 1 closeout v1.0 sprint: 14 commits merged to main + Bing/Google Search Console set up
 
 **Goal:** Founder's brief at start of day: "close phase 1 by end of day today" + "make sure we close phase 1 by end of day today, then talk about phase 2 which we were thinking about a paid plan and license server." Ambitious scope on a feature branch, independent reviews before merge, then site SEO housekeeping.
