@@ -6,6 +6,32 @@
 
 ---
 
+## 2026-05-23 — Tier 0 stability hardening (engine + desktop) merged + branded FlowStage chart wrapper shipped
+
+**Goal:** Founder asked "what do we need to make Trading Agents more stable." Ran a 3-agent robustness audit, implemented the cheap-but-high-leverage Tier 0 set with tests, smoke-tested with a real local debate, merged via PR. Then implemented the RBJ Global family "branded stage" wrapper on the `/flow` chart (recipe relayed from Global Sites Developer). Also: reviewed the founder's separate AlgoWave project (advised reopen, deferred), registered on ClaudeLink, navigated a shared-working-tree concurrency situation with Global Sites Developer.
+
+**Tier 0 stability (app repo) — PR #1, merged as `ce04eca`:**
+- `c97e601` `fix(stability): Tier 0 — crash/hang/cost-cap hardening` (10 files, +402/−26):
+  - React `ErrorBoundary` around `<App/>` — render throws now recoverable (the "Settings blank" class).
+  - LLM request timeouts — `_LLM_HTTP_TIMEOUT` (cloud, 90s read) + `_LOCAL_HTTP_TIMEOUT` (local, 600s read). The live smoke proved the split is necessary: a 14b Ollama model's agents legitimately exceed 90s; a uniform 90s killed the debate at agent 1 (with SDK retries → ~270s wasted).
+  - Telegram debates now `cost_guard.reserve()`/finalize against the global USD caps (they were bypassing them — real money hole).
+  - WS `ticker=""` pre-bind (NameError on early disconnect); `fetchWithTimeout` (15s) on 14 unguarded renderer calls; atomic Telegram JSON writes (tmp+fsync+os.replace); SQLite `busy_timeout=5000`.
+  - +4 tests (cost-cap block, atomic write, cloud timeout, local timeout). Engine **187 pass**, dev-smoke 17/17, type-check + build clean.
+  - Verified with a **real 12-agent local Ollama debate** end to end (BUY@0.80, reservation finalized).
+
+**Branded FlowStage (site repo) — `bed572f` pushed:**
+- New `components/flow/FlowStage.tsx` (amber translation of ClaudeLink's MeshStage: dark radial gradient + glow, masked grid, logo watermark, brand lockup). Wraps `<ReactFlow>` transparent, drops `<Background>`.
+- Removed `hideAttribution` (no React Flow Pro license) + restyled `.react-flow__attribution` in `globals.css` to blend (founder caught a gray box; fixed).
+
+**Cross-product:**
+- Global Sites Developer shares the same local `Trading_agent_site` tree; his SEO commit `045e39b` (16 docs meta descriptions, 25 canonicals, SoftwareApplication JSON-LD, Bing resubmit) fast-forwarded on top of `bed572f`. SEO now fully his (founder decision). Memory: `reference_shared_tree_concurrency.md`.
+- AlgoWave reviewed (advised reopen as backtest+paper v1.0; one-directional code firewall vs TAL); founder deferred to next week+. Memory: `project_algowave_sibling.md`.
+- Registered on ClaudeLink as **Trading Agents Lab Developer**.
+
+**Next session opens with:** Tier 1–4 stability backlog (engine respawn/watchdog, WS reconnect, retry/backoff, secrets recovery, live_debate failure-path + renderer + storage tests, persist-bot-sessions), OR the AlgoWave `REOPEN_PLAN.md` doc, OR Phase 6 Clawless tap. Verify dev stack off; check inbox.
+
+---
+
 ## 2026-05-21 — Telegram polish (v1.2 + v1.3) ships + interactive React Flow lands on the site + ClaudeLink family reciprocal
 
 **Goal:** Continue Phase 8c Telegram work the founder kicked off 2026-05-18, dogfood-iterate-ship the remaining polish, then surface Telegram on the marketing site so it's discoverable from the front door. End-of-day surprise: interactive flowchart prototype (founder excited about it after we discussed Anthropic's "Claude Design" product, which turned out to be Figma-style not React-component-style).

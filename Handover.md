@@ -12,7 +12,53 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-21, end of day, wrap-up complete)
+## Where we are right now (as of 2026-05-23, end of day, wrap-up complete)
+
+### Headline
+
+**Engine + desktop stability sprint shipped (Tier 0), plus the branded FlowStage chart wrapper on the site.** Two clean workstreams, both merged/pushed.
+
+### Today (2026-05-23)
+
+**Thread 1 — Tier 0 stability hardening (app repo).** Ran a 3-agent audit (engine resilience, Electron/renderer resilience, test safety net), then implemented seven crash/hang/cost-cap fixes on a branch, with tests, verified end to end, and merged via PR #1.
+- **`ce04eca`** = merge commit on `origin/main`. Squashes in `c97e601` (the Tier 0 fix). `stability-tier0` branch deleted.
+- Fixes: React `ErrorBoundary` around `<App/>` (recoverable blank-screen); LLM request timeouts (cloud 90s / **local 600s** split — the smoke proved local large-model inference legitimately exceeds 90s); Telegram debates now take a global `cost_guard.reserve()`/finalize (they were bypassing the USD caps entirely — real money hole); WS `ticker=""` pre-bind (NameError on early disconnect); `fetchWithTimeout` on 14 unguarded renderer calls; atomic Telegram JSON writes; SQLite `busy_timeout=5000`.
+- Verified: engine **187 pytest** (+4 new), `dev-smoke.sh` 17/17, desktop type-check + build clean, and a **real 12-agent local Ollama debate** end to end (BUY@0.80, reservation finalized).
+- **Follow-up logged (Tier 2, not done):** persist bot sessions so spend survives a debate outliving the 15-min reservation TTL. Also Tiers 1–4 from the audit remain (engine respawn/watchdog, WS reconnect, retry/backoff, secrets recovery, live_debate failure-path tests, renderer unit tests).
+
+**Thread 2 — Branded FlowStage wrapper (site repo).** Implemented the RBJ Global family "stage" treatment (amber translation of ClaudeLink's MeshStage) on the `/flow` chart per a recipe relayed from Global Sites Developer.
+- **Site `bed572f`** pushed to `origin/main`. New `components/flow/FlowStage.tsx` (4 layers: dark radial gradient + amber glow, masked grid, logo watermark, brand lockup), wraps `<ReactFlow>` (transparent canvas), drops the old `<Background>`.
+- **Removed `hideAttribution`** — we hold no React Flow Pro license, so the badge must stay visible. Restyled it in `globals.css` (transparent bg, faint 9px link) so it blends instead of showing as a gray box (founder caught the gray box; fixed).
+- Verified live in DOM at desktop + mobile.
+
+**Cross-product / coordination:**
+- **Discovered Global Sites Developer edits the SAME local `Trading_agent_site` tree + `.git` concurrently.** Handled safely (committed only my files by explicit path, pushed exact sha `bed572f:main`). His SEO commit **`045e39b`** (16 docs meta descriptions, 25 canonicals, SoftwareApplication JSON-LD, Bing resubmit) fast-forwarded on top. Both deploying via Cloudflare. Memory: `reference_shared_tree_concurrency.md`.
+- **SEO is now fully Global Sites Developer's** (founder decision). CLAUDE.md §6 updated.
+- **AlgoWave** (separate sibling product, `/Users/junaidsiddiqi/algowave`): reviewed 2026-05-22, advised reopen as backtest+paper v1.0. Founder deferred to next week or the week after. `REOPEN_PLAN.md` punch-list still owed before the dev starts. Memory: `project_algowave_sibling.md`.
+- Registered on ClaudeLink as role **Trading Agents Lab Developer**.
+
+### Live state at session end
+
+- **App `main` at `ce04eca`** (Tier 0 merged). Local main synced, `stability-tier0` branch deleted.
+- **Site `main` at `045e39b`** (GSD SEO) → `bed572f` (FlowStage). Cloudflare auto-deploying both.
+- **No dev processes running** — engine smoke was transient subprocesses; local `serve` on :4324 killed; ports free.
+- **Inbox clear.** GSD's final FYI (SEO pushed) read; no replies pending.
+
+### Open items carried forward
+
+1. **Tier 1–4 stability** (audit backlog): engine respawn/watchdog + handshake timeout, WS reconnect, retry/backoff for Gemini/Codex/OpenRouter/local, corrupt-secrets recovery, PID-file orphan cleanup (also fixes `pkill -f` killing the dev engine), and tests: `test_live_debate.py` failure paths + renderer vitest + `test_storage.py`. Plus the Tier-2 "persist bot sessions" item.
+2. **AlgoWave `REOPEN_PLAN.md`** — write before the dedicated dev starts (~next week+). Merge hook: TradingAgents debate → AlgoWave's `SignalScorer` (`MLModel` Protocol).
+3. **Phase 6 Clawless gateway tap** and the older v1.1 review backlog items still queued.
+
+### First moves next session
+
+1. Check inbox (`mcp__claudelink__read_inbox`; already registered as Trading Agents Lab Developer).
+2. Verify dev stack OFF.
+3. Founder's queue — likely Tier 1 stability, or the AlgoWave plan doc, or Phase 6.
+
+---
+
+## Previous state (as of 2026-05-21, end of day, wrap-up complete)
 
 ### Headline
 

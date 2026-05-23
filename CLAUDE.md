@@ -128,7 +128,10 @@ Goal: if the terminal closes the moment the founder hits send on "wrap-up," next
 | Topic | Channel |
 |---|---|
 | Clawless desktop or OpenClaw protocol questions | `mcp__claudelink__send` to role `Clawless Advisor` |
+| tradingagentslab.ai SEO (meta, canonicals, JSON-LD, sitemap, crawlers) | Owned by `Global Sites Developer` — hand it off, don't action it yourself (founder decision 2026-05-23) |
 | Anything else in TradingAgentsLab | I am principal developer/architect — make the call |
+
+**Shared site working tree:** `Global Sites Developer` edits the *same* local `Trading_agent_site` checkout + `.git` concurrently. When committing there, stage only your own files by explicit path (never `git add -A`), push the exact sha (`git push origin <sha>:main`), don't switch branches, and don't run `npm run build`/`dev` at the same time (`.next` collisions). Sequence pushes via ClaudeLink. See memory `reference_shared_tree_concurrency.md`. This ClaudeLink terminal is registered as role **Trading Agents Lab Developer**.
 
 When messaging Clawless Advisor:
 - Frame as "no Clawless team work needed" if applicable (they're in pre-launch sprint)
