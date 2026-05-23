@@ -48,6 +48,42 @@ def test_local_adapter_threads_base_url_into_client():
         assert kwargs["api_key"] == "anything"
 
 
+def test_local_adapter_uses_generous_read_timeout():
+    """Local inference (cold load / CPU / large models) can take minutes, so
+    the local adapter must NOT inherit the tight 90s cloud read timeout — that
+    would kill valid local debates."""
+    import httpx
+
+    a = LocalLLMAdapter(base_url="http://localhost:11434/v1")
+    with patch("openai.AsyncOpenAI") as mock_client:
+        import asyncio
+
+        asyncio.run(a.open(api_key="anything"))
+        timeout = mock_client.call_args.kwargs.get("timeout")
+        assert isinstance(timeout, httpx.Timeout)
+        # Comfortably longer than the cloud 90s — minutes, for slow local runs.
+        assert timeout.read is not None and timeout.read >= 300
+
+
+def test_openai_adapter_sets_request_timeout():
+    """The API-key OpenAI client must be constructed with an explicit timeout.
+    Without it the SDK defaults to a 600s read timeout, so a stalled provider
+    would freeze a debate (and its WebSocket) for minutes per agent."""
+    import httpx
+
+    a = OpenAIAdapter()
+    with patch("openai.AsyncOpenAI") as mock_client:
+        import asyncio
+
+        asyncio.run(a.open(api_key="sk-test"))
+
+        kwargs = mock_client.call_args.kwargs
+        timeout = kwargs.get("timeout")
+        assert isinstance(timeout, httpx.Timeout)
+        # Read timeout must be a finite, sane bound (not the 600s default).
+        assert timeout.read is not None and timeout.read <= 120
+
+
 def test_local_adapter_factory_picks_right_class():
     """`adapter_for` must return LocalLLMAdapter for the local provider
     and thread the base_url through."""

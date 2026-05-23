@@ -151,6 +151,9 @@ def _connect() -> Iterator[sqlite3.Connection]:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        # Wait up to 5s for a competing writer rather than raising "database
+        # is locked" — a session write and a cost finalize can land together.
+        conn.execute("PRAGMA busy_timeout=5000")
         yield conn
     finally:
         conn.close()

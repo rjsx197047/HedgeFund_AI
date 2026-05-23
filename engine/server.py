@@ -434,6 +434,10 @@ def build_app(*, token: str) -> FastAPI:
         await ws.accept()
 
         captured_events: list[dict] = []
+        # Bound before the try so the `except WebSocketDisconnect` handler can
+        # log it even when the client disconnects before sending the start
+        # frame (otherwise referencing `ticker` there raises NameError).
+        ticker = ""
         try:
             # Wait for the client's start frame:
             #   {

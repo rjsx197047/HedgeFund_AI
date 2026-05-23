@@ -261,6 +261,11 @@ def _connect() -> Iterator[sqlite3.Connection]:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        # Wait up to 5s for a competing writer instead of immediately raising
+        # "database is locked". The bot and the WS handler can finalize spend
+        # concurrently; without this a lock collision is swallowed by the
+        # finalize except-block and silently understates the cost ledger.
+        conn.execute("PRAGMA busy_timeout=5000")
         yield conn
     finally:
         conn.close()

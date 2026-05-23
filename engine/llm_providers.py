@@ -27,6 +27,26 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol
 
+import httpx
+
+# Per-request HTTP timeout for the API-key LLM clients. Without this the
+# OpenAI and Anthropic SDKs default to a 600s / 10-minute read timeout, so a
+# single unresponsive provider could freeze a debate (and its WebSocket) for
+# up to ~2 hours across 12 agents. 90s read covers a slow-but-alive cloud
+# model; a stalled endpoint fails fast instead. The OAuth/Codex adapter sets
+# its own explicit timeout (it builds a raw httpx client), and Gemini uses the
+# millisecond `HttpOptions.timeout` below.
+_LLM_HTTP_TIMEOUT = httpx.Timeout(connect=10.0, read=90.0, write=30.0, pool=10.0)
+# Local runtimes (Ollama / LM Studio) are a different regime: a slow response
+# is the user's own hardware doing real work (cold model load can take minutes,
+# CPU inference of a large model is legitimately slow), NOT a stalled network.
+# A 90s read here would kill valid local debates (and the OpenAI SDK's 2 built-
+# in retries turn one timeout into ~3x the wait before failing). connect stays
+# tight — if localhost can't accept in 10s the runtime simply isn't up.
+_LOCAL_HTTP_TIMEOUT = httpx.Timeout(connect=10.0, read=600.0, write=30.0, pool=10.0)
+# Gemini's google-genai client takes its timeout in milliseconds.
+_GEMINI_TIMEOUT_MS = 90_000
+
 
 # ---- Cost rate tables -----------------------------------------------------
 #
@@ -256,6 +276,8 @@ class OpenAIAdapter:
     name = "openai"
     _base_url: Optional[str] = None
     _extra_headers: dict[str, str] = {}
+    # Subclasses (e.g. LocalLLMAdapter) override this for a different regime.
+    _http_timeout: "httpx.Timeout" = _LLM_HTTP_TIMEOUT
 
     def __init__(self) -> None:
         self._client = None  # type: ignore[assignment]
@@ -272,7 +294,7 @@ class OpenAIAdapter:
         """
         from openai import AsyncOpenAI
 
-        kwargs: dict = {"api_key": api_key}
+        kwargs: dict = {"api_key": api_key, "timeout": self._http_timeout}
         if self._base_url:
             kwargs["base_url"] = self._base_url
         if self._extra_headers:
@@ -349,6 +371,9 @@ class LocalLLMAdapter(OpenAIAdapter):
     """
 
     name = "local"
+    # Local inference can legitimately take minutes (cold load, CPU, large
+    # models); use the generous local read timeout rather than the cloud 90s.
+    _http_timeout = _LOCAL_HTTP_TIMEOUT
 
     def __init__(self, *, base_url: str) -> None:
         super().__init__()
@@ -575,7 +600,7 @@ class AnthropicAdapter:
     async def open(self, *, api_key: str) -> None:
         from anthropic import AsyncAnthropic
 
-        self._client = AsyncAnthropic(api_key=api_key)
+        self._client = AsyncAnthropic(api_key=api_key, timeout=_LLM_HTTP_TIMEOUT)
 
     async def close(self) -> None:
         if self._client is not None:
@@ -640,11 +665,18 @@ class GeminiAdapter:
 
     async def open(self, *, api_key: str) -> None:
         from google import genai
+        from google.genai import types
 
         # Sync client is fine — we run completions in a thread to keep the
         # asyncio loop responsive. (genai also offers an async client; the
         # sync one is simpler and we already pay the threading cost.)
-        self._client = genai.Client(api_key=api_key)
+        # `HttpOptions.timeout` is in milliseconds; without it the client has
+        # no read timeout and a stalled Gemini call would block its thread-pool
+        # thread indefinitely (and that thread can't be cancelled mid-call).
+        self._client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=_GEMINI_TIMEOUT_MS),
+        )
 
     async def close(self) -> None:
         # google-genai client has no explicit close; rely on GC.
