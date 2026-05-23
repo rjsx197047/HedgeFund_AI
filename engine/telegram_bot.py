@@ -41,6 +41,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -51,6 +52,7 @@ from typing import Any, Literal, Optional
 
 import httpx
 
+from . import cost_guard
 from .data_providers import (
     DataUnavailable,
     Headline,
@@ -283,13 +285,35 @@ def _load_spend() -> dict[str, float]:
         return {}
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write `text` to `path` atomically: write a temp file in the same
+    directory, fsync, then os.replace() into place. A process kill mid-write
+    can only leave a stray .tmp file behind, never a truncated/corrupt target
+    (the spend + modes files are the bot's only durable state)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        # If os.replace already succeeded the temp is gone; this only cleans
+        # up when the write failed partway through.
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
 def _save_spend(spend: dict[str, float]) -> None:
     """Best-effort write. Failures are logged but do not abort dispatch."""
     path = _spend_file_path()
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps({"date": _today_utc(), "spend": spend}, separators=(",", ":"))
+        _atomic_write_text(
+            path,
+            json.dumps({"date": _today_utc(), "spend": spend}, separators=(",", ":")),
         )
     except OSError as exc:
         logger.warning("failed to persist telegram_spend.json: %s", exc)
@@ -325,8 +349,7 @@ def _load_modes() -> dict[str, ReplyMode]:
 def _save_modes(modes: dict[str, ReplyMode]) -> None:
     path = _modes_file_path()
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(modes, separators=(",", ":")))
+        _atomic_write_text(path, json.dumps(modes, separators=(",", ":")))
     except OSError as exc:
         logger.warning("failed to persist telegram_chat_modes.json: %s", exc)
 
@@ -798,6 +821,34 @@ class TelegramBot:
             )
             return
 
+        # Global CostGuard reservation. The per-chat daily cap above limits
+        # abuse per Telegram chat; this reservation makes bot debates also
+        # count against the SAME global daily/weekly/monthly USD caps the
+        # desktop Analyze page uses, so a user can't bypass their budget by
+        # running from Telegram. live_debate finalizes this with the actual
+        # cost when the stream ends. OAuth/local runs reserve $0 (worst-case
+        # cost is zero), so they never block here — matching the WS path.
+        reservation_id: Optional[str] = None
+        try:
+            reservation = cost_guard.reserve(
+                model=provider_config.model,
+                auth_kind=provider_config.auth_kind,
+                max_tokens=provider_config.max_tokens,
+                override=False,
+            )
+            reservation_id = reservation.reservation_id
+        except cost_guard.CostGuardBlocked as exc:
+            await self._reply(
+                chat_id,
+                (
+                    f"Global spend cap reached: this run would exceed your "
+                    f"{exc.over_dimension} cap. Raise the caps in Trading "
+                    f"Agents Lab Settings -> Cost Guard, then try again."
+                ),
+                with_keyboard=True,
+            )
+            return
+
         await self._reply(
             chat_id,
             f"Running Diligence on {ticker} for {trade_date}. This usually takes a few minutes.",
@@ -815,6 +866,7 @@ class TelegramBot:
                 summary=summary,
                 headlines=headlines,
                 config=provider_config,
+                reservation_id=reservation_id,
                 sentiment=SentimentBlock(),
             ):
                 etype = event.get("type")

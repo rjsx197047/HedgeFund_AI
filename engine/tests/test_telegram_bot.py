@@ -116,11 +116,24 @@ def patch_httpx_client(fake_transport, monkeypatch):
 def isolate_spend_file(tmp_path, monkeypatch):
     """Redirect _spend_file_path() and _modes_file_path() to per-test tmp
     paths so the persistence files don't bleed between tests or pollute
-    the dev SQLite location."""
+    the dev SQLite location.
+
+    Also isolate the CostGuard / storage SQLite DB to a per-test path. Since
+    _run_debate now takes a global CostGuard reservation before running the
+    debate, an un-isolated test would hit the real dev cost_guard DB — both
+    polluting it and coupling these tests to the founder's live spend (a near
+    full daily cap would make the debate tests block instead of run)."""
     spend_target = tmp_path / "telegram_spend.json"
     modes_target = tmp_path / "telegram_chat_modes.json"
     monkeypatch.setattr(telegram_bot, "_spend_file_path", lambda: spend_target)
     monkeypatch.setattr(telegram_bot, "_modes_file_path", lambda: modes_target)
+
+    monkeypatch.setenv("TAL_SESSIONS_DB", str(tmp_path / "test.db"))
+    from engine import cost_guard, storage
+
+    storage._reset_for_tests()
+    cost_guard._reset_for_tests()
+
     yield spend_target
 
 
@@ -336,6 +349,67 @@ async def test_daily_cap_blocks_after_threshold(patch_httpx_client):
         await bot.stop()
     assert len(transport.sent_messages) == 1
     assert "cap reached" in transport.sent_messages[0]["text"].lower()
+
+
+def test_atomic_write_text_persists_and_leaves_no_tmp(tmp_path):
+    """_atomic_write_text writes the target and never leaves a .tmp behind on
+    success — the spend/modes files are the bot's only durable state, so a
+    partial write must not corrupt them."""
+    target = tmp_path / "nested" / "spend.json"
+    telegram_bot._atomic_write_text(target, '{"date":"2026-05-22","spend":{}}')
+    assert target.read_text() == '{"date":"2026-05-22","spend":{}}'
+    # No stray temp files in the directory.
+    leftovers = [p.name for p in target.parent.iterdir() if p.name != target.name]
+    assert leftovers == []
+    # Overwrite works too (os.replace path).
+    telegram_bot._atomic_write_text(target, '{"date":"2026-05-22","spend":{"7":0.5}}')
+    assert "0.5" in target.read_text()
+
+
+@pytest.mark.asyncio
+async def test_global_cost_cap_blocks_debate(patch_httpx_client):
+    """A Telegram debate must honor the SAME global CostGuard caps the desktop
+    Analyze page uses, not just the per-chat cap. With the global daily cap set
+    below the per-run worst-case estimate, the reservation is refused and the
+    debate generator is never entered."""
+    from engine import cost_guard
+
+    transport = patch_httpx_client
+    # Tighten the global daily cap so any non-zero reservation exceeds it.
+    cost_guard.update_config(enabled=True, cap_daily_usd=0.00001)
+
+    inner = await _stub_live_debate_factory(cost_usd=0.0123)
+    debate_ran = {"called": False}
+
+    async def tracking_stub(*args, **kwargs):  # noqa: ANN202
+        debate_ran["called"] = True
+        async for ev in inner(*args, **kwargs):
+            yield ev
+
+    bot = TelegramBot()
+    config = TelegramBotConfig(
+        token="X" * 40,
+        allowlist={42},
+        daily_cap_usd=5.0,  # generous per-chat cap; the global cap is the gate
+        provider_config={"provider": "openai", "api_key": "sk-test", "model": "gpt-4o-mini"},
+    )
+    with patch.object(telegram_bot, "live_debate", tracking_stub), \
+         patch.object(telegram_bot.default_provider, "quote_summary", side_effect=Exception("no net")), \
+         patch.object(telegram_bot.default_provider, "news_headlines", side_effect=Exception("no net")):
+        await bot.start(config)
+        try:
+            transport.enqueue_updates([_msg(chat_id=42, text="NVDA", update_id=1)])
+            for _ in range(20):
+                await asyncio.sleep(0.05)
+                if any("cap" in m.get("text", "").lower() for m in transport.sent_messages):
+                    break
+        finally:
+            await bot.stop()
+
+    # The reservation was refused before the debate started.
+    assert debate_ran["called"] is False
+    assert transport.sent_messages, "expected a cap-reached reply"
+    assert "spend cap" in transport.sent_messages[-1]["text"].lower()
 
 
 @pytest.mark.asyncio
