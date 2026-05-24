@@ -12,25 +12,22 @@
  * IPC through HTTP/WS to the Python sidecar.
  *
  * Orphan engine sweep on test teardown: if a test crashes between
- * `_electron.launch()` and `app.close()`, the engine survives. The
- * afterEach hook below issues a SIGTERM via pkill to clean up. Mirrors
- * the same sweep electron/main.ts does for the dev path.
+ * `_electron.launch()` and `app.close()`, the engine survives. The teardown
+ * below reads the engine's pidfile from *this test's sandbox* userData and
+ * SIGTERMs exactly that pid. It deliberately does NOT broad-match every
+ * `python -m engine` (the old `pkill -f` approach) — that would kill a dev
+ * engine running in another terminal, the very bug Tier 1 fixed in
+ * electron/main.ts. Sandbox-scoped pid targeting keeps the suite safe to run
+ * alongside a live dev stack.
  */
 import { test as base, _electron as electron, expect, type ElectronApplication, type Page } from '@playwright/test';
-import { execFile } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
-
-const execFileAsync = promisify(execFile);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DESKTOP_ROOT = path.resolve(__dirname, '..', '..');
-const REPO_ROOT = path.resolve(DESKTOP_ROOT, '..');
-// Engine entry — must match what electron/main.ts → engine-runner.ts spawns.
-const ENGINE_VENV_PY = path.join(REPO_ROOT, 'engine', '.venv', 'bin', 'python');
 
 interface TalFixtures {
   /** Launched Electron app. Closes on test teardown. */
@@ -42,13 +39,24 @@ interface TalFixtures {
   sandboxDir: string;
 }
 
-async function sweepOrphanEngines(): Promise<void> {
+/** Kill the engine recorded in this sandbox's pidfile, if it is still alive.
+ * Targeted by pid — never a process-name pattern — so it can only ever reap
+ * the engine this test launched, not an unrelated dev engine. */
+function reapSandboxEngine(userDataDir: string): void {
+  let pid: number | null = null;
   try {
-    await execFileAsync('pkill', ['-f', ENGINE_VENV_PY + ' -m engine'], {
-      timeout: 3000,
-    });
+    const raw = readFileSync(path.join(userDataDir, 'engine.pid'), 'utf-8').trim();
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isInteger(parsed) && parsed > 0) pid = parsed;
   } catch {
-    // pkill exits 1 when no process matched — that's the normal case.
+    return; // no pidfile — engine already cleaned up on close
+  }
+  if (pid !== null) {
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+      // Already gone — the normal case after a clean app.close().
+    }
   }
 }
 
@@ -94,7 +102,7 @@ export const test = base.extend<TalFixtures>({
     } catch {
       // App may already be down; fall through to the orphan sweep.
     }
-    await sweepOrphanEngines();
+    reapSandboxEngine(userDataDir);
   },
 
   window: async ({ app }, use) => {

@@ -94,6 +94,7 @@ interface TradingAgentsLabBridge {
   version: string;
   platform: NodeJS.Platform;
   getEngineHandshake: () => Promise<EngineHandshakeBridge>;
+  onEngineExited: (handler: () => void) => () => void;
   secrets: SecretsBridge;
   oauth: OAuthBridge;
   onMenuCommand: (

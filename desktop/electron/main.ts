@@ -1,8 +1,13 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { startEngine, stopEngine, type EngineHandshake } from './engine-runner';
+import {
+  onEngineExit,
+  startEngine,
+  stopEngine,
+  type EngineHandshake,
+} from './engine-runner';
 import { registerAppMenu } from './menu';
 import { OpenAIOAuthService } from './oauth-openai';
 import {
@@ -171,30 +176,16 @@ ipcMain.handle('app:check-upstream', async (): Promise<UpstreamCheckResult> => {
 // Result: on macOS the app sits in the dock with no window AND the engine
 // is killed, leaving the user in a weird state.
 //
-// These IPC handlers make Shutdown + Restart explicit. Both:
-//   1. SIGTERM the tracked engine via stopEngine()
-//   2. (dev only) sweep any orphan engines from previous crashed sessions
-//   3. Either app.quit() or app.relaunch() + app.quit()
+// These IPC handlers make Shutdown + Restart explicit. Both SIGTERM the
+// tracked engine via stopEngine() and then quit / relaunch.
 //
-// The dev-only pkill sweep uses execFile (no shell — no command injection
-// surface) and exits 0 even when nothing matched. In production builds
-// the engine is a bundled binary at a different path, so this match
-// pattern won't trigger anything outside dev.
+// Orphan engines from a *previously crashed* session are reaped by the
+// pidfile-targeted reapOrphanEngine() inside startEngine() on the next launch
+// (Tier 1, 2026-05-23). That replaced the old broad `pkill -f 'engine/.venv/
+// bin/python -m engine'` here, which also killed unrelated dev engines running
+// in other terminals.
 
 const IS_DEV = Boolean(process.env['VITE_DEV_SERVER_URL']);
-
-async function sweepOrphanEngines(): Promise<void> {
-  if (!IS_DEV) return;
-  if (process.platform === 'win32') return; // pkill not available
-  await new Promise<void>((resolve) => {
-    execFile(
-      'pkill',
-      ['-f', 'engine/.venv/bin/python -m engine'],
-      { timeout: 3000 },
-      () => resolve(), // ignore errors — pkill exits 1 when no match
-    );
-  });
-}
 
 async function confirmAction(action: 'shutdown' | 'restart'): Promise<boolean> {
   const w = win;
@@ -227,7 +218,6 @@ ipcMain.handle('app:shutdown', async (): Promise<void> => {
   const ok = await confirmAction('shutdown');
   if (!ok) return;
   stopEngine();
-  await sweepOrphanEngines();
   app.quit();
 });
 
@@ -235,7 +225,6 @@ ipcMain.handle('app:restart', async (): Promise<void> => {
   const ok = await confirmAction('restart');
   if (!ok) return;
   stopEngine();
-  await sweepOrphanEngines();
   if (IS_DEV) {
     // Dev mode quirk: app.relaunch() respawns Electron but the npm
     // script that owns Vite dies with the old Electron, leaving the new
@@ -273,6 +262,16 @@ app.whenReady().then(() => {
   // for the bundled .app, not for the dynamic dock-icon API. Production
   // electron-builder will still read build/icon.icns for the bundle.
   app.dock?.setIcon(ICON_PNG_PATH);
+
+  // When the engine crashes after a good handshake, the renderer is holding a
+  // now-dead port/token. Push an event so it drops its cached handshake; its
+  // next health poll re-fetches via getEngineHandshake(), which lazily respawns
+  // a fresh engine. Registered before startEngine() so an early crash is caught.
+  onEngineExit(() => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('engine:exited');
+    }
+  });
 
   // Start the sidecar eagerly so the handshake is ready by the time the
   // renderer asks for it. The IPC handler awaits the same promise.
