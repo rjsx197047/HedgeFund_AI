@@ -378,6 +378,26 @@ export interface StreamHandle {
 
 let cachedHandshake: EngineHandshake | null = null;
 
+/** Drop the cached port/token. Called when the engine exits so the next
+ * handshake() re-fetches connection details from a freshly respawned engine,
+ * rather than returning the dead port/token of the crashed one. */
+export function invalidateHandshake(): void {
+  cachedHandshake = null;
+}
+
+// Self-install the engine-exit listener once on module load. Main pushes
+// `engine:exited` on an unexpected engine crash (see engine-runner.ts +
+// preload `onEngineExited`); we drop the cache so the StatusStrip's next
+// health poll re-fetches and lazily respawns the engine. Guarded for unit
+// tests / any non-Electron context where the bridge is absent.
+//
+// A crash in the narrow window before this module loads delivers the event to
+// nobody, but that's harmless: cachedHandshake is still empty then, so the
+// first handshake() already re-fetches from a freshly respawned engine.
+if (typeof window !== 'undefined' && window.tradingAgentsLab?.onEngineExited) {
+  window.tradingAgentsLab.onEngineExited(() => invalidateHandshake());
+}
+
 export async function handshake(): Promise<EngineHandshake> {
   if (cachedHandshake) return cachedHandshake;
   if (!window.tradingAgentsLab?.getEngineHandshake) {

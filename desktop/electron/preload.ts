@@ -71,6 +71,14 @@ contextBridge.exposeInMainWorld('tradingAgentsLab', {
   platform: process.platform,
   getEngineHandshake: (): Promise<EngineHandshake> =>
     ipcRenderer.invoke('engine:get-handshake'),
+  // Fired by main when the engine exits unexpectedly (a crash). The renderer
+  // uses this to drop its cached handshake so the next call re-fetches a fresh
+  // port/token from a lazily-respawned engine. Returns an unsubscribe fn.
+  onEngineExited: (handler: () => void): (() => void) => {
+    const wrapped = () => handler();
+    ipcRenderer.on('engine:exited', wrapped);
+    return () => ipcRenderer.removeListener('engine:exited', wrapped);
+  },
   secrets: {
     availability: (): Promise<SecretsAvailability> =>
       ipcRenderer.invoke('secrets:availability'),

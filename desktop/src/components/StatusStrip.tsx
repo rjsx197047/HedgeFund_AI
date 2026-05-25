@@ -116,7 +116,7 @@ function StatusStrip() {
   const everSucceededRef = useRef(false);
   const mountedAtRef = useRef<number>(Date.now());
 
-  const pollHealth = useCallback(async () => {
+  const pollHealth = useCallback(async (): Promise<boolean> => {
     try {
       const h = await getHealth();
       everSucceededRef.current = true;
@@ -125,13 +125,46 @@ function StatusStrip() {
       // Initial seed only — per-stream Alpaca/crypto routing comes via
       // the CustomEvent below. Don't override an event-set source.
       setDataSource((cur) => cur ?? h.data_provider ?? null);
+      return true;
     } catch (err) {
       const elapsed = Date.now() - mountedAtRef.current;
       const stillStarting = !everSucceededRef.current && elapsed < STARTUP_GRACE_MS;
       setEngineState(stillStarting ? 'pending' : 'error');
       setEngineError(err instanceof Error ? err.message : String(err));
+      return false;
     }
   }, []);
+
+  // ---- Engine-crash fast recovery ----------------------------------------
+  //
+  // When the engine crashes, main pushes `engine:exited` and engine-client
+  // drops its cached handshake. Rather than wait up to HEALTH_POLL_MS (10s)
+  // for the ambient poll to notice, kick an immediate burst of polls: the
+  // first getHealth() re-fetches the handshake, which lazily respawns a fresh
+  // engine, and we flip back to 'ok' within ~1-3s. Bounded so a genuinely
+  // dead engine (bad venv) doesn't poll forever.
+  useEffect(() => {
+    const bridge = window.tradingAgentsLab;
+    if (!bridge?.onEngineExited) return;
+    let recovering = false;
+    const unsubscribe = bridge.onEngineExited(() => {
+      if (recovering) return;
+      recovering = true;
+      setEngineState('pending');
+      let attempts = 0;
+      const tick = async () => {
+        attempts += 1;
+        const ok = await pollHealth();
+        if (ok || attempts >= 20) {
+          recovering = false;
+          return;
+        }
+        setTimeout(() => void tick(), 1000);
+      };
+      void tick();
+    });
+    return unsubscribe;
+  }, [pollHealth]);
 
   useEffect(() => {
     // Tight retry cadence during the startup grace window so we transition
