@@ -12,9 +12,11 @@ import { registerAppMenu } from './menu';
 import { OpenAIOAuthService } from './oauth-openai';
 import {
   deleteSecret,
+  getCorruptionRecovery,
   getSecret,
   isEncryptionAvailable,
   listSecrets,
+  onSecretsRecovered,
   secretsFileLocation,
   setSecret,
 } from './secrets';
@@ -107,6 +109,11 @@ ipcMain.handle('engine:get-handshake', async (): Promise<EngineHandshake> => {
 ipcMain.handle('secrets:availability', () => ({
   available: isEncryptionAvailable(),
   filePath: secretsFileLocation(),
+  // null in the common case; populated if a corrupt secrets.json was
+  // backed-up-and-replaced during this process lifetime. Lets the
+  // Settings page show a recovery banner even if it mounted after the
+  // recovery happened (the push IPC below covers the live case).
+  corruptionRecovery: getCorruptionRecovery(),
 }));
 
 ipcMain.handle(
@@ -270,6 +277,18 @@ app.whenReady().then(() => {
   onEngineExit(() => {
     if (win && !win.isDestroyed()) {
       win.webContents.send('engine:exited');
+    }
+  });
+
+  // If the encrypted secrets file is unreadable at session start, the
+  // secrets module quietly backs it up and starts fresh. Forward that to
+  // the renderer so Settings shows a banner ("your keys couldn't be read,
+  // backup saved to <path>, re-enter them"). The push covers a recovery
+  // that happens AFTER the renderer mounts; first-mount state is read
+  // via `secrets:availability` so the banner appears either way.
+  onSecretsRecovered((info) => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('secrets:recovered', info);
     }
   });
 

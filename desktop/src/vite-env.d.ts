@@ -22,9 +22,15 @@ interface SecretEntryBridge {
   cipher: string;
 }
 
+interface CorruptionRecoveryBridge {
+  backupPath: string;
+  recoveredAt: string;
+}
+
 interface SecretsAvailabilityBridge {
   available: boolean;
   filePath: string;
+  corruptionRecovery: CorruptionRecoveryBridge | null;
 }
 
 interface SecretsBridge {
@@ -33,6 +39,9 @@ interface SecretsBridge {
   get: (key: string) => Promise<string | null>;
   list: () => Promise<SecretListingBridge[]>;
   delete: (key: string) => Promise<boolean>;
+  onRecovered: (
+    handler: (info: CorruptionRecoveryBridge) => void,
+  ) => () => void;
 }
 
 interface OAuthStartResultBridge {
