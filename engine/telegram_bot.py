@@ -52,7 +52,7 @@ from typing import Any, Literal, Optional
 
 import httpx
 
-from . import cost_guard
+from . import cost_guard, storage
 from .data_providers import (
     DataUnavailable,
     Headline,
@@ -859,6 +859,12 @@ class TelegramBot:
         decision: Optional[dict[str, Any]] = None
         cost_usd: float = 0.0
         live = False
+        # Capture every event so the debate lands in the same `sessions` table
+        # the WS path writes to. Without this, bot debates never appear in
+        # History and — more importantly — the global spend ledger loses
+        # their cost when the 15-min reservation TTL expires before
+        # finalize_reservation runs (slow Claude / large local models).
+        events: list[dict] = []
         try:
             async for event in live_debate(
                 ticker=ticker,
@@ -869,6 +875,7 @@ class TelegramBot:
                 reservation_id=reservation_id,
                 sentiment=SentimentBlock(),
             ):
+                events.append(event)
                 etype = event.get("type")
                 if etype == "phase.transition":
                     # v1.1: forward mid-debate phase boundaries so the user
@@ -894,6 +901,14 @@ class TelegramBot:
             logger.exception("debate failed for chat %s ticker %s", chat_id, ticker)
             await self._reply(chat_id, f"Debate failed: {type(exc).__name__}: {exc}")
             return
+
+        # Persist before checking `decision is None`: the helper itself only
+        # writes when session.complete is present, so this is a no-op for
+        # aborted streams. write_session_from_events is best-effort and
+        # never raises — failures log to stderr.
+        storage.write_session_from_events(
+            ticker=ticker, trade_date=trade_date, events=events
+        )
 
         if decision is None:
             await self._reply(

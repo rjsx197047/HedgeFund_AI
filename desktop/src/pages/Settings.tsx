@@ -5,7 +5,9 @@ import {
   getAvailability,
   getSecret,
   listSecrets,
+  onSecretsRecovered,
   setSecret,
+  type CorruptionRecovery,
   type SecretListing,
   type SecretsAvailability,
 } from '../lib/secrets';
@@ -235,6 +237,10 @@ function Settings() {
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [listings, setListings] = useState<SecretListing[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
+  // null in the common case. Populated either from the initial `availability`
+  // call (recovery happened before this page mounted) or from the
+  // `secrets:recovered` IPC (recovery happened while we were watching).
+  const [recovery, setRecovery] = useState<CorruptionRecovery | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -242,6 +248,7 @@ function Settings() {
       .then((info) => {
         if (cancelled) return;
         setAvailability(info);
+        if (info.corruptionRecovery) setRecovery(info.corruptionRecovery);
         if (!info.available) {
           setAvailabilityError(
             'Encryption backend unavailable on this OS. Refusing to store secrets in plaintext.',
@@ -255,8 +262,12 @@ function Settings() {
           );
         }
       });
+    const unsubscribe = onSecretsRecovered((info) => {
+      if (!cancelled) setRecovery(info);
+    });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, []);
 
@@ -299,6 +310,15 @@ function Settings() {
       {availabilityError && (
         <div className={styles.availabilityBanner}>
           <strong>Secret storage offline.</strong> {availabilityError}
+        </div>
+      )}
+
+      {recovery && (
+        <div className={styles.availabilityBanner}>
+          <strong>Encrypted secrets file recovered.</strong> The previous
+          secrets.json could not be read and was backed up to{' '}
+          <code>{recovery.backupPath}</code>. Re-enter your API keys below;
+          your previous entries are intact in the backup if you need them.
         </div>
       )}
 

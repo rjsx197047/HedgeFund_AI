@@ -335,6 +335,53 @@ async def test_allowlisted_ticker_triggers_debate(patch_httpx_client):
 
 
 @pytest.mark.asyncio
+async def test_run_debate_persists_via_helper(patch_httpx_client):
+    """Tier 2 regression: a bot debate must call
+    `storage.write_session_from_events` so its cost lands in the global
+    spend ledger (otherwise a >15min debate silently drops its cost when
+    the reservation TTL expires). Pairs with
+    `test_write_session_from_events_lands_after_ttl_expiry` in
+    test_session_persistence.py — that one proves the helper works after
+    TTL expiry, this one proves the bot path actually calls it.
+    """
+    transport = patch_httpx_client
+    stub = await _stub_live_debate_factory(cost_usd=0.042)
+    bot = TelegramBot()
+    config = TelegramBotConfig(
+        token="X" * 40,
+        allowlist={42},
+        daily_cap_usd=5.0,
+        provider_config={"provider": "openai", "api_key": "sk-test", "model": "gpt-4o-mini"},
+    )
+
+    with patch.object(telegram_bot, "live_debate", stub), \
+         patch.object(telegram_bot.default_provider, "quote_summary", side_effect=Exception("no net")), \
+         patch.object(telegram_bot.default_provider, "news_headlines", side_effect=Exception("no net")), \
+         patch.object(telegram_bot.storage, "write_session_from_events") as write_mock:
+        write_mock.return_value = "sess-abc"
+        await bot.start(config)
+        try:
+            transport.enqueue_updates([_msg(chat_id=42, text="NVDA", update_id=1)])
+            for _ in range(20):
+                await asyncio.sleep(0.05)
+                if any("HOLD" in m.get("text", "") for m in transport.sent_messages):
+                    break
+        finally:
+            await bot.stop()
+
+    # The helper must have been invoked exactly once with the debate's
+    # captured events. Pulling .call_args avoids brittle positional assertions.
+    assert write_mock.call_count == 1
+    kwargs = write_mock.call_args.kwargs
+    assert kwargs["ticker"] == "NVDA"
+    assert isinstance(kwargs["events"], list)
+    # The stub yields a single session.complete; it must be in the captured
+    # events list passed to the helper.
+    types_seen = {ev.get("type") for ev in kwargs["events"]}
+    assert "session.complete" in types_seen
+
+
+@pytest.mark.asyncio
 async def test_daily_cap_blocks_after_threshold(patch_httpx_client):
     transport = patch_httpx_client
     bot = TelegramBot()

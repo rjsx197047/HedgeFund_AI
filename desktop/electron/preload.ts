@@ -17,9 +17,17 @@ export interface SecretEntry {
   cipher: string;
 }
 
+export interface CorruptionRecovery {
+  backupPath: string;
+  recoveredAt: string;
+}
+
 export interface SecretsAvailability {
   available: boolean;
   filePath: string;
+  /** Non-null if the encrypted secrets file was corrupt and got backed up
+   * during this process lifetime. Renderer shows a recovery banner. */
+  corruptionRecovery: CorruptionRecovery | null;
 }
 
 type MenuChannel =
@@ -89,6 +97,18 @@ contextBridge.exposeInMainWorld('tradingAgentsLab', {
     list: (): Promise<SecretListing[]> => ipcRenderer.invoke('secrets:list'),
     delete: (key: string): Promise<boolean> =>
       ipcRenderer.invoke('secrets:delete', key),
+    // Fired by main when the secrets file was unreadable at read time and
+    // got backed-up-and-replaced with an empty store. Caller renders a
+    // banner above Settings so the recovery isn't silent. Returns an
+    // unsubscribe fn.
+    onRecovered: (
+      handler: (info: CorruptionRecovery) => void,
+    ): (() => void) => {
+      const wrapped = (_evt: Electron.IpcRendererEvent, info: CorruptionRecovery) =>
+        handler(info);
+      ipcRenderer.on('secrets:recovered', wrapped);
+      return () => ipcRenderer.removeListener('secrets:recovered', wrapped);
+    },
   },
   oauth: {
     openaiStart: (): Promise<OAuthStartResult> =>

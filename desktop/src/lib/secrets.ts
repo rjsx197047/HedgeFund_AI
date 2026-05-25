@@ -10,9 +10,15 @@ export interface SecretEntry {
   cipher: string;
 }
 
+export interface CorruptionRecovery {
+  backupPath: string;
+  recoveredAt: string;
+}
+
 export interface SecretsAvailability {
   available: boolean;
   filePath: string;
+  corruptionRecovery: CorruptionRecovery | null;
 }
 
 function bridge() {
@@ -40,4 +46,10 @@ export function listSecrets(): Promise<SecretListing[]> {
 
 export function deleteSecret(key: string): Promise<boolean> {
   return bridge().delete(key);
+}
+
+export function onSecretsRecovered(
+  handler: (info: CorruptionRecovery) => void,
+): () => void {
+  return bridge().onRecovered(handler);
 }

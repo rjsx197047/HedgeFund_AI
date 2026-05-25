@@ -670,38 +670,15 @@ def _persist_session_safe(
 ) -> str | None:
     """Find session.complete in the captured events and write a row.
 
-    Returns the new session id on success, None if the stream was aborted
-    or the write failed. Caller uses this as the `session_id` in webhook
-    payloads so receivers can correlate alerts to History rows.
+    Thin wrapper around `storage.write_session_from_events` so the WS
+    handler keeps its existing call shape; the bot path uses the same
+    helper directly. Returns the new session id, or None if the stream
+    was aborted / the write failed. Caller uses the id as the
+    `session_id` in webhook payloads so receivers can correlate alerts
+    to History rows.
     """
-    if not events:
-        return None
-    complete: dict | None = None
-    for ev in events:
-        if isinstance(ev, dict) and ev.get("type") == "session.complete":
-            complete = ev
-            break
-    if complete is None:
-        # Stream was aborted (Stop button) — don't persist a partial session.
-        return None
-    raw_decision = complete.get("decision")
-    decision = raw_decision if isinstance(raw_decision, dict) else {
-        "action": "HOLD",
-        "confidence": 0.0,
-        "reasoning": "Session ended without a well-formed decision payload.",
-    }
-    return storage.write_session(
-        ticker=ticker,
-        trade_date=trade_date,
-        events=events,
-        decision=decision,
-        live=bool(complete.get("live", False)),
-        provider=complete.get("provider"),
-        model=complete.get("model"),
-        input_tokens=complete.get("input_tokens"),
-        output_tokens=complete.get("output_tokens"),
-        estimated_cost_usd=complete.get("estimated_cost_usd"),
-        auth_kind=complete.get("auth_kind"),
+    return storage.write_session_from_events(
+        ticker=ticker, trade_date=trade_date, events=events
     )
 
 

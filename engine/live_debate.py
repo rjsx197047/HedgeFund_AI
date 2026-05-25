@@ -24,6 +24,8 @@ implementations (OpenAI, Anthropic, OpenRouter, Gemini).
 
 from __future__ import annotations
 
+import asyncio
+import random
 import sys
 import time
 from dataclasses import dataclass, field
@@ -36,6 +38,138 @@ from .llm_providers import (
     adapter_for,
     estimate_cost,
 )
+
+
+# ---- Adapter retry/backoff --------------------------------------------------
+#
+# Wraps `adapter.complete` calls so a transient provider hiccup (rate limit,
+# 503, dropped TCP) doesn't abort an entire debate. Lives at this layer (not
+# inside each adapter) so retry policy is uniform across providers — caller
+# can't accidentally ship a provider that retries differently. Retry is safe
+# because every adapter returns the whole (content, in_tokens, out_tokens)
+# tuple atomically; partial state isn't observable, so a replay produces no
+# duplication in the WS stream.
+
+_RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+_MAX_ATTEMPTS = 3
+_BASE_BACKOFF_S = 1.0  # schedule: 1s, 2s, 4s (with ±30% jitter)
+_RETRY_AFTER_CAP_S = 30.0  # don't honor a provider's wildly large retry-after
+
+
+def _retry_after_seconds(exc: BaseException) -> Optional[float]:
+    """Extract Retry-After (seconds) from a 429 response, if present.
+
+    Both OpenAI and Anthropic SDK exceptions carry a `.response` with `.headers`.
+    Anthropic occasionally sends Retry-After as an HTTP-date instead of a
+    number; we only honor numeric values and fall through to backoff otherwise.
+    """
+    resp = getattr(exc, "response", None)
+    if resp is None:
+        return None
+    headers = getattr(resp, "headers", None)
+    if headers is None:
+        return None
+    raw = headers.get("retry-after") if hasattr(headers, "get") else None
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Decide whether `exc` is a transient provider error worth one more attempt.
+
+    Match by attribute (`status_code`) rather than `isinstance` so we don't
+    have to import every optional provider SDK at module load. Network-layer
+    transients (httpx timeouts/connect/read/protocol) cover the OpenAI,
+    Anthropic, and Codex SDKs uniformly since they all sit on httpx.
+    """
+    import httpx
+
+    if isinstance(
+        exc,
+        (
+            httpx.TimeoutException,
+            httpx.ConnectError,
+            httpx.ReadError,
+            httpx.RemoteProtocolError,
+        ),
+    ):
+        return True
+
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and status in _RETRYABLE_STATUS:
+        return True
+
+    # The Codex adapter raises RuntimeError with "Codex <status>: ..." or
+    # "Codex stream failed: ...". Parse defensively so a future log-format
+    # tweak doesn't silently break the retry behavior.
+    if isinstance(exc, RuntimeError):
+        msg = str(exc)
+        if msg.startswith("Codex "):
+            try:
+                code = int(msg.split(" ", 2)[1].rstrip(":"))
+                if code in _RETRYABLE_STATUS:
+                    return True
+            except (ValueError, IndexError):
+                pass
+        if "Codex stream failed" in msg:
+            return True
+
+    return False
+
+
+async def _complete_with_retry(
+    adapter: LLMAdapter,
+    *,
+    provider: str,
+    system: str,
+    user: str,
+    model: str,
+    max_tokens: int,
+) -> tuple[str, int, int]:
+    """Call `adapter.complete` with bounded retry on transient errors.
+
+    Local provider short-circuits — the OpenAI SDK already does 2 built-in
+    retries against the localhost runtime, so adding a third at this layer
+    burns the user's own hardware time for no real-world benefit. asyncio
+    CancelledError is never caught: it's the WS-disconnect / generator-teardown
+    signal and must propagate so `live_debate`'s finally-block runs cleanly.
+    """
+    if provider == "local":
+        return await adapter.complete(
+            system=system, user=user, model=model, max_tokens=max_tokens
+        )
+
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            return await adapter.complete(
+                system=system, user=user, model=model, max_tokens=max_tokens
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if attempt == _MAX_ATTEMPTS or not _is_retryable(exc):
+                raise
+            after = _retry_after_seconds(exc)
+            if after is not None:
+                delay = min(max(0.05, after), _RETRY_AFTER_CAP_S)
+            else:
+                base = _BASE_BACKOFF_S * (2 ** (attempt - 1))
+                # symmetric ±30% jitter so retries don't synchronize across
+                # parallel debates after a shared upstream blip.
+                jitter = base * 0.3 * (2 * random.random() - 1)
+                delay = max(0.05, base + jitter)
+            sys.stderr.write(
+                f"[live_debate] retry {attempt}/{_MAX_ATTEMPTS - 1} after "
+                f"{type(exc).__name__}: sleeping {delay:.2f}s\n"
+            )
+            await asyncio.sleep(delay)
+
+    # Unreachable: the loop either returns the adapter result or raises.
+    raise RuntimeError("retry loop exited without result")
 
 
 # ---- Sentiment block ---------------------------------------------------------
@@ -406,7 +540,9 @@ async def live_debate(
                 include_full_sentiment=(agent.name == "sentiment_analyst"),
             )
             try:
-                content, in_tok, out_tok = await adapter.complete(
+                content, in_tok, out_tok = await _complete_with_retry(
+                    adapter,
+                    provider=config.provider,
                     system=agent.system_prompt,
                     user=user_msg,
                     model=config.model,

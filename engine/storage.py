@@ -265,6 +265,47 @@ def write_session(
     return sid
 
 
+def write_session_from_events(
+    *, ticker: str, trade_date: str, events: list[dict]
+) -> Optional[str]:
+    """Persist a session by extracting metadata from its captured event stream.
+
+    Shared by the WS handler (`server.py`) and the Telegram bot path
+    (`telegram_bot.py`) so both surfaces produce identical History rows and
+    feed the same global spend ledger. If the stream was aborted (no
+    `session.complete` event), nothing is written — partial transcripts
+    don't belong in History or in the cost ledger.
+    """
+    if not events:
+        return None
+    complete: Optional[dict] = None
+    for ev in events:
+        if isinstance(ev, dict) and ev.get("type") == "session.complete":
+            complete = ev
+            break
+    if complete is None:
+        return None
+    raw_decision = complete.get("decision")
+    decision = raw_decision if isinstance(raw_decision, dict) else {
+        "action": "HOLD",
+        "confidence": 0.0,
+        "reasoning": "Session ended without a well-formed decision payload.",
+    }
+    return write_session(
+        ticker=ticker,
+        trade_date=trade_date,
+        events=events,
+        decision=decision,
+        live=bool(complete.get("live", False)),
+        provider=complete.get("provider"),
+        model=complete.get("model"),
+        input_tokens=complete.get("input_tokens"),
+        output_tokens=complete.get("output_tokens"),
+        estimated_cost_usd=complete.get("estimated_cost_usd"),
+        auth_kind=complete.get("auth_kind"),
+    )
+
+
 def list_sessions(*, limit: int = 50, ticker: Optional[str] = None) -> list[SessionSummary]:
     """List recent completed sessions, newest first. Best-effort."""
     try:
