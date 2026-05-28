@@ -70,9 +70,10 @@ export const PROVIDER_DEFAULT_MODEL: Record<LLMProvider, string> = {
   anthropic: 'claude-haiku-4-5',
   openrouter: 'openai/gpt-4o-mini',
   gemini: 'gemini-2.0-flash',
-  // xAI and MiniMax default to a fast/cheap model so a misconfigured run
-  // isn't an expensive surprise. Must match the engine's _DEFAULT_MODELS.
-  xai: 'grok-4-fast-non-reasoning',
+  // xAI and MiniMax default to the current fast/cheap flagship. Must match
+  // the engine's _DEFAULT_MODELS. grok-4.3 is xAI's current recommended model
+  // (the old grok-4-fast-* IDs were deprecated 2026-05-15).
+  xai: 'grok-4.3',
   minimax: 'MiniMax-M2.7-highspeed',
   // Local default is dynamic — the actual choice comes from the detected
   // runtime's model list. Empty string here forces the renderer to pick
@@ -97,9 +98,10 @@ export const OPENAI_CODEX_DEFAULT_MODEL = 'gpt-5.4';
  * inline, and a `recommended` flag for the suggested default.
  *
  * Curated to the 3-5 latest, non-legacy models per provider. Last
- * refreshed 2026-05-27 against upstream TradingAgents v0.2.5's verified
- * model catalog (gpt-5.5, gemini-3.1-flash-lite GA). Refresh manually as
- * providers ship new model families.
+ * refreshed 2026-05-28: xAI lineup re-aligned to docs.x.ai (grok-4.3 +
+ * grok-4.20-0309 family) after the grok-4-fast-* IDs were deprecated
+ * 2026-05-15. gpt-5.5 / gemini-3.1-flash-lite GA verified current against
+ * vendor docs. Refresh manually as providers ship new model families.
  */
 export interface ModelChoice {
   id: string;
@@ -134,10 +136,9 @@ export const PROVIDER_MODELS: Record<LLMProvider, ModelChoice[]> = {
     { id: 'gemini-2.0-flash',      label: 'Gemini 2.0 Flash',      note: 'Cheapest', recommended: true },
   ],
   xai: [
-    { id: 'grok-4.20',                 label: 'Grok 4.20',            note: 'Latest, auto-selects reasoning' },
-    { id: 'grok-4.20-reasoning',       label: 'Grok 4.20 Reasoning',  note: 'Frontier reasoning' },
-    { id: 'grok-4-fast-reasoning',     label: 'Grok 4 Fast (reason)', note: 'Fast, reasoning' },
-    { id: 'grok-4-fast-non-reasoning', label: 'Grok 4 Fast',          note: 'Fastest, cheapest', recommended: true },
+    { id: 'grok-4.3',                     label: 'Grok 4.3',                  note: 'Current flagship, fastest', recommended: true },
+    { id: 'grok-4.20-0309-reasoning',     label: 'Grok 4.20 (reasoning)',     note: 'Reasoning-optimized' },
+    { id: 'grok-4.20-0309-non-reasoning', label: 'Grok 4.20 (non-reasoning)', note: 'Speed-optimized' },
   ],
   minimax: [
     { id: 'MiniMax-M2.7',           label: 'MiniMax M2.7',           note: 'Flagship, 204K context' },

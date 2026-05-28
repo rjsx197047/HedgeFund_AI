@@ -1205,7 +1205,7 @@ def test_bot_provider_config_resolves_for_xai_and_minimax():
     cases = [
         # new auth-blob shape
         (
-            {"provider": "xai", "auth": {"type": "api_key", "api_key": "xai-k"}, "model": "grok-4.20"},
+            {"provider": "xai", "auth": {"type": "api_key", "api_key": "xai-k"}, "model": "grok-4.3"},
             XaiAdapter,
         ),
         (
@@ -1214,7 +1214,7 @@ def test_bot_provider_config_resolves_for_xai_and_minimax():
         ),
         # legacy top-level api_key shape
         (
-            {"provider": "xai", "api_key": "xai-k", "model": "grok-4-fast-non-reasoning"},
+            {"provider": "xai", "api_key": "xai-k", "model": "grok-4.20-0309-non-reasoning"},
             XaiAdapter,
         ),
         (

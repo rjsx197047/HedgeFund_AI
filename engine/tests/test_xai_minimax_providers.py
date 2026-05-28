@@ -86,7 +86,7 @@ def test_from_dict_defaults_model_when_absent():
     cfg = ProviderConfig.from_dict(
         {"provider": "xai", "auth": {"type": "api_key", "api_key": "k"}}
     )
-    assert cfg.model == default_model_for("xai") == "grok-4-fast-non-reasoning"
+    assert cfg.model == default_model_for("xai") == "grok-4.3"
 
 
 def test_new_providers_reject_oauth():
@@ -142,6 +142,20 @@ def test_strip_leaves_clean_content_untouched():
     assert out == "Just a normal answer with no reasoning block."
 
 
+def test_strip_handles_think_tag_with_attributes():
+    """A <think> opener carrying attributes must still be stripped, not leaked
+    raw into the transcript."""
+    out = _strip_think_blocks('<think id="1">weighing it</think>Final: BUY.')
+    assert out == "Final: BUY."
+
+
+def test_strip_removes_orphaned_closing_tag_from_pseudo_nesting():
+    """Pseudo-nested input can leave a stray </think>; no reasoning markup
+    (opening or closing) should survive into the conclusion."""
+    out = _strip_think_blocks("<think>a<think>b</think>c</think>Final answer.")
+    assert "<think" not in out and "</think" not in out
+
+
 def test_minimax_complete_strips_think_block():
     """End-to-end through the adapter: a MiniMax response carrying a <think>
     block returns clean content while preserving the usage token counts."""
@@ -169,10 +183,12 @@ def test_new_provider_models_are_priced():
     """Curated xAI + MiniMax models must reserve > $0 (not the unknown path)
     and stay bounded at the hard token cap."""
     for model in (
-        "grok-4.20",
-        "grok-4-fast-non-reasoning",
+        "grok-4.3",
+        "grok-4.20-0309-reasoning",
+        "grok-4.20-0309-non-reasoning",
         "MiniMax-M2.7",
         "MiniMax-M2.7-highspeed",
+        "MiniMax-M2.5",
     ):
         assert estimate_cost(model, 1000, 400) > 0.0
         est = worst_case_reservation(model=model, auth_kind="api_key", max_tokens=800)

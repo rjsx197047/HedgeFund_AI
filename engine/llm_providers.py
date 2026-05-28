@@ -5,7 +5,8 @@ any provider without per-provider branching. Cost caps (`max_tokens`,
 `MAX_AGENTS_PER_SESSION`) are enforced by `live_debate.py`, not here —
 adapters cannot accidentally raise them.
 
-Today's allowlist: `openai`, `anthropic`, `openrouter`, `gemini`, `local`.
+Today's allowlist: `openai`, `anthropic`, `openrouter`, `gemini`, `xai`,
+`minimax`, `local`.
 OpenAI also has a sibling `OpenAICodexAdapter` for the OAuth/subscription
 path that hits `chatgpt.com/backend-api/codex/responses` instead of the
 standard chat-completions endpoint — the factory picks based on
@@ -63,11 +64,12 @@ _COST_PER_M_TOKENS: dict[str, dict[str, float]] = {
     "gpt-4-turbo":         {"input": 10.00, "output": 30.00},
     "gpt-4.1-mini":        {"input": 0.40, "output": 1.60},
     "gpt-4.1":             {"input": 2.00, "output": 8.00},
-    # gpt-5 family: conservative ceilings, not verified vendor rates. Anchored
-    # to upstream v0.2.5's labeled gpt-5.5-pro ($30/$180 per 1M) with a ~1/3
-    # discount for the non-pro tiers. Verify against OpenAI's published pricing
-    # before any billing relies on these. They were previously absent, so a
-    # gpt-5 run logged $0 (the "unknown model" path) — these tighten that.
+    # gpt-5 family: conservative ceilings. Verified 2026-05-28 against OpenAI's
+    # published API pricing — gpt-5.5 is $5/$30 per 1M (shipped 2026-04-24), so
+    # our $10/$40 is a ~2x ceiling; gpt-5 and gpt-5-mini are likewise priced
+    # above their real rates. Over-estimating is the safe direction (CostGuard
+    # reserves more, stops sooner). Previously absent, so a gpt-5 run logged $0
+    # (the "unknown model" path) — these rows close that.
     "gpt-5-mini":          {"input": 1.00, "output": 4.00},
     "gpt-5":               {"input": 8.00, "output": 30.00},
     "gpt-5.5":             {"input": 10.00, "output": 40.00},
@@ -84,14 +86,14 @@ _COST_PER_M_TOKENS: dict[str, dict[str, float]] = {
     # guaranteed ceiling (over-estimate, never under) — a real anchor, not a
     # guess.
     "gemini-3.1-flash-lite": {"input": 0.30, "output": 2.50},
-    # xAI Grok. Conservative ceilings, not verified vendor rates — verify
-    # against console.x.ai pricing before billing relies on these. The "fast"
-    # variants are markedly cheaper than the flagship; both are priced above
-    # their expected real rate so the logged total stays a ceiling.
-    "grok-4.20":                 {"input": 5.00, "output": 15.00},
-    "grok-4.20-reasoning":       {"input": 5.00, "output": 15.00},
-    "grok-4-fast-reasoning":     {"input": 1.00, "output": 3.00},
-    "grok-4-fast-non-reasoning": {"input": 1.00, "output": 3.00},
+    # xAI Grok. Verified 2026-05-28 against docs.x.ai: grok-4.3 and the
+    # grok-4.20-0309 family all bill $1.25/$2.50 per 1M, so $2/$4 is a safe
+    # ceiling with headroom. The older grok-4-fast-* / grok-4-0709 IDs were
+    # deprecated 2026-05-15 (xAI redirects them to grok-4.3 at 4.3 pricing),
+    # so they're dropped from the picker rather than carried as stale rows.
+    "grok-4.3":                     {"input": 2.00, "output": 4.00},
+    "grok-4.20-0309-reasoning":     {"input": 2.00, "output": 4.00},
+    "grok-4.20-0309-non-reasoning": {"input": 2.00, "output": 4.00},
     # MiniMax M2.x (Global region). One conservative ceiling across the line —
     # the M2.x models are cheap and close in price; $1/$3 over-estimates each.
     # Verify against platform.minimax.io pricing before billing relies on it.
@@ -262,7 +264,7 @@ _DEFAULT_MODELS: dict[str, str] = {
     # xAI Grok and MiniMax are both OpenAI-compatible (API key only). The
     # default leans to a fast/cheap model so a misconfigured run isn't an
     # expensive surprise. See XaiAdapter / MiniMaxAdapter below.
-    "xai": "grok-4-fast-non-reasoning",
+    "xai": "grok-4.3",
     "minimax": "MiniMax-M2.7-highspeed",
     # Local model name is runtime-specific (Ollama: "llama3.2:latest";
     # LM Studio: whatever the user has loaded). The renderer picks from
@@ -394,6 +396,9 @@ class XaiAdapter(OpenAIAdapter):
 
     name = "xai"
     _base_url = "https://api.x.ai/v1"
+    # Own the dict per class so an in-place mutation never leaks across
+    # providers via the shared OpenAIAdapter default. xAI needs no extras.
+    _extra_headers: dict[str, str] = {}
 
 
 def _strip_think_blocks(text: str) -> str:
@@ -405,16 +410,20 @@ def _strip_think_blocks(text: str) -> str:
     endpoints reject that kwarg — so we strip post-hoc instead, one code path
     for both kinds.) Handles two cases:
 
-    - Complete blocks are removed wholesale.
+    - Complete blocks are removed wholesale (with or without tag attributes).
     - An unclosed ``<think>`` means the response hit ``max_tokens`` mid-thought
       (everything after it is reasoning with no final answer): drop it. If
       nothing real survives, return a sentinel so the transcript never shows
       raw chain-of-thought as though it were the agent's conclusion.
+    - Any stray ``</think>`` left by pseudo-nested input is stripped too, so
+      no reasoning markup ever reaches the transcript.
     """
-    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-    dangling = cleaned.find("<think>")
+    # ``<think[^>]*>`` tolerates attribute variants (e.g. ``<think id="1">``).
+    cleaned = re.sub(r"<think[^>]*>.*?</think>", "", text, flags=re.DOTALL)
+    dangling = cleaned.find("<think")
     if dangling != -1:
         cleaned = cleaned[:dangling]
+    cleaned = re.sub(r"</think\s*>", "", cleaned)
     cleaned = cleaned.strip()
     if not cleaned:
         return "[truncated: model returned only reasoning, no final answer]"
@@ -433,6 +442,8 @@ class MiniMaxAdapter(OpenAIAdapter):
 
     name = "minimax"
     _base_url = "https://api.minimax.io/v1"
+    # Own the dict per class (see XaiAdapter). MiniMax needs no extra headers.
+    _extra_headers: dict[str, str] = {}
 
     async def complete(
         self,
