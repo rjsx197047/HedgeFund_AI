@@ -177,6 +177,24 @@ const LLM_PROVIDERS: SecretRow[] = [
     placeholder: 'AIza…',
     testProvider: 'gemini',
   },
+  {
+    secretKey: 'llm:xai',
+    name: 'xAI Grok',
+    note: 'Grok 4 family (including the fast variants). API key only. Get a key at console.x.ai.',
+    pillLabel: 'API key only',
+    pillVariant: 'default',
+    placeholder: 'xai-…',
+    testProvider: 'xai',
+  },
+  {
+    secretKey: 'llm:minimax',
+    name: 'MiniMax',
+    note: 'MiniMax M2.x family (Global region), 204K context. API key only. Get a key at platform.minimax.io.',
+    pillLabel: 'API key only',
+    pillVariant: 'default',
+    placeholder: 'eyJ… (JWT)',
+    testProvider: 'minimax',
+  },
 ];
 
 // Alpaca auth requires TWO values — Key ID (sent as APCA-API-KEY-ID) and
