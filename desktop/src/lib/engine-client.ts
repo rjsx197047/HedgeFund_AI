@@ -136,9 +136,9 @@ export const PROVIDER_MODELS: Record<LLMProvider, ModelChoice[]> = {
     { id: 'gemini-2.0-flash',      label: 'Gemini 2.0 Flash',      note: 'Cheapest', recommended: true },
   ],
   xai: [
-    { id: 'grok-4.3',                     label: 'Grok 4.3',                  note: 'Current flagship, fastest', recommended: true },
-    { id: 'grok-4.20-0309-reasoning',     label: 'Grok 4.20 (reasoning)',     note: 'Reasoning-optimized' },
-    { id: 'grok-4.20-0309-non-reasoning', label: 'Grok 4.20 (non-reasoning)', note: 'Speed-optimized' },
+    { id: 'grok-4.3',                label: 'Grok 4.3',                  note: 'Current flagship, fastest', recommended: true },
+    { id: 'grok-4.20-reasoning',     label: 'Grok 4.20 (reasoning)',     note: 'Reasoning-optimized' },
+    { id: 'grok-4.20-non-reasoning', label: 'Grok 4.20 (non-reasoning)', note: 'Speed-optimized' },
   ],
   minimax: [
     { id: 'MiniMax-M2.7',           label: 'MiniMax M2.7',           note: 'Flagship, 204K context' },

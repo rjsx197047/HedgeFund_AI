@@ -86,14 +86,16 @@ _COST_PER_M_TOKENS: dict[str, dict[str, float]] = {
     # guaranteed ceiling (over-estimate, never under) — a real anchor, not a
     # guess.
     "gemini-3.1-flash-lite": {"input": 0.30, "output": 2.50},
-    # xAI Grok. Verified 2026-05-28 against docs.x.ai: grok-4.3 and the
-    # grok-4.20-0309 family all bill $1.25/$2.50 per 1M, so $2/$4 is a safe
-    # ceiling with headroom. The older grok-4-fast-* / grok-4-0709 IDs were
-    # deprecated 2026-05-15 (xAI redirects them to grok-4.3 at 4.3 pricing),
-    # so they're dropped from the picker rather than carried as stale rows.
-    "grok-4.3":                     {"input": 2.00, "output": 4.00},
-    "grok-4.20-0309-reasoning":     {"input": 2.00, "output": 4.00},
-    "grok-4.20-0309-non-reasoning": {"input": 2.00, "output": 4.00},
+    # xAI Grok. Verified 2026-05-28 against docs.x.ai and cross-checked vs
+    # upstream's docs-aligned catalog: grok-4.3 and the grok-4.20 family bill
+    # $1.25/$2.50 per 1M, so $2/$4 is a safe ceiling with headroom. We use the
+    # bare grok-4.20-reasoning / grok-4.20-non-reasoning aliases (durable: they
+    # track the latest dated snapshot, e.g. -0309, instead of pinning to one
+    # that xAI will eventually retire). The older grok-4-fast-* / grok-4-0709
+    # IDs were deprecated 2026-05-15 (redirected to grok-4.3), so they're dropped.
+    "grok-4.3":                {"input": 2.00, "output": 4.00},
+    "grok-4.20-reasoning":     {"input": 2.00, "output": 4.00},
+    "grok-4.20-non-reasoning": {"input": 2.00, "output": 4.00},
     # MiniMax M2.x (Global region). One conservative ceiling across the line —
     # the M2.x models are cheap and close in price; $1/$3 over-estimates each.
     # Verify against platform.minimax.io pricing before billing relies on it.

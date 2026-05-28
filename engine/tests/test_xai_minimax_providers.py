@@ -184,8 +184,8 @@ def test_new_provider_models_are_priced():
     and stay bounded at the hard token cap."""
     for model in (
         "grok-4.3",
-        "grok-4.20-0309-reasoning",
-        "grok-4.20-0309-non-reasoning",
+        "grok-4.20-reasoning",
+        "grok-4.20-non-reasoning",
         "MiniMax-M2.7",
         "MiniMax-M2.7-highspeed",
         "MiniMax-M2.5",
