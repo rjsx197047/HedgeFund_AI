@@ -96,8 +96,10 @@ export const OPENAI_CODEX_DEFAULT_MODEL = 'gpt-5.4';
  * id (sent to the engine), a display label, an optional `note` shown
  * inline, and a `recommended` flag for the suggested default.
  *
- * Curated to the 3-5 latest, non-legacy models per provider as of
- * 2026-05-09. Refresh manually as providers ship new model families.
+ * Curated to the 3-5 latest, non-legacy models per provider. Last
+ * refreshed 2026-05-27 against upstream TradingAgents v0.2.5's verified
+ * model catalog (gpt-5.5, gemini-3.1-flash-lite GA). Refresh manually as
+ * providers ship new model families.
  */
 export interface ModelChoice {
   id: string;
@@ -108,8 +110,9 @@ export interface ModelChoice {
 
 export const PROVIDER_MODELS: Record<LLMProvider, ModelChoice[]> = {
   openai: [
-    { id: 'gpt-5',       label: 'gpt-5',        note: 'Most capable' },
-    { id: 'gpt-5-mini',  label: 'gpt-5-mini',   note: 'Balanced' },
+    { id: 'gpt-5.5',     label: 'gpt-5.5',      note: 'Latest frontier, 1M context' },
+    { id: 'gpt-5',       label: 'gpt-5',        note: 'Previous frontier' },
+    { id: 'gpt-5-mini',  label: 'gpt-5-mini',   note: 'Balanced, cost-effective' },
     { id: 'gpt-4o',      label: 'gpt-4o',       note: 'Multimodal flagship' },
     { id: 'gpt-4o-mini', label: 'gpt-4o-mini',  note: 'Cheapest', recommended: true },
   ],
@@ -125,9 +128,10 @@ export const PROVIDER_MODELS: Record<LLMProvider, ModelChoice[]> = {
     { id: 'google/gemini-2.0-flash',     label: 'Google · Gemini 2.0 Flash' },
   ],
   gemini: [
-    { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   note: 'Most capable' },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: 'Balanced' },
-    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', note: 'Cheapest', recommended: true },
+    { id: 'gemini-2.5-pro',        label: 'Gemini 2.5 Pro',        note: 'Most capable' },
+    { id: 'gemini-2.5-flash',      label: 'Gemini 2.5 Flash',      note: 'Balanced' },
+    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', note: 'Most cost-efficient (GA)' },
+    { id: 'gemini-2.0-flash',      label: 'Gemini 2.0 Flash',      note: 'Cheapest', recommended: true },
   ],
   xai: [
     { id: 'grok-4.20',                 label: 'Grok 4.20',            note: 'Latest, auto-selects reasoning' },

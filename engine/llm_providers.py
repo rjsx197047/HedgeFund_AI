@@ -51,9 +51,10 @@ _GEMINI_TIMEOUT_MS = 90_000
 
 # ---- Cost rate tables -----------------------------------------------------
 #
-# As of 2026-05-09. Refresh annually; do not trust these for billing.
-# Conservative numbers preferred — over-estimate so the logged total is a
-# ceiling rather than a floor.
+# As of 2026-05-09 (catalog refresh 2026-05-27). Refresh annually; do not
+# trust these for billing. Conservative numbers preferred — over-estimate so
+# the logged total is a ceiling rather than a floor. Over-estimating is the
+# safe direction here: CostGuard reserves more and stops sooner, never later.
 
 _COST_PER_M_TOKENS: dict[str, dict[str, float]] = {
     # OpenAI
@@ -62,6 +63,14 @@ _COST_PER_M_TOKENS: dict[str, dict[str, float]] = {
     "gpt-4-turbo":         {"input": 10.00, "output": 30.00},
     "gpt-4.1-mini":        {"input": 0.40, "output": 1.60},
     "gpt-4.1":             {"input": 2.00, "output": 8.00},
+    # gpt-5 family: conservative ceilings, not verified vendor rates. Anchored
+    # to upstream v0.2.5's labeled gpt-5.5-pro ($30/$180 per 1M) with a ~1/3
+    # discount for the non-pro tiers. Verify against OpenAI's published pricing
+    # before any billing relies on these. They were previously absent, so a
+    # gpt-5 run logged $0 (the "unknown model" path) — these tighten that.
+    "gpt-5-mini":          {"input": 1.00, "output": 4.00},
+    "gpt-5":               {"input": 8.00, "output": 30.00},
+    "gpt-5.5":             {"input": 10.00, "output": 40.00},
     # Anthropic
     "claude-haiku-4-5":    {"input": 1.00, "output": 5.00},
     "claude-sonnet-4-5":   {"input": 3.00, "output": 15.00},
@@ -71,6 +80,10 @@ _COST_PER_M_TOKENS: dict[str, dict[str, float]] = {
     "gemini-2.0-flash":    {"input": 0.10, "output": 0.40},
     "gemini-2.5-flash":    {"input": 0.30, "output": 2.50},
     "gemini-2.5-pro":      {"input": 1.25, "output": 10.00},
+    # Flash-Lite is cheaper than Flash, so pricing it AT the Flash rate is a
+    # guaranteed ceiling (over-estimate, never under) — a real anchor, not a
+    # guess.
+    "gemini-3.1-flash-lite": {"input": 0.30, "output": 2.50},
     # xAI Grok. Conservative ceilings, not verified vendor rates — verify
     # against console.x.ai pricing before billing relies on these. The "fast"
     # variants are markedly cheaper than the flagship; both are priced above
