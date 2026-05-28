@@ -105,6 +105,7 @@ Goal: if the terminal closes the moment the founder hits send on "wrap-up," next
 ### Commits
 
 - Confirm with founder before pushing to `origin/main`. The repo is public.
+- **PR merge workflow (founder's standing rule, 2026-05-27):** open the PR, give the founder a clear summary in chat (what changed, risks, scope, gates), and on his authorization **merge it yourself** (`gh pr merge N --merge --delete-branch`). The founder does not click merge as a routine; the confirmation above IS the authorization-after-summary. The summary stays mandatory; a blanket "authorized" covers the batch just summarized, not all future PRs. For stacked PRs touching the same files, merge foundational-first, resolve the (mechanical) conflict on the second, re-run gates on the merged state, then merge. See memory `feedback_pr_merge_authorization.md`.
 - Use HEREDOC commit messages following the pattern in earlier commits.
 - Apache 2.0 modification notices belong in `NOTICE` and the `git log`, not in every file's header (one-line "Modified by TradingAgentsLab" comment is sufficient if a file's content was substantially changed).
 
