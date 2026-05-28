@@ -1999,23 +1999,30 @@ const TELEGRAM_ALLOWLIST_LS_KEY = 'tal.telegram.allowlist';
 const TELEGRAM_CAP_LS_KEY = 'tal.telegram.daily_cap';
 const TELEGRAM_PROVIDER_LS_KEY = 'tal.telegram.provider';
 
-// v1.2 supports all 4 API-key providers plus OpenAI OAuth (Codex). OAuth
-// access tokens are short-lived, so when the bot is on OpenAI OAuth the
-// panel kicks off a periodic refresh that pushes fresh tokens to the
-// engine via /telegram/refresh-credentials. Local LLM is still excluded
-// because the base_url + dynamic model picker plumbing isn't here yet.
-type BotProvider = 'openai' | 'anthropic' | 'openrouter' | 'gemini';
+// Supports all 6 API-key providers plus OpenAI OAuth (Codex). OAuth access
+// tokens are short-lived, so when the bot is on OpenAI OAuth the panel kicks
+// off a periodic refresh that pushes fresh tokens to the engine via
+// /telegram/refresh-credentials. xAI and MiniMax are API-key only and ride
+// the generic path (same as anthropic/openrouter/gemini), so they need no
+// OAuth refresh. Local LLM is still excluded because the base_url + dynamic
+// model picker plumbing isn't here yet.
+type BotProvider = 'openai' | 'anthropic' | 'openrouter' | 'gemini' | 'xai' | 'minimax';
 const BOT_PROVIDERS: { value: BotProvider; label: string }[] = [
   { value: 'openai',     label: 'OpenAI' },
   { value: 'anthropic',  label: 'Anthropic' },
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'gemini',     label: 'Google Gemini' },
+  { value: 'xai',        label: 'xAI Grok' },
+  { value: 'minimax',    label: 'MiniMax' },
 ];
 const BOT_PROVIDER_DEFAULT_MODEL: Record<BotProvider, string> = {
   openai:     'gpt-4o-mini',
   anthropic:  'claude-haiku-4-5',
   openrouter: 'openai/gpt-4o-mini',
   gemini:     'gemini-2.0-flash',
+  // Fast/cheap defaults, matching the Analyze picker + engine _DEFAULT_MODELS.
+  xai:        'grok-4-fast-non-reasoning',
+  minimax:    'MiniMax-M2.7-highspeed',
 };
 
 function parseAllowlist(text: string): number[] {
