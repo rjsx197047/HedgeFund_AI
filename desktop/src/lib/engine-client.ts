@@ -8,6 +8,8 @@ export type LLMProvider =
   | 'anthropic'
   | 'openrouter'
   | 'gemini'
+  | 'xai'
+  | 'minimax'
   | 'local';
 
 /**
@@ -51,6 +53,8 @@ export const PROVIDER_LABEL: Record<LLMProvider, string> = {
   anthropic: 'Anthropic',
   openrouter: 'OpenRouter',
   gemini: 'Google Gemini',
+  xai: 'xAI Grok',
+  minimax: 'MiniMax',
   local: 'Local LLM',
 };
 
@@ -66,6 +70,10 @@ export const PROVIDER_DEFAULT_MODEL: Record<LLMProvider, string> = {
   anthropic: 'claude-haiku-4-5',
   openrouter: 'openai/gpt-4o-mini',
   gemini: 'gemini-2.0-flash',
+  // xAI and MiniMax default to a fast/cheap model so a misconfigured run
+  // isn't an expensive surprise. Must match the engine's _DEFAULT_MODELS.
+  xai: 'grok-4-fast-non-reasoning',
+  minimax: 'MiniMax-M2.7-highspeed',
   // Local default is dynamic — the actual choice comes from the detected
   // runtime's model list. Empty string here forces the renderer to pick
   // a real model before submitting (the Analyze button disables when
@@ -124,6 +132,17 @@ export const PROVIDER_MODELS: Record<LLMProvider, ModelChoice[]> = {
     { id: 'gemini-2.5-flash',      label: 'Gemini 2.5 Flash',      note: 'Balanced' },
     { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', note: 'Most cost-efficient (GA)' },
     { id: 'gemini-2.0-flash',      label: 'Gemini 2.0 Flash',      note: 'Cheapest', recommended: true },
+  ],
+  xai: [
+    { id: 'grok-4.20',                 label: 'Grok 4.20',            note: 'Latest, auto-selects reasoning' },
+    { id: 'grok-4.20-reasoning',       label: 'Grok 4.20 Reasoning',  note: 'Frontier reasoning' },
+    { id: 'grok-4-fast-reasoning',     label: 'Grok 4 Fast (reason)', note: 'Fast, reasoning' },
+    { id: 'grok-4-fast-non-reasoning', label: 'Grok 4 Fast',          note: 'Fastest, cheapest', recommended: true },
+  ],
+  minimax: [
+    { id: 'MiniMax-M2.7',           label: 'MiniMax M2.7',           note: 'Flagship, 204K context' },
+    { id: 'MiniMax-M2.7-highspeed', label: 'MiniMax M2.7 Highspeed', note: 'Flagship speed (~100 TPS)', recommended: true },
+    { id: 'MiniMax-M2.5',           label: 'MiniMax M2.5',           note: 'Previous-gen flagship' },
   ],
   // Local model list is empty here because it's populated dynamically
   // from the detected runtime's `/v1/models` response. `getAvailableModels`
@@ -212,6 +231,8 @@ export const PROVIDER_PRIORITY: readonly LLMProvider[] = [
   'anthropic',
   'openrouter',
   'gemini',
+  'xai',
+  'minimax',
   // Local last: when paid keys are present we default to those (better
   // analyst quality than most local models). User can still flip to
   // local via the Analyze "Run with" dropdown override. Reorder this
@@ -224,6 +245,8 @@ export const PROVIDER_SECRET_KEY: Record<LLMProvider, string> = {
   anthropic: 'llm:anthropic',
   openrouter: 'llm:openrouter',
   gemini: 'llm:gemini',
+  xai: 'llm:xai',
+  minimax: 'llm:minimax',
   // Local stores TWO secrets — base_url and model — because the runtime
   // identity is the (URL, model) pair. The "key" tracked here is the
   // base_url; the chosen model lives at `local:model`. Settings UI reads

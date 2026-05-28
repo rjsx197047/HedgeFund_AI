@@ -24,6 +24,7 @@ billing dashboard is the source of truth.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol
 
@@ -83,6 +84,20 @@ _COST_PER_M_TOKENS: dict[str, dict[str, float]] = {
     # guaranteed ceiling (over-estimate, never under) — a real anchor, not a
     # guess.
     "gemini-3.1-flash-lite": {"input": 0.30, "output": 2.50},
+    # xAI Grok. Conservative ceilings, not verified vendor rates — verify
+    # against console.x.ai pricing before billing relies on these. The "fast"
+    # variants are markedly cheaper than the flagship; both are priced above
+    # their expected real rate so the logged total stays a ceiling.
+    "grok-4.20":                 {"input": 5.00, "output": 15.00},
+    "grok-4.20-reasoning":       {"input": 5.00, "output": 15.00},
+    "grok-4-fast-reasoning":     {"input": 1.00, "output": 3.00},
+    "grok-4-fast-non-reasoning": {"input": 1.00, "output": 3.00},
+    # MiniMax M2.x (Global region). One conservative ceiling across the line —
+    # the M2.x models are cheap and close in price; $1/$3 over-estimates each.
+    # Verify against platform.minimax.io pricing before billing relies on it.
+    "MiniMax-M2.7":            {"input": 1.00, "output": 3.00},
+    "MiniMax-M2.7-highspeed":  {"input": 1.00, "output": 3.00},
+    "MiniMax-M2.5":            {"input": 1.00, "output": 3.00},
     # OpenRouter (passthrough — actual cost depends on the underlying model;
     # we record the model string with no rate and the engine logs zero,
     # which the UI surfaces as "unknown".)
@@ -244,6 +259,11 @@ _DEFAULT_MODELS: dict[str, str] = {
     "anthropic": "claude-haiku-4-5",
     "openrouter": "openai/gpt-4o-mini",
     "gemini": "gemini-2.0-flash",
+    # xAI Grok and MiniMax are both OpenAI-compatible (API key only). The
+    # default leans to a fast/cheap model so a misconfigured run isn't an
+    # expensive surprise. See XaiAdapter / MiniMaxAdapter below.
+    "xai": "grok-4-fast-non-reasoning",
+    "minimax": "MiniMax-M2.7-highspeed",
     # Local model name is runtime-specific (Ollama: "llama3.2:latest";
     # LM Studio: whatever the user has loaded). The renderer picks from
     # the detection result and ships an explicit `model` on the WS frame;
@@ -359,6 +379,73 @@ class OpenRouterAdapter(OpenAIAdapter):
         "HTTP-Referer": "https://github.com/RBJGlobal/TradingAgentsLab",
         "X-Title": "TradingAgentsLab",
     }
+
+
+# ---- xAI Grok + MiniMax adapters (OpenAI-compatible, API key only) --------
+
+
+class XaiAdapter(OpenAIAdapter):
+    """xAI Grok is OpenAI-compatible at api.x.ai.
+
+    Grok reasoning models return their chain-of-thought in a separate
+    ``reasoning_content`` field, not in ``message.content``, so the base
+    adapter's plain content read already stays clean — no post-processing.
+    """
+
+    name = "xai"
+    _base_url = "https://api.x.ai/v1"
+
+
+def _strip_think_blocks(text: str) -> str:
+    """Remove MiniMax M2.x ``<think>...</think>`` reasoning from content.
+
+    MiniMax reasoning models embed their chain-of-thought directly inside
+    ``message.content`` wrapped in ``<think>...</think>``. (Upstream avoids
+    this by sending ``reasoning_split=True``, but non-reasoning MiniMax
+    endpoints reject that kwarg — so we strip post-hoc instead, one code path
+    for both kinds.) Handles two cases:
+
+    - Complete blocks are removed wholesale.
+    - An unclosed ``<think>`` means the response hit ``max_tokens`` mid-thought
+      (everything after it is reasoning with no final answer): drop it. If
+      nothing real survives, return a sentinel so the transcript never shows
+      raw chain-of-thought as though it were the agent's conclusion.
+    """
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    dangling = cleaned.find("<think>")
+    if dangling != -1:
+        cleaned = cleaned[:dangling]
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return "[truncated: model returned only reasoning, no final answer]"
+    return cleaned
+
+
+class MiniMaxAdapter(OpenAIAdapter):
+    """MiniMax M2.x is OpenAI-compatible (Global region) at api.minimax.io.
+
+    M2.x reasoning models embed ``<think>...</think>`` chain-of-thought in
+    ``message.content``; we strip it post-hoc (see ``_strip_think_blocks``) so
+    saved transcripts carry the conclusion, not the raw reasoning. The China
+    region (``api.minimaxi.com``) is a separate provider key + endpoint and is
+    deliberately out of scope for v1.
+    """
+
+    name = "minimax"
+    _base_url = "https://api.minimax.io/v1"
+
+    async def complete(
+        self,
+        *,
+        system: str,
+        user: str,
+        model: str,
+        max_tokens: int,
+    ) -> tuple[str, int, int]:
+        content, in_tok, out_tok = await super().complete(
+            system=system, user=user, model=model, max_tokens=max_tokens
+        )
+        return _strip_think_blocks(content), in_tok, out_tok
 
 
 # ---- Local LLM adapter (Ollama / LM Studio / generic OpenAI-compat) -------
@@ -755,6 +842,10 @@ def adapter_for(config: ProviderConfig) -> LLMAdapter:
         return OpenAIAdapter()
     if config.provider == "openrouter":
         return OpenRouterAdapter()
+    if config.provider == "xai":
+        return XaiAdapter()
+    if config.provider == "minimax":
+        return MiniMaxAdapter()
     if config.provider == "anthropic":
         return AnthropicAdapter()
     if config.provider == "gemini":
