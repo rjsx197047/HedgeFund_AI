@@ -1177,3 +1177,53 @@ async def test_per_agent_streaming_ignores_unknown_phase(patch_httpx_client):
     # Known phase forwarded, unknown phase silently dropped.
     assert any("Researchers debating" in t for t in texts)
     assert not any("future_phase_v3" in t for t in texts)
+
+
+# ---- Provider parity: xAI + MiniMax (2026-05-27) --------------------------
+
+
+def test_bot_provider_config_resolves_for_xai_and_minimax():
+    """Bot-stored provider_config for xAI / MiniMax must resolve through the
+    same `ProviderConfig.from_dict` the bot's `_run_debate` calls (line ~812),
+    and dispatch to the right adapter.
+
+    Covers BOTH shapes the bot may have persisted:
+    - the new auth-blob shape, and
+    - the legacy top-level `api_key` shape (what the other bot tests above
+      use, and what an older renderer build would have written).
+
+    Guards against a future bot-side provider allowlist forgetting the two
+    new providers, or a renderer shipping a config the engine can't resolve.
+    """
+    from engine.llm_providers import (
+        MiniMaxAdapter,
+        ProviderConfig,
+        XaiAdapter,
+        adapter_for,
+    )
+
+    cases = [
+        # new auth-blob shape
+        (
+            {"provider": "xai", "auth": {"type": "api_key", "api_key": "xai-k"}, "model": "grok-4.20"},
+            XaiAdapter,
+        ),
+        (
+            {"provider": "minimax", "auth": {"type": "api_key", "api_key": "mm-k"}, "model": "MiniMax-M2.7"},
+            MiniMaxAdapter,
+        ),
+        # legacy top-level api_key shape
+        (
+            {"provider": "xai", "api_key": "xai-k", "model": "grok-4-fast-non-reasoning"},
+            XaiAdapter,
+        ),
+        (
+            {"provider": "minimax", "api_key": "mm-k", "model": "MiniMax-M2.7-highspeed"},
+            MiniMaxAdapter,
+        ),
+    ]
+    for raw, adapter_cls in cases:
+        cfg = ProviderConfig.from_dict(raw)
+        assert cfg is not None, f"bot provider_config should resolve: {raw}"
+        assert cfg.auth_kind == "api_key"
+        assert isinstance(adapter_for(cfg), adapter_cls)
