@@ -22,6 +22,7 @@ import {
 } from './secrets';
 import { checkUpstream, type UpstreamCheckResult } from './upstream-check';
 import { loadWindowState, saveWindowState } from './window-state';
+import { waitForPreload } from './preload-ready';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -54,6 +55,7 @@ let win: BrowserWindow | null = null;
 
 async function createWindow() {
   const saved = await loadWindowState();
+  const preloadPath = path.join(__dirname, 'preload.mjs');
   win = new BrowserWindow({
     width: saved?.width ?? 1280,
     height: saved?.height ?? 800,
@@ -69,7 +71,7 @@ async function createWindow() {
     // below is what actually swaps the dock icon in dev mode.
     icon: ICON_PNG_PATH,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -95,6 +97,11 @@ async function createWindow() {
   });
 
   if (VITE_DEV_SERVER_URL) {
+    // Cold-boot race guard: vite-plugin-electron can spawn Electron before the
+    // preload bundle is written, leaving the window with no contextBridge that
+    // never self-heals on reload. Wait for the preload file before loading so
+    // the bridge is always present on first paint. See waitForPreload.
+    await waitForPreload(preloadPath);
     win.loadURL(VITE_DEV_SERVER_URL);
     win.webContents.openDevTools({ mode: 'detach' });
   } else {
