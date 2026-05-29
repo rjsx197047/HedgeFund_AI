@@ -12,7 +12,63 @@
 
 **Owner:** Junaid Siddiqi, founder. Treats Claude as principal developer/architect for TradingAgentsLab.
 
-## Where we are right now (as of 2026-05-23, end of day, wrap-up complete)
+## Where we are right now (as of 2026-05-29, end of day, wrap-up complete)
+
+### Headline
+
+**v0.1.0 released.** Eight PRs merged today (a long day, this session bridged 2026-05-28 → 2026-05-29): the audit + remediation arc on the xAI/MiniMax catalog work, the dev preload-race fix, and v0.1.0 docs + UI polish + canonical marketing screenshot. App `main` at `08766d8`. Site v0.1.0 update is staged at GSD and awaits founder's direct go on Cloudflare preview.
+
+### This session (2026-05-28 → 2026-05-29)
+
+**Eight PRs merged to main:**
+
+- **#5** (`9f9f610`) — model catalog refresh from upstream v0.2.5 (gpt-5.5, gemini-3.1-flash-lite + cost rows).
+- **#6** (`f6de57b`) — native xAI Grok + MiniMax providers (adapters, dispatch, cost rows, `<think>`-strip, secret tiles, renderer plumbing).
+- **#7** (`ed591e9`) — CLAUDE.md PR merge workflow rule.
+- **#8** (`68fd908`) — Telegram bot picker parity (xAI + MiniMax).
+- **#9** (`a133c6f`) — **audit follow-up**: xAI lineup → `grok-4.3`, plus audit hygiene (catalog-consistency pytest, `_strip_think_blocks` hardening, docstring/anchor/cost-test/`_extra_headers`).
+- **#10** (`786a766`) — **dev preload-race guard**: `waitForPreload` in `main.ts` closes the cold-boot race where vite-plugin-electron spawns Electron before `preload.mjs` is written.
+- **#11** (`42b1596`) — **docs v0.1.0**: README + KB updated; `desktop/package.json` `0.0.1 → 0.1.0`.
+- **#12** (`08766d8`) — **v0.1.0 UI polish**: version strings (App.tsx, Settings.tsx, preload.ts), three stale provider tile descriptions (xAI "fast variants" → "Grok 4.3 + 4.20", OpenAI "GPT-4o" → "GPT-5 + GPT-4o", Gemini "2.0 Flash" → "2.x and 3.x"), canonical `settings-llm.png` mirrored to README assets.
+
+**Notable diagnostic finds (logged + memory'd):**
+
+- **xAI catalog was stale.** As of 2026-05-15 xAI deprecated `grok-4-fast-*` (redirect to grok-4.3); our default was a deprecated id; cost ceilings were wrong in BOTH directions. Re-aligned to docs.x.ai + cross-checked with upstream TauricResearch's independent catalog work (which used bare `grok-4.20-reasoning`/`-non-reasoning` aliases, more durable than my initial date-stamped `-0309` choice).
+- **Dev preload-race**: misdiagnosed twice (HMR transient → `.cjs` format) before the actual race. The `.cjs` was a probe artifact: Playwright's `firstWindow()` grabbed the detached devtools window in dev mode, not the app. Lesson saved as `reference_electron_dev_debug_gotchas.md`.
+- **Version-string single-source-of-truth gap**: PR #11's `package.json` bump alone didn't change displayed version (hardcoded in three spots). Caught while preparing the v0.1.0 marketing screenshot. Fix in PR #12; long-term nicety = source from `package.json`.
+- **Marketing screenshot hygiene**: three stale provider tile descriptions (xAI especially: claimed "fast variants" right after we dropped them) would have been enshrined in the canonical asset. Caught + fixed in PR #12; lesson saved as `reference_marketing_screenshot_hygiene.md`.
+
+**Cross-product:**
+
+- GSD's site v0.1.0 update: doc-mirror + xAI/MiniMax mentions on home/tour/security/family/download/llms.txt/metadata. Staged on branch `tal-providers-v0.1.0` at GSD's tree, typecheck + static build green. Awaiting founder's Cloudflare preview review + direct go for production.
+- Long-scroll/scrollytelling pattern considered for WhisprDesk + family sites → deferred (GSD's SEO investment makes the risk too high). Open for new apps/sites. Memory: `project_long_scroll_deferred.md`.
+- Founder bought **Snagit** (paid) for marketing captures; standardize on it. Memory: `reference_marketing_screenshot_hygiene.md`.
+
+### Live state at session end
+
+- **TAL `main` at `08766d8`.** All eight PRs merged; remote branches deleted by gh; local merged branches pruned.
+- **Combined-state gates green on merged main**: engine pytest **255**, type-check clean, vitest **15**, prod build clean.
+- **Dev stack RUNNING** at `http://localhost:5173` (cold-booted on merged main; the new preload-race guard exercised on a real cold boot, came up in ~1s). Founder said he plans to clear the terminal; he may want to kill the stack first or let next-day Claude pick it up.
+- **Inbox clear.** All GSD coordination resolved; no replies pending.
+
+### Open items carried forward
+
+1. **GSD's site v0.1.0 PR awaits founder's direct go.** He needs to review the Cloudflare preview + nod; then GSD merges to production. Staged on branch `tal-providers-v0.1.0` at GSD's tree.
+2. **Version-string single-source-of-truth refactor** (follow-up nicety from PR #12) — source `App.tsx` footer + Settings About + `preload.ts` version from `package.json` via vite define / import, so future bumps don't require touching three literals.
+3. **Flaky `engine/tests/test_storage.py::test_concurrent_writes_dont_collide`** — environmental SQLite WAL contention; pre-existing on main since Tier 3; offered to harden (bump test `busy_timeout` or assert "both writes eventually land"), not actioned. Founder did not request.
+4. **Phase 6 Clawless gateway tap** (tasks #137-140) — scoped/deferred, pre-implementation memo in memory `project_phase_6_clawless_tap_scoping.md`.
+5. **Long-scroll / scrollytelling pattern**: deferred for existing family sites due to GSD's SEO investment; open for new apps. Memory: `project_long_scroll_deferred.md`.
+
+### First moves next session
+
+1. Check inbox (`mcp__claudelink__read_inbox`).
+2. Check whether the dev stack is still running (`curl -sf http://localhost:5173/`); decide keep or kill.
+3. Check GSD's status — whether the site v0.1.0 deploy went through to production, or any follow-up is needed.
+4. Founder's queue likely: Phase 6 Clawless tap; the single-source version-string refactor; the flaky storage test hardening; or a new direction.
+
+---
+
+## Previous state (as of 2026-05-23, end of day, wrap-up complete)
 
 ### Headline
 

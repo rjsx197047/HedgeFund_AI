@@ -6,6 +6,49 @@
 
 ---
 
+## 2026-05-29 — v0.1.0 released: full audit + xAI Grok / MiniMax + dev preload-race fix + docs + UI polish
+
+**Goal:** What started as "is upstream stable?" turned into a full v0.1.0 release. Catalog refresh -> native xAI + MiniMax providers -> Telegram parity -> two-reviewer audit pattern -> xAI catalog re-alignment + dev preload-race fix -> v0.1.0 docs + UI polish + canonical marketing screenshot. Eight PRs merged across this session (bridged 2026-05-28 -> 2026-05-29).
+
+**Eight PRs merged (in order):**
+
+- **#5** `9f9f610` (← `61c6542` `feat(catalog): refresh model picker + cost table from upstream v0.2.5`) — adds gpt-5.5, gemini-3.1-flash-lite + cost rows.
+- **#6** `f6de57b` (← `0359f15` `feat(providers): add xAI Grok + MiniMax as native LLM providers`) — `XaiAdapter`/`MiniMaxAdapter` subclass `OpenAIAdapter` with fixed class-level `_base_url`; `_strip_think_blocks` helper for MiniMax M2.x inline reasoning; renderer union extended; two secret tiles in Settings.
+- **#7** `ed591e9` (← `c51249b` `docs(claude): record founder's PR merge workflow`) — codifies the founder's standing rule: I summarize, founder authorizes, I merge.
+- **#8** `68fd908` (← `42d0310` `feat(telegram): offer xAI Grok + MiniMax in the bot provider picker`) — `BotProvider` union + bot picker gain xAI/MiniMax; engine bot needed zero change (routes through `ProviderConfig.from_dict` + `adapter_for`).
+- **#9** `a133c6f` (← `433b02a` `fix(catalog): refresh xAI lineup to grok-4.3 + audit hygiene` + `a7ca5d2` `refine(xai): use durable bare grok-4.20 aliases`) — **audit follow-up**. xAI catalog was stale (grok-4-fast-* deprecated 2026-05-15, redirect to grok-4.3). Re-aligned. Cost rows fixed (were wrong in BOTH directions: grok-4.20 over-reserved 5x at $5/$15; the fast row under-reserved on input at $1 vs real $1.25). Catalog-consistency pytest added (cross-checks renderer `PROVIDER_MODELS` against engine `_COST_PER_M_TOKENS`). `_strip_think_blocks` hardened (attribute variants + orphaned-close strip). Stale module docstring + anchor comment fixed. `_extra_headers` isolated per subclass.
+- **#10** `786a766` (← `913b8be` `fix(dev): wait for preload bundle before first window load`) — **dev preload-race guard**. `createWindow()` awaits `dist-electron/preload.mjs` before `loadURL` in dev. Closes the cold-boot race where vite-plugin-electron spawns Electron before the preload bundle is written, leaving the window with no `contextBridge` that never self-heals on reload. `waitForPreload` helper + unit tests (present-now / appears-mid-wait / never-appears-timeout).
+- **#11** `42b1596` (← `241d81f` `docs: v0.1.0 — document xAI Grok + MiniMax providers + refreshed catalog`) — **docs v0.1.0**. README adds version badge + "What's new in v0.1.0"; xAI Grok + MiniMax + Local LLM added to feature bullet, screenshot caption, architecture Mermaid diagram, provider table; "five adapters" reworded to the actual seven. KB: `configuring-llm-providers.md` 7-provider table + corrected priority order + fixed a stale Gemini default (`gemini-3.0-flash` -> `gemini-2.0-flash`). `faq.md` + `getting-started.md` provider enumerations updated. `desktop/package.json` `0.0.1 -> 0.1.0`.
+- **#12** `08766d8` (← `147c51d` `chore(version): bump displayed app version to v0.1.0` + `6b554db` `copy: refresh stale LLM provider tile descriptions` + `fcfbeec` `docs(readme): refresh settings-llm.png`) — **v0.1.0 UI polish**. Version strings on App.tsx footer + Settings About + preload.ts all updated to `0.1.0` (PR #11's package.json bump alone hadn't changed the displayed version, hardcoded separately). Three stale provider tile descriptions refreshed (xAI "fast variants" -> "Grok 4.3 + 4.20"; OpenAI "GPT-4o family" -> "GPT-5 + GPT-4o family"; Gemini "2.0 Flash family" -> "Gemini 2.x and 3.x family"). Canonical `settings-llm.png` (founder's Snagit capture, full provider list, real CONNECTED states, blurred secrets) mirrored to README `assets/screenshots/`.
+
+**Diagnostic discipline (what we learned):**
+
+- Two-reviewer audit pattern (per `feedback_independent_review_pattern.md`) caught the xAI catalog staleness, the catalog-consistency drift gap, and the version-string SSOT gap.
+- `WebSearch` + `WebFetch` on docs.x.ai turned around an initial "phantom model IDs" hypothesis: gpt-5.5 / gemini-3.1-flash-lite (GA) / MiniMax-M2.7 are all real and current; only the xAI lineup was stale.
+- Founder's "research before changing, hold off if it risks working functionality" instinct prevented a misguided rename of working models.
+
+**Dev preload-race debugging (PR #10):**
+
+- Misdiagnosed twice (HMR transient -> `.cjs` format) before the actual cold-boot race.
+- The `.cjs` was a probe artifact: Playwright's `firstWindow()` grabbed the detached devtools window in dev mode, not the app, giving a false "bridge missing" reading. Lesson saved as `reference_electron_dev_debug_gotchas.md`.
+- After cleanup + corrected probe, the original `.mjs` preload was confirmed to load fine; the real failure mode was Electron launching before the preload bundle finished writing on a cold first boot.
+
+**Marketing-screenshot workflow established:**
+
+- Founder bought **Snagit** (paid) for marketing captures (full-page scroll-stitch + blur). Standardize on it.
+- Three stale provider tile descriptions caught during the screenshot review — would have been enshrined in the canonical asset. Lesson saved as `reference_marketing_screenshot_hygiene.md` (verify in-app catalog references match current state BEFORE capture).
+
+**Cross-product:**
+
+- GSD picked up the site v0.1.0 update — doc-mirror + provider mentions across home / tour / security / family / download / `llms.txt` / metadata. Staged on branch `tal-providers-v0.1.0` at GSD's tree (typecheck + static build green); awaiting founder's Cloudflare preview review + direct go for production.
+- Long-scroll / scrollytelling pattern considered for WhisprDesk + family sites, deferred (GSD's SEO investment). Open for new apps. Memory: `project_long_scroll_deferred.md`.
+
+**Live state at session end:** TAL `main` at `08766d8`. Combined-state gates green (pytest 255, type-check, vitest 15, prod build). Dev stack RUNNING at `http://localhost:5173` on cold-booted merged main. Inbox clear.
+
+**Next session opens with:** Check inbox. Check whether dev stack still running (founder mentioned clearing terminal). Check GSD's production-deploy status. Founder's queue likely: Phase 6 Clawless tap, or single-source version-string refactor, or flaky storage test hardening.
+
+---
+
 ## 2026-05-23 — Tier 0 stability hardening (engine + desktop) merged + branded FlowStage chart wrapper shipped
 
 **Goal:** Founder asked "what do we need to make Trading Agents more stable." Ran a 3-agent robustness audit, implemented the cheap-but-high-leverage Tier 0 set with tests, smoke-tested with a real local debate, merged via PR. Then implemented the RBJ Global family "branded stage" wrapper on the `/flow` chart (recipe relayed from Global Sites Developer). Also: reviewed the founder's separate AlgoWave project (advised reopen, deferred), registered on ClaudeLink, navigated a shared-working-tree concurrency situation with Global Sites Developer.
