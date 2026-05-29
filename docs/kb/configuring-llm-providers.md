@@ -1,6 +1,6 @@
 # Configuring LLM Providers
 
-*How to connect OpenAI, Anthropic, OpenRouter, and Google Gemini; how to pick which provider and model each debate uses; how keys are stored.*
+*How to connect OpenAI, Anthropic, OpenRouter, Google Gemini, xAI Grok, and MiniMax; how to pick which provider and model each debate uses; how keys are stored.*
 
 > **For educational research and paper trading. This is not investment advice.**
 
@@ -8,19 +8,21 @@
 
 ## What ships today
 
-TradingAgentsLab supports five LLM provider families. All five can drive a real-LLM debate end-to-end:
+TradingAgentsLab supports seven LLM provider families. All seven can drive a real-LLM debate end-to-end:
 
 | Provider | Auth options | Default model | Notes |
 |---|---|---|---|
 | **OpenAI** | API key **or** ChatGPT OAuth | `gpt-4o-mini` (key) / `gpt-5.4` (OAuth) | OAuth routes through your ChatGPT subscription, not per-token API billing, see [oauth.md](oauth.md). |
 | **Anthropic** | API key only | `claude-haiku-4-5` | OAuth is **not** supported, banned by Anthropic Terms of Service. |
 | **OpenRouter** | API key | `openrouter/auto` | One key, hundreds of models. Useful as a single-key multi-model fallback. |
-| **Google Gemini** | API key | `gemini-3.0-flash` | Gemini 3.x family. |
+| **Google Gemini** | API key | `gemini-2.0-flash` | Gemini 2.x and 3.x; 3.1 Flash-Lite is the GA cost-efficient pick. |
+| **xAI Grok** | API key | `grok-4.3` | Grok 4.3 plus the Grok 4.20 family. |
+| **MiniMax** | API key | `MiniMax-M2.7-highspeed` | MiniMax M2.x (Global region, 204K context). |
 | **Local LLM** | Auto-detect (no key) | Dynamic, whatever your runtime exposes | Ollama, LM Studio, or any OpenAI-compatible localhost server. Free, private, $0. See [local-llm.md](local-llm.md). |
 
 All providers use the same shared `LLMAdapter` Protocol on the engine side, so adding more providers later is a matter of one new adapter class plus an entry in the priority list.
 
-The **priority order** when multiple are configured is: OpenAI → Anthropic → OpenRouter → Gemini → Local. Local is last so paid keys auto-win for analysis quality, but you can override per-debate via the **Run with** dropdown on Analyze.
+The **priority order** when multiple are configured is: OpenAI → Anthropic → OpenRouter → Gemini → xAI → MiniMax → Local. Local is last so paid keys auto-win for analysis quality, but you can override per-debate via the **Run with** dropdown on Analyze.
 
 ---
 
