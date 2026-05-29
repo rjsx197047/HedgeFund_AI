@@ -88,7 +88,7 @@ No. You can run TradingAgentsLab entirely without Clawless. The Clawless connect
 
 ### Which LLM providers can I use?
 
-Four provider families are wired end-to-end today: **OpenAI**, **Anthropic**, **OpenRouter**, and **Google Gemini**. All work with API keys; OpenAI also supports OAuth via your ChatGPT subscription. See [configuring-llm-providers.md](configuring-llm-providers.md).
+Six cloud provider families are wired end-to-end today: **OpenAI**, **Anthropic**, **OpenRouter**, **Google Gemini**, **xAI Grok**, and **MiniMax**, plus any **local OpenAI-compatible runtime** (Ollama, LM Studio). All cloud providers work with API keys; OpenAI also supports OAuth via your ChatGPT subscription. See [configuring-llm-providers.md](configuring-llm-providers.md).
 
 ### Can I use my paid ChatGPT account instead of an API key?
 
@@ -100,7 +100,7 @@ Anthropic's Terms of Service prohibit OAuth flows for their API. TradingAgentsLa
 
 ### Can I use multiple providers simultaneously?
 
-You can have keys (and OAuth) for all four providers connected at once. Each individual debate uses one provider, picked via the **"Run with"** dropdown on the Analyze page. Your last selection persists per (provider, auth-mode) combination.
+You can have keys (and OAuth) for all of them connected at once. Each individual debate uses one provider, picked via the **"Run with"** dropdown on the Analyze page. Your last selection persists per (provider, auth-mode) combination.
 
 ---
 

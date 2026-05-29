@@ -5,6 +5,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 [![Upstream: Apache 2.0](https://img.shields.io/badge/Upstream-Apache%202.0-green.svg)](LICENSE-APACHE)
 [![Status: Active Development](https://img.shields.io/badge/Status-Active%20Development-orange.svg)](backlog.md)
+[![Version: 0.1.0](https://img.shields.io/badge/version-0.1.0-blue.svg)](#whats-new-in-v010)
 [![No Tracking](https://img.shields.io/badge/Tracking-Zero-brightgreen.svg)](#privacy--zero-data-collection)
 
 > **For educational research only.** Trading Agents Lab is **not** a registered investment advisor and does not provide investment, financial, legal, or tax advice. LLM-generated analyses can be inaccurate or hallucinated. Nothing this software produces is a recommendation to buy, sell, or hold any security, cryptocurrency, or other asset. See the [full disclaimer](#disclaimer) below.
@@ -35,7 +36,7 @@ The project also serves as a practical case study for **[Clawdemy.org](https://c
 | LLM Providers | Data Providers |
 |:---:|:---:|
 | ![LLM Providers](assets/screenshots/settings-llm.png) | ![Data Providers](assets/screenshots/settings-data.png) |
-| OpenAI (API key or OAuth, OAuth wins when both are configured), Anthropic, OpenRouter, Google Gemini. Green "Connected" pill confirms each. | yfinance is the free zero-config default. Alpaca Markets optional for higher-quality SIP-feed bars + crypto. Both keys encrypted via OS keychain. |
+| OpenAI (API key or OAuth, OAuth wins when both are configured), Anthropic, OpenRouter, Google Gemini, xAI Grok, MiniMax, plus local runtimes (Ollama / LM Studio). Green "Connected" pill confirms each. | yfinance is the free zero-config default. Alpaca Markets optional for higher-quality SIP-feed bars + crypto. Both keys encrypted via OS keychain. |
 
 | Cost Guard | Other pages |
 |:---:|:---:|
@@ -51,11 +52,18 @@ The project also serves as a practical case study for **[Clawdemy.org](https://c
 
 ---
 
+## What's new in v0.1.0
+
+- **Two new native LLM providers: xAI Grok and MiniMax.** Grok (4.3 plus the 4.20 family) and MiniMax (M2.x, 204K context) join OpenAI, Anthropic, OpenRouter, Google Gemini, and local runtimes, available in both the Analyze picker and the Telegram bot channel.
+- **Refreshed model catalog.** Current frontier models across providers (OpenAI gpt-5.5, Google gemini-3.1-flash-lite GA, xAI grok-4.3), each with a conservative cost ceiling wired into Cost Guard so every model reserves a real budget amount.
+
+---
+
 ## What it does
 
 - 🧠 **Multi-agent LLM debate.** A team of 12 specialised agents (4 analysts → 3 researchers → trader → 4-seat risk committee → portfolio manager) reasons about a ticker under your selected LLM, then produces a HOLD / BUY / SELL recommendation with confidence and a complete reasoning trail.
 - 📈 **Stocks AND cryptocurrencies.** Type `NVDA` for equities or `BTC`, `ETH`, `SOL`, `BTC/USD`, `BTC-USD` for crypto, the engine auto-detects asset class and routes to the right data endpoint. The fundamental analyst's prompt is asset-class-aware (earnings/balance-sheet for equities, tokenomics/on-chain/macro liquidity for crypto).
-- 🔌 **Bring your own LLM provider.** First-class support for **OpenAI** (API key or **ChatGPT OAuth via the Codex backend**), **Anthropic**, **OpenRouter**, and **Google Gemini**. Pick provider per session; switch model per provider with persistent memory of your last choice.
+- 🔌 **Bring your own LLM provider.** First-class support for **OpenAI** (API key or **ChatGPT OAuth via the Codex backend**), **Anthropic**, **OpenRouter**, **Google Gemini**, **xAI Grok**, and **MiniMax**, plus any **local OpenAI-compatible runtime** (Ollama, LM Studio). Pick provider per session; switch model per provider with persistent memory of your last choice.
 - 🗂️ **Two market-data providers.** [yfinance](https://github.com/ranaroussi/yfinance) is the free zero-config default. **Alpaca Markets** (free Basic tier) optional for higher-quality SIP-feed data, auto-routed when your API keys are configured, falls back to yfinance otherwise. For crypto news, the engine falls through to yfinance when Alpaca's news endpoint returns thin coverage for mid- and small-cap tokens.
 - 🛡️ **Cost Guard.** Configurable daily / weekly / monthly USD caps + optional sessions-per-day rate cap. TOCTOU-safe atomic reservations prevent parallel debates from blowing the cap. Override modal with 3-second anti-tamper countdown for emergency cases. OAuth subscription paths billed at $0; rate cap protects subscription quotas.
 - 💾 **Everything is local. Zero data collection.** SQLite session storage, OS-keychain-backed secrets (Electron `safeStorage`). **No analytics, no telemetry, no error reporting to remote services, no user accounts, no email collection.** Every renderer fetch hits `127.0.0.1`. The only outbound calls are to your configured providers (yfinance, Alpaca, LLMs), verifiable in the source.
@@ -101,6 +109,8 @@ flowchart LR
         Anthropic["Anthropic<br/>API key only"]
         Gemini["Google Gemini"]
         OpenRouter["OpenRouter<br/>100+ models"]
+        Xai["xAI Grok<br/>API key only"]
+        MiniMax["MiniMax<br/>API key only"]
         Codex["ChatGPT subscription<br/>via Codex backend"]
     end
 
@@ -114,6 +124,8 @@ flowchart LR
     Adapters --> Anthropic
     Adapters --> Gemini
     Adapters --> OpenRouter
+    Adapters --> Xai
+    Adapters --> MiniMax
     Adapters --> Codex
     DataMod --> Yahoo
     DataMod --> Alpaca
@@ -230,7 +242,10 @@ bash tools/dev-smoke.sh
 | **OpenAI** | API key **or** ChatGPT OAuth | OAuth routes through `chatgpt.com/backend-api/codex/responses` (Codex backend), uses your ChatGPT subscription, not per-token API billing. Plan tier auto-detected from the JWT. |
 | **Anthropic** | API key only | OAuth is not supported, banned by Anthropic Terms of Service. |
 | **OpenRouter** | API key | Access to 100+ models behind one key. |
-| **Google Gemini** | API key | Gemini 3.x family. |
+| **Google Gemini** | API key | Gemini 2.x and 3.x; 3.1 Flash-Lite GA is the cost-efficient pick. |
+| **xAI Grok** | API key | Grok 4.3 plus the Grok 4.20 family. |
+| **MiniMax** | API key | MiniMax M2.x (Global region, 204K context). |
+| **Local LLM** | none (localhost) | Any OpenAI-compatible runtime: Ollama, LM Studio, llama.cpp. Auto-detected, runs fully offline at $0. |
 
 All keys are stored encrypted via Electron's native `safeStorage` (OS keychain on macOS, DPAPI on Windows). Keys never leave your machine and are never logged to disk in plaintext.
 
@@ -261,7 +276,7 @@ Configure under Settings → Cost Guard. Current spend visible inline with green
 TradingAgentsLab is built as **two cooperating processes**:
 
 - **Desktop (Electron + Vite + React + TypeScript)**, the user-facing app you interact with. Renders pages, manages secrets (in the Electron main process via `safeStorage`), drives the OAuth flow, and streams debate events into the UI over WebSocket.
-- **Engine (Python 3.13 + FastAPI + uvicorn)**, a local sidecar that wraps the upstream `tradingagents` LangGraph core, exposes a small REST + WebSocket API on `127.0.0.1`, and orchestrates the multi-agent debate loop. The engine speaks to LLM providers using a shared `LLMAdapter` protocol with five concrete implementations.
+- **Engine (Python 3.13 + FastAPI + uvicorn)**, a local sidecar that wraps the upstream `tradingagents` LangGraph core, exposes a small REST + WebSocket API on `127.0.0.1`, and orchestrates the multi-agent debate loop. The engine speaks to LLM providers using a shared `LLMAdapter` protocol with one adapter per provider (OpenAI plus a Codex/OAuth sibling, OpenRouter, Anthropic, Google Gemini, xAI Grok, MiniMax, and local runtimes).
 
 Full design and rationale: [`docs/architecture.md`](docs/architecture.md). Engine HTTP/WS API contract: [`docs/api.md`](docs/api.md). User-facing knowledge base: [`docs/kb/`](docs/kb/).
 
@@ -295,7 +310,7 @@ Your debates, your transcripts, your decisions, all stay on your machine in `dat
 
 Phase status lives in [`backlog.md`](backlog.md). High-level:
 
-- ✅ **Shipped:** Desktop shell + Python sidecar + end-to-end debate streaming + settings/secrets + multi-provider LLM picker + ChatGPT OAuth + history + watchlist + yfinance + Alpaca data adapter + crypto support (auto-routed, asset-class-aware) + Cost Guard with override UX + compact status strip.
+- ✅ **Shipped:** Desktop shell + Python sidecar + end-to-end debate streaming + settings/secrets + multi-provider LLM picker (OpenAI, Anthropic, OpenRouter, Gemini, xAI Grok, MiniMax, local runtimes) + ChatGPT OAuth + history + watchlist + yfinance + Alpaca data adapter + crypto support (auto-routed, asset-class-aware) + Cost Guard with override UX + compact status strip + Telegram bot channel.
 - ⏳ **In progress:** Playwright UI tests; KB documentation sweep for crypto + Alpaca + Cost Guard.
 - 🔜 **Next:** Optional Clawless gateway tap (Phase 6), webhooks for external broker handoff (Phase 8), launch-prep (Terms of Service, Privacy Policy, brochure marketing site, signed DMG distribution).
 - 🚫 **Out of scope, ever** (per locked positioning): native broker execution, live-trading order management, real-money trade routing. Users may fork for personal modifications; PRs adding execution code are rejected upstream.
