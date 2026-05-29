@@ -144,7 +144,7 @@ const LLM_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'llm:openai',
     name: 'OpenAI (API key fallback)',
-    note: 'GPT-4o family via API key. The OAuth row above wins when both are configured. Keep an API key here only if you want a manual fallback.',
+    note: 'GPT-5 and GPT-4o family via API key. The OAuth row above wins when both are configured. Keep an API key here only if you want a manual fallback.',
     pillLabel: 'Fallback',
     pillVariant: 'optional',
     placeholder: 'sk-…',
@@ -171,7 +171,7 @@ const LLM_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'llm:gemini',
     name: 'Google Gemini',
-    note: 'Gemini 2.0 Flash family. Cheap and fast, good for high-volume runs.',
+    note: 'Gemini 2.x and 3.x family. Cheap and fast, good for high-volume runs.',
     pillLabel: 'Compatible',
     pillVariant: 'default',
     placeholder: 'AIza…',
@@ -180,7 +180,7 @@ const LLM_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'llm:xai',
     name: 'xAI Grok',
-    note: 'Grok 4 family (including the fast variants). API key only. Get a key at console.x.ai.',
+    note: 'Grok 4.3 and the Grok 4.20 family. API key only. Get a key at console.x.ai.',
     pillLabel: 'API key only',
     pillVariant: 'default',
     placeholder: 'xai-…',
