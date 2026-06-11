@@ -24,6 +24,7 @@ TradingAgentsLab is a standalone trading companion for Clawless. You can use it 
 | [sentiment.md](sentiment.md) | StockTwits + Reddit pre-fetch for the sentiment_analyst |
 | [cost-guard.md](cost-guard.md) | Daily / weekly / monthly USD caps + rate cap; per-run override flow |
 | [webhooks.md](webhooks.md) | Push decisions to Telegram / Slack / Discord / your own HTTPS endpoint |
+| [scorecard.md](scorecard.md) | How past analyses are scored against subsequent prices; confidence calibration |
 | [clawless-connector.md](clawless-connector.md) | What the optional Clawless gateway tap is and when it activates (Phase 6) |
 | [reading-the-debate.md](reading-the-debate.md) | Walk through every element of the Analyze page as a debate runs |
 | [keyboard-shortcuts.md](keyboard-shortcuts.md) | Full table of menu accelerators and page-level shortcuts |

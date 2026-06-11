@@ -28,6 +28,7 @@ These are defined in `desktop/electron/menu.ts` and are active from anywhere in 
 | `Cmd+1` | Navigate to Analyze |
 | `Cmd+2` | Navigate to Watchlist |
 | `Cmd+3` | Navigate to History |
+| `Cmd+4` | Navigate to Scorecard |
 | `Cmd+,` | Navigate to Settings (same as App menu on macOS) |
 
 ### Edit menu

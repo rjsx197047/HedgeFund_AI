@@ -224,6 +224,62 @@ Lists the user's saved watchlist tickers, newest-first by `added_at`. Same SQLit
 
 CORS-allowed for the renderer origin (`DELETE` is in `Access-Control-Allow-Methods`).
 
+### `POST /outcomes/refresh`
+
+Scores every completed live session against subsequent daily closes, per horizon (5 and 20 trading days). Idempotent: already-scored pairs are skipped. Stub sessions (live=0) are never scored. One price fetch per ticker per call; a ticker whose fetch fails lands in `errors` without sinking the rest. Runs the synchronous yfinance work in a thread, so expect a few seconds when several tickers need their first evaluation.
+
+```jsonc
+{ "evaluated": 4, "pending": 2, "errors": ["XYZ"] }
+```
+
+- `evaluated`: outcome rows written this call
+- `pending`: session and horizon pairs whose exit bar does not exist yet (the market has not traded far enough past the trade date). They are retried on the next refresh.
+- `errors`: tickers whose price history could not be fetched
+
+### `GET /scorecard`
+
+Aggregated outcome statistics for the Scorecard page. All numbers describe past sessions only.
+
+```jsonc
+{
+  "generated_at": "2026-06-11T18:00:00Z",
+  "live_sessions": 12,
+  "pending": 3,
+  "horizons": [
+    {
+      "horizon_days": 5,
+      "band_pct": 1.5,           // alignment dead zone, percent
+      "evaluated": 9,
+      "aligned": 5,
+      "by_action": { "BUY": { "evaluated": 6, "aligned": 4 } },
+      "calibration": [
+        { "label": "under 55%", "evaluated": 2, "aligned": 1 }
+      ]
+    }
+  ],
+  "recent": [
+    {
+      "session_id": "0196...",
+      "ticker": "NVDA",
+      "trade_date": "2026-05-02",
+      "action": "BUY",
+      "confidence": 0.8,
+      "horizon_days": 5,
+      "entry_date": "2026-05-02",
+      "entry_close": 100.0,
+      "exit_date": "2026-05-09",
+      "exit_close": 104.2,
+      "return_pct": 4.2,
+      "verdict": "aligned",       // "aligned" | "contrary"
+      "provider": "openai",
+      "model": "gpt-5"
+    }
+  ]
+}
+```
+
+Verdict semantics: BUY is aligned when the realized return exceeds the band, SELL when it falls below the negative band, HOLD when it stays inside the band. Deleting a session from History removes its outcomes from the scorecard.
+
 ## WebSocket endpoint
 
 ### `WS /stream?token=<token>`

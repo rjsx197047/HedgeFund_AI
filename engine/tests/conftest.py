@@ -18,11 +18,12 @@ def tmp_db(tmp_path, monkeypatch):
     db_path = tmp_path / "test.db"
     monkeypatch.setenv("TAL_SESSIONS_DB", str(db_path))
 
-    # Re-resolve the cached path on both modules.
-    from engine import cost_guard, storage
+    # Re-resolve the cached path on every module with its own DB plumbing.
+    from engine import cost_guard, outcomes, storage
 
     storage._reset_for_tests()
     cost_guard._reset_for_tests()
+    outcomes._reset_for_tests()
 
     yield db_path
 

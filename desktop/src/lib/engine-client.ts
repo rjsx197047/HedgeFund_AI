@@ -584,6 +584,85 @@ export async function deleteSession(id: string): Promise<void> {
   }
 }
 
+// ---- Outcomes / Scorecard --------------------------------------------------
+
+/** One scored (session, horizon) pair — engine /scorecard `recent` rows. */
+export interface OutcomeRow {
+  session_id: string;
+  ticker: string;
+  trade_date: string;
+  action: string;
+  confidence: number;
+  horizon_days: number;
+  entry_date: string;
+  entry_close: number;
+  exit_date: string;
+  exit_close: number;
+  return_pct: number;
+  verdict: 'aligned' | 'contrary';
+  provider: string | null;
+  model: string | null;
+}
+
+export interface ScorecardCalibrationBucket {
+  label: string;
+  evaluated: number;
+  aligned: number;
+}
+
+export interface ScorecardHorizon {
+  horizon_days: number;
+  band_pct: number;
+  evaluated: number;
+  aligned: number;
+  by_action: Record<string, { evaluated: number; aligned: number }>;
+  calibration: ScorecardCalibrationBucket[];
+}
+
+export interface Scorecard {
+  generated_at: string;
+  live_sessions: number;
+  pending: number;
+  horizons: ScorecardHorizon[];
+  recent: OutcomeRow[];
+}
+
+export interface OutcomesRefreshResult {
+  evaluated: number;
+  pending: number;
+  errors: string[];
+}
+
+export async function getScorecard(): Promise<Scorecard> {
+  const { port, token } = await handshake();
+  const res = await fetchWithTimeout(`http://127.0.0.1:${port}/scorecard`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw new Error(`getScorecard failed: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as Scorecard;
+}
+
+/** Score matured sessions against subsequent closes. Idempotent; the
+ * engine fetches daily price history per ticker, so allow a generous
+ * timeout when many tickers need their first evaluation. */
+export async function refreshOutcomes(): Promise<OutcomesRefreshResult> {
+  const { port, token } = await handshake();
+  const res = await fetchWithTimeout(
+    `http://127.0.0.1:${port}/outcomes/refresh`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    60_000,
+  );
+  if (!res.ok) {
+    throw new Error(`refreshOutcomes failed: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as OutcomesRefreshResult;
+}
+
 export interface WatchlistEntry {
   ticker: string;
   added_at: string;

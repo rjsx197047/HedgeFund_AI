@@ -7,7 +7,7 @@ import {
 } from 'electron';
 
 /** Routes the renderer hash router knows about. */
-type Route = 'analyze' | 'watchlist' | 'history' | 'settings';
+type Route = 'analyze' | 'watchlist' | 'history' | 'scorecard' | 'settings';
 
 const REPO_URL = 'https://github.com/RBJGlobal/TradingAgentsLab';
 
@@ -61,6 +61,11 @@ export function buildMenu(getWin: () => BrowserWindow | null): Menu {
         label: 'History',
         accelerator: 'CmdOrCtrl+3',
         click: () => navTo(getWin(), 'history'),
+      },
+      {
+        label: 'Scorecard',
+        accelerator: 'CmdOrCtrl+4',
+        click: () => navTo(getWin(), 'scorecard'),
       },
       { type: 'separator' },
       {

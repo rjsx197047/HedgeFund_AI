@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-06-11 — Fork synced to v0.1.0 + Scorecard (outcome scoring) shipped + macOS SSL fix
+
+**Goal:** (HedgeFund_AI fork session.) Bring the fork fully up to upstream v0.1.0, then ship the first elite-tier feature: the Scorecard, an honest outcome-scoring loop over past live sessions.
+
+**What shipped:**
+
+- **Fork sync** — fast-forwarded `main` from `7d9f9b4` to upstream v0.1.0 `f6dfb23` (75 commits, zero conflicts) and pushed to `origin` (rjsx197047/HedgeFund_AI). The Option-C Tailwind rewrite + Ollama-only provider work stays parked on `option-c-tailwind-rewrite`; upstream's local-LLM auto-detect supersedes the Ollama adapter.
+- **Scorecard feature** — `engine/outcomes.py` (scoring + aggregation, new `outcomes` table keyed (session_id, horizon_days)), `POST /outcomes/refresh` + `GET /scorecard` endpoints, `desktop/src/pages/Scorecard.tsx` (+ module CSS), nav route + `Cmd+4` accelerator, engine-client wrappers, 18 new pytest cases (`test_outcomes.py`), `docs/api.md` + `docs/kb/scorecard.md` docs. BUY/SELL/HOLD graded against realized 5d/20d returns with per-horizon noise bands; confidence calibration buckets; stub sessions excluded; idempotent refresh; orphan sweep on session delete.
+- **macOS SSL fix** — cherry-picked `c770aec` (curl_cffi verify patch + certifi env vars at engine entry) from the rewrite branch; without it yfinance fails with curl (60) on this machine. `certifi` added to `engine/requirements.txt` (now a hard import).
+
+**Gates:** engine 273/273 pytest (255 upstream + 18 new), desktop `tsc -b` clean, vitest 15/15, dev-smoke passes through /analyze (data steps rate-limited by Yahoo at time of run — TLS verified fixed, error moved from CURLE_SSL_CACERT to HTTP 429).
+
+**Next session opens with:** verify Scorecard renders in Electron with real scored outcomes once Yahoo rate limit clears; consider backtest-as-of-date runs (replay a debate on a past date) as the second half of the track-record loop.
+
+---
+
 ## 2026-05-29 — v0.1.0 released: full audit + xAI Grok / MiniMax + dev preload-race fix + docs + UI polish
 
 **Goal:** What started as "is upstream stable?" turned into a full v0.1.0 release. Catalog refresh -> native xAI + MiniMax providers -> Telegram parity -> two-reviewer audit pattern -> xAI catalog re-alignment + dev preload-race fix -> v0.1.0 docs + UI polish + canonical marketing screenshot. Eight PRs merged across this session (bridged 2026-05-28 -> 2026-05-29).

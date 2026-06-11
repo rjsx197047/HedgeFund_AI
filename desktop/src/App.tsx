@@ -2,15 +2,16 @@ import { useCallback, useEffect, useState } from 'react';
 import Analyze from './pages/Analyze';
 import Settings from './pages/Settings';
 import History from './pages/History';
+import Scorecard from './pages/Scorecard';
 import Watchlist from './pages/Watchlist';
 import StatusStrip from './components/StatusStrip';
 import { UpstreamCheckModal } from './components/UpstreamCheckModal';
 import { checkUpstream, type UpstreamCheckResult } from './lib/upstream';
 import styles from './App.module.css';
 
-type Route = 'analyze' | 'watchlist' | 'history' | 'settings';
+type Route = 'analyze' | 'watchlist' | 'history' | 'scorecard' | 'settings';
 
-const ROUTES: Route[] = ['analyze', 'watchlist', 'history', 'settings'];
+const ROUTES: Route[] = ['analyze', 'watchlist', 'history', 'scorecard', 'settings'];
 
 function parseHash(hash: string): Route {
   const cleaned = hash.replace(/^#/, '') as Route;
@@ -188,6 +189,7 @@ function App() {
         {navItem('analyze', 'Analyze')}
         {navItem('watchlist', 'Watchlist')}
         {navItem('history', 'History')}
+        {navItem('scorecard', 'Scorecard')}
         <div className={styles.navSpacer} />
         {navItem('settings', 'Settings')}
       </nav>
@@ -206,6 +208,7 @@ function App() {
         </div>
         {route === 'watchlist' && <Watchlist />}
         {route === 'history' && <History />}
+        {route === 'scorecard' && <Scorecard />}
         {route === 'settings' && <Settings />}
       </main>
 

@@ -40,7 +40,7 @@ from .data_providers import (
 )
 from .live_debate import ProviderConfig, SentimentBlock, live_debate
 from .llm_providers import adapter_for
-from . import cost_guard, local_llm_detect, sentiment_sources, storage
+from . import cost_guard, local_llm_detect, outcomes, sentiment_sources, storage
 from . import webhooks as webhook_dispatcher
 from .stub_debate import canned_debate
 from .telegram_bot import TelegramBot, TelegramBotConfig
@@ -381,6 +381,22 @@ def build_app(*, token: str) -> FastAPI:
         return {
             "runtimes": [local_llm_detect.runtime_to_dict(r) for r in detected],
         }
+
+    @app.post("/outcomes/refresh", dependencies=bearer)
+    async def outcomes_refresh() -> dict[str, Any]:
+        """Score matured live sessions against subsequent daily closes.
+
+        Best-effort and idempotent — already-scored pairs are skipped, a
+        ticker whose price fetch fails lands in `errors` without sinking
+        the rest. Runs in a worker thread because yfinance is synchronous.
+        """
+        result = await asyncio.to_thread(outcomes.refresh_outcomes)
+        return outcomes.refresh_result_to_dict(result)
+
+    @app.get("/scorecard", dependencies=bearer)
+    async def scorecard() -> dict[str, Any]:
+        """Aggregated outcome stats for the renderer's Scorecard page."""
+        return await asyncio.to_thread(outcomes.get_scorecard)
 
     @app.post("/cost-guard/reserve", dependencies=bearer)
     async def cost_guard_reserve(req: CostGuardReserveRequest) -> dict[str, Any]:
