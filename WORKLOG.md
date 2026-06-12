@@ -24,7 +24,7 @@
 2. **yfinance TTL cache** — Yahoo 429s under the app's natural fetch pattern (data card + debate + re-run all request identical data). Added a 10-minute in-process cache keyed (symbol, trade_date, lookback); empty news results never cached.
 3. **Fresh-DB init race (pre-existing, upstream)** — `PRAGMA journal_mode=WAL` takes an exclusive lock that ignores the busy handler, so two threads initializing a fresh DB failed instantly with "database is locked" (test_concurrent_writes_dont_collide flaked ~80% in isolation). Fixed with a brief retry loop around the WAL switch in storage/cost_guard/outcomes; 15/15 green after.
 
-QA harness additions: navigation e2e now covers the 5th route; `qa-screenshots.spec.ts` (page-render smoke + screenshots); `qa-scorecard-data.spec.ts` (Scorecard against a seeded DB, gated on TAL_QA_SEED_DB). Gates after fixes: engine 289/289 locally (281 + 8 new), tsc clean, vitest 15/15, Playwright 9 passed / 1 skipped.
+QA harness additions: navigation e2e now covers the 5th route; `qa-screenshots.spec.ts` (page-render smoke + screenshots); `qa-scorecard-data.spec.ts` (Scorecard against a seeded DB, gated on TAL_QA_SEED_DB). Gates after fixes: engine 281/281 locally (273 + 8 new), tsc clean, vitest 15/15, Playwright 9 passed / 1 skipped.
 
 **Known environmental:** Yahoo rate-limits this IP at QA time (HTTP 429 even after the SSL fix). Clears on its own; the cache reduces recurrence. Real-data scoring verified blocked only at the Yahoo edge.
 
