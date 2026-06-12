@@ -1,14 +1,14 @@
 /**
  * Sidebar navigation + hash routing.
  *
- * Verifies all four routes mount their root component when clicked,
+ * Verifies all five routes mount their root component when clicked,
  * the URL hash updates, and the active nav item carries `data-active`.
  * If any route's root component changes name, only the leaf assertion
  * for that route needs to update.
  */
 import { test, expect } from './fixtures';
 
-test('sidebar navigates between all four routes', async ({ window }) => {
+test('sidebar navigates between all five routes', async ({ window }) => {
   // Wait for shell ready.
   await expect(
     window.locator('[data-testid="status-pill-engine"]'),
@@ -22,8 +22,10 @@ test('sidebar navigates between all four routes', async ({ window }) => {
   }> = [
     { nav: 'nav-analyze', hash: '#analyze', marker: '[data-testid="analyze-button"]' },
     { nav: 'nav-watchlist', hash: '#watchlist', marker: '[data-testid="watchlist-add-button"]' },
-    // History + Settings have no required input fields, just heading text.
+    // History + Scorecard + Settings have no required input fields, just
+    // heading text.
     { nav: 'nav-history', hash: '#history', marker: 'h1:has-text("History")' },
+    { nav: 'nav-scorecard', hash: '#scorecard', marker: 'h1:has-text("Scorecard")' },
     { nav: 'nav-settings', hash: '#settings', marker: 'h1:has-text("Settings")' },
   ];
 

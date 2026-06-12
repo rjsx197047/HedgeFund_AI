@@ -91,12 +91,43 @@ class DataUnavailable(RuntimeError):
     """Upstream data source returned no usable data for the request."""
 
 
+# Short-lived in-process cache for yfinance responses. Yahoo aggressively
+# rate-limits (HTTP 429) and the app legitimately asks for the same data
+# several times in quick succession — the Analyze page's data card, the
+# live debate's context fetch, and a re-run all want the identical
+# (ticker, trade_date) summary. Serving repeats from memory keeps us under
+# the limit and makes the second hit instant. TTL is short on purpose:
+# intraday bars move, and the cache must never outlive a dev session.
+_YF_CACHE_TTL_SECONDS = 600
+_yf_cache: dict[tuple, tuple[float, object]] = {}
+
+
+def _yf_cache_get(key: tuple) -> Optional[object]:
+    hit = _yf_cache.get(key)
+    if hit is None:
+        return None
+    ts, value = hit
+    if (datetime.now(timezone.utc).timestamp() - ts) > _YF_CACHE_TTL_SECONDS:
+        _yf_cache.pop(key, None)
+        return None
+    return value
+
+
+def _yf_cache_put(key: tuple, value: object) -> None:
+    # Bound the cache so a long-lived engine can't grow it unbounded.
+    if len(_yf_cache) > 256:
+        _yf_cache.clear()
+    _yf_cache[key] = (datetime.now(timezone.utc).timestamp(), value)
+
+
 class YFinanceProvider:
     """Default data provider — Yahoo Finance via the `yfinance` package.
 
     yfinance hits Yahoo's public endpoints with no API key required. It can
     rate-limit or return empty data on transient issues; we wrap each call
     in a retry-light pattern and convert empty frames into `DataUnavailable`.
+    Successful responses are cached in-process for a few minutes (see
+    `_YF_CACHE_TTL_SECONDS`) so repeat requests don't re-hit Yahoo.
     """
 
     name = "yfinance"
@@ -109,6 +140,10 @@ class YFinanceProvider:
         import asyncio
 
         spec = normalize_ticker(ticker)
+        cache_key = ("bars", spec.yfinance_symbol, trade_date, lookback_days)
+        cached = _yf_cache_get(cache_key)
+        if cached is not None:
+            return cached  # type: ignore[return-value]
         t0 = datetime.now(timezone.utc)
         try:
             summary = await asyncio.to_thread(
@@ -123,6 +158,7 @@ class YFinanceProvider:
             f"{summary.sessions} bars · close=${summary.last_close} "
             f"change={summary.period_change_pct:+.2f}% in {elapsed_ms}ms\n"
         )
+        _yf_cache_put(cache_key, summary)
         return summary
 
     async def news_headlines(
@@ -131,6 +167,10 @@ class YFinanceProvider:
         import asyncio
 
         spec = normalize_ticker(ticker)
+        cache_key = ("news", spec.yfinance_symbol, limit)
+        cached = _yf_cache_get(cache_key)
+        if cached is not None:
+            return cached  # type: ignore[return-value]
         t0 = datetime.now(timezone.utc)
         try:
             headlines = await asyncio.to_thread(
@@ -145,6 +185,8 @@ class YFinanceProvider:
         sys.stderr.write(
             f"[yfinance] news OK {spec.display} → {len(headlines)} headlines in {elapsed_ms}ms\n"
         )
+        if headlines:
+            _yf_cache_put(cache_key, headlines)
         return headlines
 
 

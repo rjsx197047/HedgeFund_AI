@@ -132,8 +132,37 @@ def build_app(*, token: str) -> FastAPI:
             "storage_path": storage.db_path(),
         }
 
+    def _validate_ticker(ticker: str) -> None:
+        """Reject malformed tickers with a 422 before any provider call.
+
+        Without this gate a garbage ticker (or empty string) surfaces as a
+        502 "data provider error" — wrong status family, and it makes the
+        renderer show a provider outage for what is really bad input.
+        """
+        try:
+            normalize_ticker(ticker)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            )
+
+    def _validate_trade_date(trade_date: str) -> None:
+        """Reject non-YYYY-MM-DD dates with a 422 (same reasoning as above)."""
+        import datetime as _dt
+
+        try:
+            _dt.datetime.strptime(trade_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"trade_date must be YYYY-MM-DD, got {trade_date!r}",
+            )
+
     @app.get("/data/summary", dependencies=bearer)
     async def data_summary(ticker: str, trade_date: str) -> dict[str, Any]:
+        _validate_ticker(ticker)
+        _validate_trade_date(trade_date)
         try:
             summary = await default_provider.quote_summary(
                 ticker=ticker, trade_date=trade_date
@@ -152,6 +181,7 @@ def build_app(*, token: str) -> FastAPI:
 
     @app.get("/data/news", dependencies=bearer)
     async def data_news(ticker: str, limit: int = 5) -> dict[str, Any]:
+        _validate_ticker(ticker)
         try:
             headlines = await default_provider.news_headlines(
                 ticker=ticker, limit=max(1, min(limit, 20))

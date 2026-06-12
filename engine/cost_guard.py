@@ -258,14 +258,22 @@ def _connect() -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(str(_db_path))
     conn.row_factory = sqlite3.Row
     try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA foreign_keys=ON")
         # Wait up to 5s for a competing writer instead of immediately raising
         # "database is locked". The bot and the WS handler can finalize spend
         # concurrently; without this a lock collision is swallowed by the
         # finalize except-block and silently understates the cost ledger.
         conn.execute("PRAGMA busy_timeout=5000")
+        # The WAL switch ignores the busy handler (exclusive-lock path) —
+        # retry briefly so concurrent fresh-DB initialization can't fail
+        # with "database is locked". See storage._connect for the full why.
+        for _ in range(40):
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                break
+            except sqlite3.OperationalError:
+                time.sleep(0.025)
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA foreign_keys=ON")
         yield conn
     finally:
         conn.close()

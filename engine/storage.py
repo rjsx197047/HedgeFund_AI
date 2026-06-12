@@ -147,13 +147,25 @@ def _connect() -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(str(_db_path))
     conn.row_factory = sqlite3.Row
     try:
-        # Sensible defaults for a single-process embedded DB.
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA foreign_keys=ON")
         # Wait up to 5s for a competing writer rather than raising "database
         # is locked" — a session write and a cost finalize can land together.
         conn.execute("PRAGMA busy_timeout=5000")
+        # Switching journal modes takes an exclusive lock and SQLite does
+        # NOT consult the busy handler for it — two connections racing the
+        # WAL switch on a fresh DB fail immediately with "database is
+        # locked" no matter what busy_timeout says. Retry briefly; WAL is a
+        # persistent DB property so normally only the first connection ever
+        # pays this. If it still fails, continue in the default journal
+        # mode — correctness is unaffected, only write concurrency.
+        for _ in range(40):
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                break
+            except sqlite3.OperationalError:
+                time.sleep(0.025)
+        # Sensible defaults for a single-process embedded DB.
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA foreign_keys=ON")
         yield conn
     finally:
         conn.close()

@@ -18,6 +18,16 @@
 
 **Gates:** engine 273/273 pytest (255 upstream + 18 new), desktop `tsc -b` clean, vitest 15/15, dev-smoke passes through /analyze (data steps rate-limited by Yahoo at time of run — TLS verified fixed, error moved from CURLE_SSL_CACERT to HTTP 429).
 
+**Full QA pass (same session):** swept all 23 engine endpoints + WS stub flow, ran the e2e suite, and visually inspected every page via a Playwright screenshot harness. Three bugs found and fixed:
+
+1. **422 validation on /data/*** — malformed ticker or trade_date surfaced as 502 "data provider error"; now rejected with 422 before any provider call (`test_data_endpoints.py`).
+2. **yfinance TTL cache** — Yahoo 429s under the app's natural fetch pattern (data card + debate + re-run all request identical data). Added a 10-minute in-process cache keyed (symbol, trade_date, lookback); empty news results never cached.
+3. **Fresh-DB init race (pre-existing, upstream)** — `PRAGMA journal_mode=WAL` takes an exclusive lock that ignores the busy handler, so two threads initializing a fresh DB failed instantly with "database is locked" (test_concurrent_writes_dont_collide flaked ~80% in isolation). Fixed with a brief retry loop around the WAL switch in storage/cost_guard/outcomes; 15/15 green after.
+
+QA harness additions: navigation e2e now covers the 5th route; `qa-screenshots.spec.ts` (page-render smoke + screenshots); `qa-scorecard-data.spec.ts` (Scorecard against a seeded DB, gated on TAL_QA_SEED_DB). Gates after fixes: engine 289/289 locally (281 + 8 new), tsc clean, vitest 15/15, Playwright 9 passed / 1 skipped.
+
+**Known environmental:** Yahoo rate-limits this IP at QA time (HTTP 429 even after the SSL fix). Clears on its own; the cache reduces recurrence. Real-data scoring verified blocked only at the Yahoo edge.
+
 **Next session opens with:** verify Scorecard renders in Electron with real scored outcomes once Yahoo rate limit clears; consider backtest-as-of-date runs (replay a debate on a past date) as the second half of the track-record loop.
 
 ---
