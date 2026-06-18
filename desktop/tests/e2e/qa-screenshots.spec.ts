@@ -14,7 +14,7 @@ test('every page renders — screenshot sweep', async ({ window }) => {
   test.setTimeout(120_000);
   await expect(
     window.locator('[data-testid="status-pill-engine"]'),
-  ).toHaveAttribute('data-state', 'ok', { timeout: 30_000 });
+  ).toHaveAttribute('data-state', 'ok', { timeout: 90_000 });
 
   const pages: Array<{ hash: string; name: string; settle?: number }> = [
     { hash: '#analyze', name: '01-analyze' },

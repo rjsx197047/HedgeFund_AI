@@ -1,0 +1,19 @@
+# Cloudflare Pages configuration for the HedgeFund AI brochure.
+#
+# This is a static Vite + React site. Cloudflare Pages builds it and serves
+# the contents of dist/ from its global edge network.
+#
+# Dashboard build settings (Pages -> Create -> Connect to Git):
+#   Framework preset:        None (Vite)
+#   Root directory:          brochure
+#   Build command:           npm install && npm run build
+#   Build output directory:  dist
+#
+# Or deploy from the CLI:
+#   cd brochure
+#   npm install && npm run build
+#   npx wrangler pages deploy dist --project-name=hedgefund-ai
+
+name = "hedgefund-ai"
+compatibility_date = "2024-12-01"
+pages_build_output_dir = "dist"

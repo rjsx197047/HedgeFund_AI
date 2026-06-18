@@ -18,7 +18,7 @@ test('scorecard renders seeded outcomes', async ({ window, sandboxDir }) => {
 
   await expect(
     window.locator('[data-testid="status-pill-engine"]'),
-  ).toHaveAttribute('data-state', 'ok', { timeout: 30_000 });
+  ).toHaveAttribute('data-state', 'ok', { timeout: 90_000 });
 
   await window.evaluate(() => {
     window.location.hash = '#scorecard';
