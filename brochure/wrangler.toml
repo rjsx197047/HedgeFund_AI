@@ -12,8 +12,13 @@
 # Or deploy from the CLI:
 #   cd brochure
 #   npm install && npm run build
-#   npx wrangler pages deploy dist --project-name=hedgefund-ai
+#   npx wrangler pages deploy dist --project-name=hedgefund-ai-lab
+#
+# Live at https://hedgefund-ai-lab.pages.dev
+# Note: the shorter "hedgefund-ai" name is shadowed by an account-level
+# redirect on that exact *.pages.dev hostname, so the project uses the
+# "hedgefund-ai-lab" name, which serves cleanly.
 
-name = "hedgefund-ai"
+name = "hedgefund-ai-lab"
 compatibility_date = "2024-12-01"
 pages_build_output_dir = "dist"

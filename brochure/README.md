@@ -1,5 +1,7 @@
 # HedgeFund AI - Brochure Site
 
+**Live at https://hedgefund-ai-lab.pages.dev** (Cloudflare Pages).
+
 A static, public-facing landing page for HedgeFund AI. Built with React, TypeScript, and Vite. The palette is ported from the desktop app's design tokens (GitHub-dark surfaces, warm amber accent), so the site reads as part of the product.
 
 It is a single page with these sections: hero, trust strip, features, the multi-agent debate, the Scorecard, providers, privacy, and get started. The product screenshots in `public/shots/` are real captures of the app.
@@ -41,7 +43,7 @@ The `dist/` folder is a plain static site. It can be deployed to any static host
 ```bash
 cd brochure
 npm install && npm run build
-npx wrangler pages deploy dist --project-name=hedgefund-ai
+npx wrangler pages deploy dist --project-name=hedgefund-ai-lab
 ```
 
 ### Custom domain
