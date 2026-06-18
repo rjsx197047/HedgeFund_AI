@@ -8,6 +8,8 @@
 [![Version: 0.1.0](https://img.shields.io/badge/version-0.1.0-blue.svg)](#whats-new-in-v010)
 [![No Tracking](https://img.shields.io/badge/Tracking-Zero-brightgreen.svg)](#privacy--zero-data-collection)
 
+**Website: https://hedgefund-ai-lab.pages.dev** (a static brochure, source in [`brochure/`](brochure/))
+
 > **For educational research only.** Trading Agents Lab is **not** a registered investment advisor and does not provide investment, financial, legal, or tax advice. LLM-generated analyses can be inaccurate or hallucinated. Nothing this software produces is a recommendation to buy, sell, or hold any security, cryptocurrency, or other asset. See the [full disclaimer](#disclaimer) below.
 
 Trading Agents Lab is a standalone desktop application that lets you watch multi-agent LLM "trading firms" debate a ticker live, fundamentals analyst, sentiment analyst, news analyst, technical analyst, bull researcher, bear researcher, trader, and a risk-management committee, and produce a transparent, auditable trade thesis with a confidence score. Every step of the debate streams into the UI, every transcript is saved locally, and every API call uses your own key (or your own ChatGPT subscription via OAuth).
