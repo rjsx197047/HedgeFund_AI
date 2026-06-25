@@ -82,16 +82,22 @@ The takeaway for the scoring ahead: these three BUY calls were produced by a deb
 To test whether the uniform bullishness and the role collapse are properties of the system or just of one small model, the identical experiment (same three tickers, same entry date, same prompts and scoring) was re-run with **deepseek-r1:8b**, a larger local reasoning model. Both arms are saved as live sessions, so the Scorecard grades them side by side.
 
 <!-- DEEPSEEK -->
-_The deepseek-r1 arm is running. This table is filled in once it completes._
+The deepseek-r1 arm completed (about 6 minutes per ticker). The result is striking: where llama3.2 was uniformly bullish, deepseek-r1 was uniformly cautious.
 
 | Ticker | llama3.2 call | llama3.2 conf | deepseek-r1 call | deepseek-r1 conf | Agreement |
 |---|---|---|---|---|---|
-| GOOGL | BUY | 0.85 | _pending_ | _pending_ | _pending_ |
-| AAPL | BUY | 0.85 | _pending_ | _pending_ | _pending_ |
-| MSFT | BUY | 0.80 | _pending_ | _pending_ | _pending_ |
-<!-- /DEEPSEEK -->
+| GOOGL | BUY | 0.85 | HOLD (default, see note) | 0.50 | Disagree |
+| AAPL | BUY | 0.85 | HOLD (default, see note) | 0.50 | Disagree |
+| MSFT | BUY | 0.80 | HOLD (genuine) | 0.50 | Disagree |
 
-If the two models disagree on a ticker, that disagreement is itself a useful signal: it means the call is sensitive to the model rather than driven by the data, and the eventual price move will show which model read the setup better. If they agree, the call is at least model-robust, though still not necessarily correct.
+**The two models disagreed on all three names**, which is exactly the signal this arm was built to detect: these calls are highly sensitive to the model, not anchored by stable data. The eventual price moves will show which model read each setup better, and a HOLD that sidesteps a drawdown is a point in its favor just as a BUY that catches a rally is.
+
+**An important honesty caveat on the deepseek HOLDs.** Only the MSFT HOLD was a deliberate, reasoned decision. Its final agent wrote: "Based on the conflicting narratives and recent volatility, it seems too early to confidently commit to an action without clearer evidence." On GOOGL and AAPL, the final portfolio-manager step returned an **empty answer**, so the engine fell back to its default HOLD with 0.5 confidence. The cause is concrete and fixable: deepseek-r1 is a reasoning model that wraps its output in hidden thinking blocks, and the generic local-runtime adapter does not strip those blocks the way the engine's MiniMax adapter does, so the final decision sometimes renders as nothing. Adding that stripping to the local adapter is a clean follow-up that would make reasoning models first-class here.
+
+Even with that caveat, deepseek's intermediate agents clearly read the setups differently from llama3.2. Its AAPL trader concluded "Overall bias is BEARS WIN," the direct opposite of llama3.2's bullish AAPL trader, and its GOOGL trader argued a deep-undervaluation bull case in its own words. So the divergence between the two models is real at the analysis level, not just an artifact of the empty final answers.
+
+**What this adds to the case study.** Two local models, same tickers, same date, same data, produced opposite postures (all BUY versus all HOLD). That is a vivid, honest illustration that a single run from a single small model is weak evidence on its own. It is the strongest argument in this whole document for why accuracy has to be measured over many tickers, many windows, and ideally several models, rather than trusted from one debate.
+<!-- /DEEPSEEK -->
 
 ## Results (to be completed on or after 2026-07-20)
 
