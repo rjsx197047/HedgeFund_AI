@@ -59,6 +59,40 @@ The trader and risk committee produced usable narrative reasoning where the mode
 For GOOGL and MSFT, the small local model collapsed its final answer to the bare decision fields rather than prose. That is a known limitation of running a roughly 3 billion parameter model in a 12-agent chain, and it is one of the things a re-run with a frontier model would improve. The gradeable output (the call and the confidence) is intact for all three.
 <!-- /PREDICTIONS -->
 
+## Inside the debates: what the agents actually argued
+
+The final BUY calls are only the last line of a long transcript. Reading the full 12-agent debates is where the case study earns its keep, because it shows both the parts of the system that worked and the parts that broke down on a small local model with limited data. All quotes below are verbatim from the saved sessions.
+
+**The pipeline did its job structurally.** Each debate moved cleanly through all four phases, and the analysts engaged with the real news that the engine fetched. The GOOGL debate centered on a real headline about a senior AI executive leaving Alphabet. The AAPL debate centered on a headline about an Apple and Intel chip partnership. The MSFT sentiment analyst correctly read a mixed StockTwits tone. So the data-to-debate plumbing worked: real headlines reached the agents and shaped the discussion.
+
+**Three failure modes showed up clearly, and they all trace back to running a roughly 3 billion parameter model without live price data:**
+
+1. **The bull and bear roles collapsed into agreement.** The bear researcher is supposed to argue the downside. On this model, it did not. On GOOGL the bear opened with "I firmly believe that GOOGL's stock is poised for significant gains in the coming months." On MSFT the bear said "I firmly believe that Microsoft has the potential to continue its upward trajectory." When the designated skeptic argues the bull case, the debate loses the very tension that makes a multi-agent setup valuable. This is the single most important thing to fix with a stronger model, and it is exactly the kind of thing the comparison arm below tests.
+
+2. **The analysts invented price levels.** Because daily price history was rate-limited at entry, the technical analyst and trader had no real prices to work from, and they filled the gap with plausible-sounding but wrong numbers. The GOOGL trader proposed an "Entry price: $3050 (above the recent high of $2945)," levels from before Alphabet's 2022 stock split rather than the actual trading range. The MSFT trader anchored on a "$344 resistance level" and a "$340" entry. One agent went further and referenced "SpaceX's acquisition of Marvell Technology," an event that did not happen. AAPL fared better, with plausible levels around $180 to $230, but the lesson holds: with the price feed down, the model confabulates.
+
+3. **Internal disagreement was overridden without comment.** On AAPL the research manager concluded that "the bear case carries a better risk-adjusted argument for the next few trading sessions," yet the final decision came back BUY anyway. A stronger model should either reconcile that tension or let it lower the confidence.
+
+**One honest moment is worth highlighting.** The MSFT fundamental analyst flatly admitted "I don't have access to real-time or historical data," which is precisely the disclosure you want from an analysis tool when its inputs are missing, rather than a confident fabrication.
+
+The takeaway for the scoring ahead: these three BUY calls were produced by a debate that was partially compromised (no working skeptic, no real prices on two of three names). Whatever the 30-day verdicts turn out to be, they should be read as a measurement of this constrained baseline, not of the system at full strength. That is the whole reason the next section exists.
+
+## A second model for comparison
+
+To test whether the uniform bullishness and the role collapse are properties of the system or just of one small model, the identical experiment (same three tickers, same entry date, same prompts and scoring) was re-run with **deepseek-r1:8b**, a larger local reasoning model. Both arms are saved as live sessions, so the Scorecard grades them side by side.
+
+<!-- DEEPSEEK -->
+_The deepseek-r1 arm is running. This table is filled in once it completes._
+
+| Ticker | llama3.2 call | llama3.2 conf | deepseek-r1 call | deepseek-r1 conf | Agreement |
+|---|---|---|---|---|---|
+| GOOGL | BUY | 0.85 | _pending_ | _pending_ | _pending_ |
+| AAPL | BUY | 0.85 | _pending_ | _pending_ | _pending_ |
+| MSFT | BUY | 0.80 | _pending_ | _pending_ | _pending_ |
+<!-- /DEEPSEEK -->
+
+If the two models disagree on a ticker, that disagreement is itself a useful signal: it means the call is sensitive to the model rather than driven by the data, and the eventual price move will show which model read the setup better. If they agree, the call is at least model-robust, though still not necessarily correct.
+
 ## Results (to be completed on or after 2026-07-20)
 
 These rows are intentionally blank until the horizon matures. To fill them, run the scoring procedure below; the numbers come straight from the Scorecard, computed against real historical closes.
